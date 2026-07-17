@@ -1,0 +1,1 @@
+export { adminSetUserRole } from "./setUserRole";

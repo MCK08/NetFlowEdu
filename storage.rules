@@ -1,0 +1,55 @@
+rules_version = '2';
+
+// Production-shaped skeleton (questions/solutions paths land fully in Phase
+// 3+). Path conventions:
+//   /orgs/{organizationId}/questions/{ownerId}/{questionId}/{fileName}
+//   /orgs/{organizationId}/solutions/{authorId}/{solutionId}/{fileName}
+//   /users/{userId}/avatar/{fileName}
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function uid() {
+      return request.auth.uid;
+    }
+
+    function organizationId() {
+      return request.auth.token.organizationId;
+    }
+
+    function isImageOrPdf() {
+      return request.resource.contentType.matches('image/.*')
+          || request.resource.contentType == 'application/pdf';
+    }
+
+    function isUnder10MB() {
+      return request.resource.size < 10 * 1024 * 1024;
+    }
+
+    match /orgs/{org}/questions/{ownerId}/{questionId}/{fileName} {
+      allow read: if isSignedIn() && organizationId() == org;
+      allow write: if isSignedIn() && organizationId() == org && uid() == ownerId
+                   && isImageOrPdf() && isUnder10MB();
+    }
+
+    match /orgs/{org}/solutions/{authorId}/{solutionId}/{fileName} {
+      allow read: if isSignedIn() && organizationId() == org;
+      allow write: if isSignedIn() && organizationId() == org && uid() == authorId
+                   && isImageOrPdf() && isUnder10MB();
+    }
+
+    match /users/{userId}/avatar/{fileName} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && uid() == userId
+                   && request.resource.contentType.matches('image/.*')
+                   && request.resource.size < 2 * 1024 * 1024;
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
