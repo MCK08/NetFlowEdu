@@ -2,7 +2,7 @@ module.exports = {
   testEnvironment: "node",
   roots: ["<rootDir>/tests/unit"],
   transform: {
-    "^.+\\.tsx?$": "babel-jest",
+    "^.+\\.tsx?$": ["babel-jest", { configFile: "./babel.jest.config.js" }],
   },
   testPathIgnorePatterns: ["/node_modules/"],
   moduleNameMapper: {

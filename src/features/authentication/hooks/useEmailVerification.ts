@@ -12,7 +12,7 @@ export function useEmailVerification() {
   const [isChecking, setIsChecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cooldownSeconds, setCooldownSeconds] = useState(0);
-  const intervalRef = useRef<ReturnType<typeof setInterval>>();
+  const intervalRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
 
   useEffect(() => {
     return () => {

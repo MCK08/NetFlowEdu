@@ -12,7 +12,9 @@
       "resizeMode": "contain",
       "backgroundColor": "#0B0D12"
     },
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.netflowedu.app"
@@ -31,7 +33,8 @@
     },
     "plugins": [
       "expo-router",
-      "expo-image-picker"
+      "expo-image-picker",
+      "expo-asset"
     ],
     "experiments": {
       "typedRoutes": true
