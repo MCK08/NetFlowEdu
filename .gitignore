@@ -2,7 +2,19 @@ node_modules/
 .expo/
 dist/
 web-build/
+build/
+
+# Native prebuild output (Expo prebuild / bare workflow)
+/android/
+/ios/
+
+# Signing / credentials
 *.pem
+*.p12
+*.key
+*.jks
+*.keystore
+*.mobileprovision
 
 # Firebase
 .firebase/
@@ -11,6 +23,8 @@ firestore-debug.log
 ui-debug.log
 functions/lib/
 functions/node_modules/
+serviceAccountKey.json
+*-firebase-adminsdk-*.json
 
 # Environment
 .env
@@ -30,10 +44,12 @@ yarn-error.log*
 # TypeScript
 *.tsbuildinfo
 
-# Editor
+# Editor / IDE
 .vscode/*
 !.vscode/extensions.json
 .idea/
+.vs/
+*.iml
 .claude/
 
 # @generated expo-cli sync-2b81b286409207a5da26e14c78851eb30d8ccbdb
