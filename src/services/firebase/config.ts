@@ -1,16 +1,12 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { FirebaseApp, getApp, getApps, initializeApp } from "firebase/app";
-import {
-  Auth,
-  connectAuthEmulator,
-  getReactNativePersistence,
-  initializeAuth,
-} from "firebase/auth";
+import { Auth, connectAuthEmulator } from "firebase/auth";
 import { connectFirestoreEmulator, getFirestore } from "firebase/firestore";
 import { connectFunctionsEmulator, getFunctions } from "firebase/functions";
 import { connectStorageEmulator, getStorage } from "firebase/storage";
 
 import { resolveEmulatorHost, EMULATOR_PORTS } from "@constants/firebase";
+
+import { initPlatformAuth } from "./initAuth";
 
 const REQUIRED_ENV_VARS = [
   "EXPO_PUBLIC_FIREBASE_API_KEY",
@@ -57,11 +53,7 @@ declare global {
 
 export const app: FirebaseApp = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
-export const auth: Auth =
-  globalThis.__netflowEduFirebaseAuth__ ??
-  initializeAuth(app, {
-    persistence: getReactNativePersistence(AsyncStorage),
-  });
+export const auth: Auth = globalThis.__netflowEduFirebaseAuth__ ?? initPlatformAuth(app);
 globalThis.__netflowEduFirebaseAuth__ = auth;
 
 export const db = getFirestore(app);

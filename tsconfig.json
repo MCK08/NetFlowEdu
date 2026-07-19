@@ -4,6 +4,7 @@
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,
+    "moduleSuffixes": [".native", ".web", ""],
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"],
