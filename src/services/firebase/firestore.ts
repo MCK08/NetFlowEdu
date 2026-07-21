@@ -21,6 +21,7 @@ function toUserProfile(uid: string, data: DocumentData): UserProfile {
     uid,
     email: data.email ?? "",
     displayName: data.displayName ?? "",
+    username: data.username ?? null,
     role: data.role ?? "student",
     organizationId: data.organizationId ?? null,
     photoURL: data.photoURL ?? null,

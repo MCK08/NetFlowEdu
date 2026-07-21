@@ -33,7 +33,13 @@
     },
     "plugins": [
       "expo-router",
-      "expo-image-picker",
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Soru fotoğrafı çekebilmek için kamera erişimine izin verin.",
+          "photosPermission": "Fotoğraf seçebilmek için galeri erişimine izin verin."
+        }
+      ],
       "expo-asset"
     ],
     "experiments": {

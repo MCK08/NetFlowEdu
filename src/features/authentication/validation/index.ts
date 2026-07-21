@@ -8,6 +8,7 @@ import {
 } from "../types";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const USERNAME_PATTERN = /^[a-zA-Z0-9_]{3,20}$/;
 const PASSWORD_UPPERCASE = /[A-ZÇĞİÖŞÜ]/;
 const PASSWORD_LOWERCASE = /[a-zçğıöşü]/;
 const PASSWORD_NUMBER = /\d/;
@@ -73,8 +74,27 @@ export function validatePasswordConfirmation(
   return undefined;
 }
 
+export function validateUsername(username: string): string | undefined {
+  const trimmed = username.trim();
+  if (trimmed.length === 0) {
+    return "Kullanıcı adı gerekli.";
+  }
+  if (!USERNAME_PATTERN.test(trimmed)) {
+    return "Kullanıcı adı 3-20 karakter olmalı ve yalnızca harf, rakam, alt çizgi (_) içermeli.";
+  }
+  return undefined;
+}
+
 export function validateTermsAccepted(accepted: boolean): string | undefined {
   return accepted ? undefined : "Devam etmek için kullanım koşullarını kabul etmelisiniz.";
+}
+
+export function validateOrganizationName(
+  intendedRole: RegisterInput["intendedRole"],
+  organizationName: string,
+): string | undefined {
+  if (intendedRole !== "teacher") return undefined;
+  return organizationName.trim().length === 0 ? "Kurum adı gerekli." : undefined;
 }
 
 export function validateRegisterInput(input: RegisterInput): RegisterFieldErrors {
@@ -82,6 +102,9 @@ export function validateRegisterInput(input: RegisterInput): RegisterFieldErrors
 
   const displayNameError = validateDisplayName(input.displayName);
   if (displayNameError) errors.displayName = displayNameError;
+
+  const usernameError = validateUsername(input.username);
+  if (usernameError) errors.username = usernameError;
 
   const emailError = validateEmail(input.email);
   if (emailError) errors.email = emailError;
@@ -94,6 +117,12 @@ export function validateRegisterInput(input: RegisterInput): RegisterFieldErrors
 
   const termsError = validateTermsAccepted(input.acceptedTerms);
   if (termsError) errors.acceptedTerms = termsError;
+
+  const organizationNameError = validateOrganizationName(
+    input.intendedRole,
+    input.organizationName,
+  );
+  if (organizationNameError) errors.organizationName = organizationNameError;
 
   return errors;
 }

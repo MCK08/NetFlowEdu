@@ -1,0 +1,1 @@
+export { requestTeacherRole } from "./requestTeacherRole";

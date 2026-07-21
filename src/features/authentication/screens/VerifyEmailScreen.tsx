@@ -1,4 +1,4 @@
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { StyleSheet, Text } from "react-native";
 
 import { FormError } from "@components/ui/FormError";
@@ -7,7 +7,11 @@ import { PrimaryButton } from "@components/ui/PrimaryButton";
 
 import { useEmailVerification } from "../hooks/useEmailVerification";
 
+const TEACHER_REQUEST_PENDING_MESSAGE =
+  "Öğretmen hesap talebiniz gönderildi.\nOnaylandıktan sonra hesabınız Öğretmen hesabına dönüştürülecek.";
+
 export function VerifyEmailScreen() {
+  const { teacherRequestPending } = useLocalSearchParams<{ teacherRequestPending?: string }>();
   const {
     email,
     isEmailVerified,
@@ -37,6 +41,10 @@ export function VerifyEmailScreen() {
       </Text>
 
       <FormError message={error} />
+
+      {teacherRequestPending ? (
+        <Text style={styles.teacherRequestText}>{TEACHER_REQUEST_PENDING_MESSAGE}</Text>
+      ) : null}
 
       <PrimaryButton
         label="Doğruladım, tekrar kontrol et"
@@ -72,5 +80,13 @@ const styles = StyleSheet.create({
     opacity: 0.7,
     textAlign: "center",
     marginBottom: 8,
+  },
+  teacherRequestText: {
+    backgroundColor: "#ECFDF3",
+    color: "#027A48",
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 14,
+    textAlign: "center",
   },
 });

@@ -38,7 +38,7 @@ export interface AuthContextValue {
   profileLoading: boolean;
   profileError: string | null;
   signIn: (input: LoginInput) => Promise<void>;
-  register: (input: RegisterInput) => Promise<void>;
+  register: (input: RegisterInput) => Promise<{ teacherRequestSubmitted: boolean }>;
   signOut: () => Promise<void>;
   sendPasswordReset: (input: ForgotPasswordInput) => Promise<void>;
   resendVerification: () => Promise<void>;
@@ -126,7 +126,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const register = useCallback(async (input: RegisterInput) => {
-    await registerStudent(input);
+    const { teacherRequestSubmitted } = await registerStudent(input);
+    return { teacherRequestSubmitted };
   }, []);
 
   const signOut = useCallback(async () => {

@@ -41,6 +41,25 @@ service firebase.storage {
                    && isImageOrPdf() && isUnder10MB();
     }
 
+    // Phase 3 MVP feed uploads. Unlike /orgs/{org}/questions/..., this path
+    // has no org segment — the /orgs/ scheme can never admit a student with
+    // organizationId == null (a path segment can never equal a real null
+    // claim), and most students have no organization yet. Scoped to the
+    // owner only, same content-type/size checks as the org-scoped variant.
+    match /questions/{ownerId}/{fileName} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && uid() == ownerId
+                   && isImageOrPdf() && isUnder10MB();
+    }
+
+    // Phase 4 MVP answer uploads (photo or drawing PNG), same reasoning as
+    // questions/{ownerId}/{fileName} above — no org segment, owner-only.
+    match /answers/{questionId}/{ownerId}/{fileName} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && uid() == ownerId
+                   && isImageOrPdf() && isUnder10MB();
+    }
+
     match /users/{userId}/avatar/{fileName} {
       allow read: if isSignedIn();
       allow write: if isSignedIn() && uid() == userId

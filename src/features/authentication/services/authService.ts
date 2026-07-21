@@ -7,11 +7,17 @@ import {
   signInWithPassword,
   signOutCurrentUser,
 } from "@services/firebase/auth";
+import { requestTeacherRole, setUsername } from "@services/firebase/functions";
 import { User } from "firebase/auth";
 
 import { LoginInput, RegisterInput } from "../types";
 import { normalizeEmail } from "../validation";
 import { waitForProfileDocument } from "./profileWait";
+
+export interface RegisterResult {
+  user: User;
+  teacherRequestSubmitted: boolean;
+}
 
 // Registration sequence. Steps are ordered so the critical step (creating
 // the Auth account) happens first; display name / verification email are
@@ -20,7 +26,12 @@ import { waitForProfileDocument } from "./profileWait";
 // the verify-email screen (resend button) without any orphaned/inconsistent
 // state. The onUserCreate trigger creates the Firestore profile
 // independently of whether these two steps succeed.
-export async function registerStudent(input: RegisterInput): Promise<User> {
+//
+// intendedRole never affects the account itself — onUserCreate always
+// creates it as "student". Choosing "teacher" only files a
+// teacherRequests/{uid} document (via the requestTeacherRole callable) for
+// an admin to review; only adminSetUserRole can ever grant the teacher role.
+export async function registerStudent(input: RegisterInput): Promise<RegisterResult> {
   const email = normalizeEmail(input.email);
   const displayName = input.displayName.trim();
 
@@ -40,7 +51,28 @@ export async function registerStudent(input: RegisterInput): Promise<User> {
 
   await waitForProfileDocument(user.uid);
 
-  return user;
+  try {
+    await setUsername(input.username.trim());
+  } catch {
+    // Non-fatal, same reasoning as displayName/verification email above —
+    // uniqueness is still enforced server-side (see setUsername.ts), this
+    // only means a rare collision leaves username unset; UI falls back to
+    // displayName (see UserProfile.username doc comment), never to uid.
+  }
+
+  let teacherRequestSubmitted = false;
+  if (input.intendedRole === "teacher") {
+    try {
+      await requestTeacherRole(displayName, input.organizationName.trim());
+      teacherRequestSubmitted = true;
+    } catch {
+      // Non-fatal for the same reason as above — the student account is
+      // already usable. The register screen falls back to a generic
+      // message when this is false.
+    }
+  }
+
+  return { user, teacherRequestSubmitted };
 }
 
 export async function loginWithPassword(input: LoginInput): Promise<User> {

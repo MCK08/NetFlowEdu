@@ -93,28 +93,63 @@ describe("validateTermsAccepted", () => {
 describe("validateRegisterInput", () => {
   const validInput = {
     displayName: "Ayşe Yılmaz",
+    username: "ayse_yilmaz",
     email: "ayse@example.com",
     password: "Valid123",
     confirmPassword: "Valid123",
     acceptedTerms: true,
+    intendedRole: "student" as const,
+    organizationName: "",
   };
 
-  it("returns no errors for fully valid input", () => {
+  it("returns no errors for fully valid student input", () => {
     expect(hasErrors(validateRegisterInput(validInput))).toBe(false);
   });
 
   it("collects every failing field", () => {
     const errors = validateRegisterInput({
       displayName: "",
+      username: "",
       email: "bad",
       password: "weak",
       confirmPassword: "different",
       acceptedTerms: false,
+      intendedRole: "student",
+      organizationName: "",
     });
 
     expect(Object.keys(errors).sort()).toEqual(
-      ["acceptedTerms", "confirmPassword", "displayName", "email", "password"].sort(),
+      ["acceptedTerms", "confirmPassword", "displayName", "email", "password", "username"].sort(),
     );
+  });
+
+  it("rejects a username shorter than 3 characters", () => {
+    const errors = validateRegisterInput({ ...validInput, username: "ab" });
+    expect(errors.username).toBeDefined();
+  });
+
+  it("rejects a username with invalid characters", () => {
+    const errors = validateRegisterInput({ ...validInput, username: "ayse-yilmaz!" });
+    expect(errors.username).toBeDefined();
+  });
+
+  it("requires organizationName when intendedRole is teacher", () => {
+    const errors = validateRegisterInput({ ...validInput, intendedRole: "teacher" });
+    expect(errors.organizationName).toBe("Kurum adı gerekli.");
+  });
+
+  it("does not require organizationName for a student", () => {
+    const errors = validateRegisterInput(validInput);
+    expect(errors.organizationName).toBeUndefined();
+  });
+
+  it("accepts teacher input with an organizationName", () => {
+    const errors = validateRegisterInput({
+      ...validInput,
+      intendedRole: "teacher",
+      organizationName: "Örnek Lise",
+    });
+    expect(hasErrors(errors)).toBe(false);
   });
 });
 
