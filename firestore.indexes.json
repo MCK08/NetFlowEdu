@@ -18,6 +18,14 @@
       ]
     },
     {
+      "collectionGroup": "answers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "questionId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "leaderboards",
       "queryScope": "COLLECTION",
       "fields": [

@@ -1,6 +1,7 @@
 import {
   doc,
   DocumentData,
+  getDoc,
   onSnapshot,
   serverTimestamp,
   Timestamp,
@@ -49,6 +50,21 @@ export function subscribeToUserProfile(
     },
     onError,
   );
+}
+
+// One-shot lookup for src/features/profiles' cache — unlike
+// subscribeToUserProfile this doesn't keep a live listener open, since the
+// cache only needs a point-in-time username/displayName/photoURL for
+// rendering someone else's name on a card, not live updates. Returns null
+// for "doesn't exist"; a permission-denied FirebaseError propagates to the
+// caller, which the profile cache treats the same way (falls back to
+// "Kullanıcı", never surfaces the uid) — see
+// firestore.rules `users/{userId}`: only the owner can read their own doc,
+// so today this only ever actually succeeds for the caller's own uid.
+export async function getUserProfileOnce(uid: string): Promise<UserProfile | null> {
+  const snapshot = await getDoc(doc(db, "users", uid));
+  if (!snapshot.exists()) return null;
+  return toUserProfile(uid, snapshot.data());
 }
 
 // Only the fields the client is ever allowed to write — matches

@@ -1,19 +1,18 @@
 import { uploadImage } from "./uploadImage";
+import { AnswerMethod, buildAnswerImagePath, getAnswerContentType } from "./answerImagePath";
 
-export type AnswerMethod = "photo" | "drawing";
+export type { AnswerMethod } from "./answerImagePath";
+export { buildAnswerImagePath, getAnswerContentType, getAnswerFileExtension } from "./answerImagePath";
 
-// Matches storage.rules `answers/{questionId}/{ownerId}/{fileName}`.
 export async function uploadAnswerImage(
   questionId: string,
   uid: string,
   localUri: string,
   method: AnswerMethod,
 ): Promise<string> {
-  const extension = method === "drawing" ? "png" : "jpg";
-  const contentType = method === "drawing" ? "image/png" : "image/jpeg";
   return uploadImage(
-    `answers/${questionId}/${uid}/${Date.now()}.${extension}`,
+    buildAnswerImagePath(questionId, uid, method),
     localUri,
-    contentType,
+    getAnswerContentType(method),
   );
 }

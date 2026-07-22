@@ -5,7 +5,21 @@ import {
   initializeTestEnvironment,
   RulesTestEnvironment,
 } from "@firebase/rules-unit-testing";
-import { deleteDoc, doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
+import {
+  addDoc,
+  collection,
+  deleteDoc,
+  doc,
+  getDoc,
+  getDocs,
+  onSnapshot,
+  orderBy,
+  query,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
+  where,
+} from "firebase/firestore";
 
 const PROJECT_ID = "netflow-edu-rules-test";
 
@@ -207,4 +221,284 @@ describe("firestore.rules — users/{uid}", () => {
       setDoc(doc(student.firestore(), "users", "student-1"), activeUserDoc()),
     );
   });
+});
+
+describe("firestore.rules — questions/{questionId} answerCount protection", () => {
+  let testEnv: RulesTestEnvironment;
+
+  beforeAll(async () => {
+    testEnv = await initializeTestEnvironment({
+      projectId: PROJECT_ID,
+      firestore: {
+        rules: fs.readFileSync("firestore.rules", "utf8"),
+        host: "127.0.0.1",
+        port: 8080,
+      },
+    });
+  });
+
+  afterAll(async () => {
+    await testEnv.cleanup();
+  });
+
+  afterEach(async () => {
+    await testEnv.clearFirestore();
+  });
+
+  it("denies a student incrementing their own question's answerCount directly", async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "questions", "q1"), {
+        ownerId: "student-1",
+        organizationId: null,
+        visibility: "private",
+        imageUrl: "https://example.com/q.jpg",
+        classId: null,
+        likes: 0,
+        comments: 0,
+        answerCount: 0,
+        createdAt: 1,
+      });
+    });
+
+    const student = testEnv.authenticatedContext("student-1", {
+      role: "student",
+      organizationId: null,
+    });
+    await assertFails(
+      updateDoc(doc(student.firestore(), "questions", "q1"), { answerCount: 99 }),
+    );
+  });
+});
+
+function privateQuestionDoc(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    ownerId: "student-1",
+    organizationId: null,
+    visibility: "private",
+    imageUrl: "https://example.com/question.jpg",
+    classId: null,
+    likes: 0,
+    comments: 0,
+    answerCount: 0,
+    createdAt: 1,
+    ...overrides,
+  };
+}
+
+function answerDoc(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    questionId: "q1",
+    ownerId: "student-1",
+    imageUrl: "https://example.com/answer.jpg",
+    method: "photo",
+    createdAt: 1,
+    ...overrides,
+  };
+}
+
+describe("firestore.rules — answers/{answerId}", () => {
+  let testEnv: RulesTestEnvironment;
+
+  beforeAll(async () => {
+    testEnv = await initializeTestEnvironment({
+      projectId: PROJECT_ID,
+      firestore: {
+        rules: fs.readFileSync("firestore.rules", "utf8"),
+        host: "127.0.0.1",
+        port: 8080,
+      },
+    });
+  });
+
+  afterAll(async () => {
+    await testEnv.cleanup();
+  });
+
+  afterEach(async () => {
+    await testEnv.clearFirestore();
+  });
+
+  async function seedQuestion(questionId: string, data: Record<string, unknown>) {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "questions", questionId), data);
+    });
+  }
+
+  async function seedAnswer(answerId: string, data: Record<string, unknown>) {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "answers", answerId), data);
+    });
+  }
+
+  function studentContext(uid: string) {
+    return testEnv.authenticatedContext(uid, { role: "student", organizationId: null });
+  }
+
+  // 14. Unauthenticated answer read is denied.
+  it("denies an unauthenticated read of an answer", async () => {
+    await seedQuestion("q1", privateQuestionDoc());
+    await seedAnswer("a1", answerDoc());
+
+    const unauthed = testEnv.unauthenticatedContext();
+    await assertFails(getDoc(doc(unauthed.firestore(), "answers", "a1")));
+  });
+
+  // 11. Private-question answers are inaccessible to another user.
+  it("denies a different user from reading an answer to someone else's private question", async () => {
+    await seedQuestion("q1", privateQuestionDoc({ ownerId: "student-1" }));
+    await seedAnswer("a1", answerDoc({ questionId: "q1", ownerId: "student-1" }));
+
+    const otherStudent = studentContext("student-2");
+    await assertFails(getDoc(doc(otherStudent.firestore(), "answers", "a1")));
+  });
+
+  it("allows the question owner to read an answer on their own private question", async () => {
+    await seedQuestion("q1", privateQuestionDoc({ ownerId: "student-1" }));
+    await seedAnswer("a1", answerDoc({ questionId: "q1", ownerId: "student-1" }));
+
+    const owner = studentContext("student-1");
+    await assertSucceeds(getDoc(doc(owner.firestore(), "answers", "a1")));
+  });
+
+  it("denies reading an answer whose question no longer exists", async () => {
+    await seedAnswer("a1", answerDoc({ questionId: "missing-question", ownerId: "student-1" }));
+
+    const student = studentContext("student-1");
+    await assertFails(getDoc(doc(student.firestore(), "answers", "a1")));
+  });
+
+  // 12. Answer owner cannot be spoofed.
+  it("denies creating an answer with a spoofed ownerId", async () => {
+    await seedQuestion("q1", privateQuestionDoc({ ownerId: "student-1" }));
+    const student = studentContext("student-1");
+
+    await assertFails(
+      addDoc(collection(student.firestore(), "answers"), {
+        ...answerDoc({ questionId: "q1", ownerId: "student-2" }),
+        createdAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  // 13. Unsupported answer method is denied.
+  it("denies creating an answer with an unsupported method", async () => {
+    await seedQuestion("q1", privateQuestionDoc({ ownerId: "student-1" }));
+    const student = studentContext("student-1");
+
+    await assertFails(
+      addDoc(collection(student.firestore(), "answers"), {
+        ...answerDoc({ questionId: "q1", ownerId: "student-1", method: "text" }),
+        createdAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it("denies creating an answer for a question the caller cannot read", async () => {
+    await seedQuestion("q1", privateQuestionDoc({ ownerId: "student-1" }));
+    const otherStudent = studentContext("student-2");
+
+    await assertFails(
+      addDoc(collection(otherStudent.firestore(), "answers"), {
+        ...answerDoc({ questionId: "q1", ownerId: "student-2" }),
+        createdAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it("denies creating an answer with a client-supplied (non-server) createdAt", async () => {
+    await seedQuestion("q1", privateQuestionDoc({ ownerId: "student-1" }));
+    const student = studentContext("student-1");
+
+    await assertFails(
+      addDoc(
+        collection(student.firestore(), "answers"),
+        answerDoc({ questionId: "q1", ownerId: "student-1", createdAt: 12345 }),
+      ),
+    );
+  });
+
+  it("allows the question owner to create a valid photo answer", async () => {
+    await seedQuestion("q1", privateQuestionDoc({ ownerId: "student-1" }));
+    const student = studentContext("student-1");
+
+    await assertSucceeds(
+      addDoc(collection(student.firestore(), "answers"), {
+        ...answerDoc({ questionId: "q1", ownerId: "student-1", method: "drawing" }),
+        createdAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it("denies updating an answer after creation (no edit feature exists)", async () => {
+    await seedQuestion("q1", privateQuestionDoc({ ownerId: "student-1" }));
+    await seedAnswer("a1", answerDoc({ questionId: "q1", ownerId: "student-1" }));
+    const student = studentContext("student-1");
+
+    await assertFails(
+      updateDoc(doc(student.firestore(), "answers", "a1"), { method: "drawing" }),
+    );
+  });
+
+  it("denies a student from deleting another user's answer", async () => {
+    await seedQuestion("q1", privateQuestionDoc({ ownerId: "student-1" }));
+    await seedAnswer("a1", answerDoc({ questionId: "q1", ownerId: "student-1" }));
+    const otherStudent = studentContext("student-2");
+
+    await assertFails(deleteDoc(doc(otherStudent.firestore(), "answers", "a1")));
+  });
+
+  // 4/5. Answer query filters by questionId and orders by createdAt.
+  it("filters by questionId and orders answers by createdAt ascending", async () => {
+    await seedQuestion("q1", privateQuestionDoc({ ownerId: "student-1" }));
+    await seedQuestion("q2", privateQuestionDoc({ ownerId: "student-1" }));
+    await seedAnswer("a1", answerDoc({ questionId: "q1", ownerId: "student-1", createdAt: 3 }));
+    await seedAnswer("a2", answerDoc({ questionId: "q1", ownerId: "student-1", createdAt: 1 }));
+    await seedAnswer("a3", answerDoc({ questionId: "q1", ownerId: "student-1", createdAt: 2 }));
+    // Belongs to a different question — must never appear in q1's results.
+    await seedAnswer("a4", answerDoc({ questionId: "q2", ownerId: "student-1", createdAt: 1 }));
+
+    const student = studentContext("student-1");
+    const q = query(
+      collection(student.firestore(), "answers"),
+      where("questionId", "==", "q1"),
+      orderBy("createdAt", "asc"),
+    );
+    const snapshot = await getDocs(q);
+
+    expect(snapshot.docs.map((d) => d.id)).toEqual(["a2", "a3", "a1"]);
+  });
+
+  // 6. New answer appears through listener update.
+  it("delivers a newly created answer to an active onSnapshot listener", async () => {
+    await seedQuestion("q1", privateQuestionDoc({ ownerId: "student-1" }));
+    const student = studentContext("student-1");
+    const q = query(
+      collection(student.firestore(), "answers"),
+      where("questionId", "==", "q1"),
+      orderBy("createdAt", "asc"),
+    );
+
+    const receivedCounts: number[] = [];
+    const gotUpdateWithOneAnswer = new Promise<void>((resolve) => {
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        receivedCounts.push(snapshot.size);
+        if (snapshot.size >= 1) {
+          unsubscribe();
+          resolve();
+        }
+      });
+    });
+
+    // Written through the same client instance the listener is attached
+    // to (rather than a separate withSecurityRulesDisabled admin context)
+    // — this is also the realistic case: a real client creates an answer
+    // and expects its own active listener to pick it up.
+    await addDoc(collection(student.firestore(), "answers"), {
+      ...answerDoc({ questionId: "q1", ownerId: "student-1" }),
+      createdAt: serverTimestamp(),
+    });
+    await gotUpdateWithOneAnswer;
+
+    expect(receivedCounts.at(-1)).toBe(1);
+  }, 15000);
 });

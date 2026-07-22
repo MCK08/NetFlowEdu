@@ -4,6 +4,7 @@ export default function StudentLayout() {
   return (
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="(tabs)" />
+      <Stack.Screen name="question/[questionId]" />
       {/*
         Full-screen card, not a modal sheet: the drawing canvas needs sole
         ownership of vertical pan gestures, and iOS's modal presentation

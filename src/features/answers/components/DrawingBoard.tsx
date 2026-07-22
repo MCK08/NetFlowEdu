@@ -4,6 +4,7 @@ import Svg, { Path } from "react-native-svg";
 
 import { PrimaryButton } from "@components/ui/PrimaryButton";
 
+import { toPngDataUri } from "../services/pngDataUri";
 import { clearAll, commitStroke, DrawnPath, PendingStroke, undoLast } from "../services/strokeReducer";
 
 const BRUSH_SIZES = [3, 6, 12] as const;
@@ -128,8 +129,31 @@ export function DrawingBoard({ onSave, isSaving, onDirtyChange }: DrawingBoardPr
   }
 
   function save() {
+    // TEMPORARY diagnostic instrumentation — remove once the production-
+    // device drawing-save bug is confirmed fixed. Never logs full base64
+    // image data, only lengths/prefixes.
+    if (__DEV__) console.log("[DRAWING] save pressed");
+
     svgRef.current?.toDataURL((base64: string) => {
-      onSave(`data:image/png;base64,${base64}`);
+      if (__DEV__) {
+        console.log("[DRAWING] SVG export callback fired");
+        console.log("[DRAWING] raw export length", base64?.length ?? 0);
+      }
+
+      const dataUri = toPngDataUri(base64);
+
+      if (__DEV__) {
+        console.log("[DRAWING] normalized data URI length", dataUri?.length ?? 0);
+        console.log(
+          "[DRAWING] normalized prefix first 30 characters",
+          dataUri ? dataUri.slice(0, 30) : "(null)",
+        );
+      }
+
+      // Kaydet is already disabled while paths.length === 0, but this
+      // guards against the SVG renderer itself handing back an empty
+      // export — never hand an unusable value to the upload step.
+      if (dataUri) onSave(dataUri);
     });
   }
 

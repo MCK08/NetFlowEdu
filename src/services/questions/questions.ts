@@ -1,7 +1,9 @@
 import {
   addDoc,
   collection,
+  doc,
   DocumentData,
+  getDoc,
   getDocs,
   orderBy,
   query,
@@ -33,6 +35,7 @@ export async function createQuestion(input: CreateQuestionInput): Promise<string
     classId: null,
     likes: 0,
     comments: 0,
+    answerCount: 0,
     createdAt: serverTimestamp(),
   });
   return ref.id;
@@ -48,6 +51,7 @@ function toQuestion(id: string, data: DocumentData): Question {
     classId: data.classId ?? null,
     likes: data.likes ?? 0,
     comments: data.comments ?? 0,
+    answerCount: data.answerCount ?? 0,
     createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toMillis() : 0,
   };
 }
@@ -65,4 +69,16 @@ export async function getOwnQuestions(uid: string): Promise<Question[]> {
   );
   const snapshot = await getDocs(q);
   return snapshot.docs.map((doc) => toQuestion(doc.id, doc.data()));
+}
+
+// Returns null only when firestore.rules allowed the read but the document
+// doesn't exist (e.g. deleted after being linked to). A rule DENIAL throws
+// a FirebaseError with code "permission-denied" instead — Firestore's rule
+// engine can't safely distinguish "never existed" from "exists but you
+// can't see it" without leaking existence, so both surface that way. The
+// caller (questionDetailService) maps both outcomes to Turkish messages.
+export async function getQuestionById(questionId: string): Promise<Question | null> {
+  const snapshot = await getDoc(doc(db, "questions", questionId));
+  if (!snapshot.exists()) return null;
+  return toQuestion(snapshot.id, snapshot.data());
 }

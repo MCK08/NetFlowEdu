@@ -53,6 +53,7 @@ export async function captureAndUploadQuestion(
     classId: null,
     likes: 0,
     comments: 0,
+    answerCount: 0,
     createdAt: Date.now(),
   };
 }

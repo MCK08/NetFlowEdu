@@ -22,10 +22,20 @@ function formatDate(createdAt: number): string {
 }
 
 // Like/comment are presentation-only in this phase — no handlers wired up
-// yet. Answer navigates to the dedicated AnswerScreen for this question.
+// yet. Tapping anywhere on the card opens Question Detail, which is now
+// the single entry point into the answer flow (its own "Cevapla" button
+// pushes AnswerScreen) — nested Pressables (like/comment) still win over
+// the card's own tap, RN only fires the innermost responder for a touch.
 export function FeedCard({ question, height, ownerHandle, ownerPhotoURL }: FeedCardProps) {
   return (
-    <View style={[styles.card, { height }]}>
+    <Pressable
+      style={[styles.card, { height }]}
+      onPress={() =>
+        router.push({ pathname: "/(student)/question/[questionId]", params: { questionId: question.id } })
+      }
+      accessibilityRole="button"
+      accessibilityLabel="Soruyu aç"
+    >
       <Image source={{ uri: question.imageUrl }} style={styles.image} contentFit="cover" />
 
       <View style={styles.infoOverlay}>
@@ -42,15 +52,6 @@ export function FeedCard({ question, height, ownerHandle, ownerPhotoURL }: FeedC
           </Text>
         </View>
         <Text style={styles.date}>{formatDate(question.createdAt)}</Text>
-
-        <Pressable
-          style={styles.answerButton}
-          onPress={() => router.push(`/(student)/answer/${question.id}`)}
-          accessibilityRole="button"
-          accessibilityLabel="Cevap ver"
-        >
-          <Text style={styles.answerButtonText}>Cevap Ver</Text>
-        </Pressable>
       </View>
 
       <View style={styles.actionRail}>
@@ -58,12 +59,12 @@ export function FeedCard({ question, height, ownerHandle, ownerPhotoURL }: FeedC
           <Ionicons name="heart-outline" size={30} color="white" />
           <Text style={styles.actionCount}>{question.likes}</Text>
         </Pressable>
-        <Pressable style={styles.actionButton} accessibilityRole="button" accessibilityLabel="Yorum yap">
+        <View style={styles.actionButton}>
           <Ionicons name="chatbubble-outline" size={28} color="white" />
-          <Text style={styles.actionCount}>{question.comments}</Text>
-        </Pressable>
+          <Text style={styles.actionCount}>{question.answerCount}</Text>
+        </View>
       </View>
-    </View>
+    </Pressable>
   );
 }
 
@@ -110,19 +111,6 @@ const styles = StyleSheet.create({
     color: "white",
     fontSize: 13,
     opacity: 0.85,
-  },
-  answerButton: {
-    alignSelf: "flex-start",
-    backgroundColor: "white",
-    borderRadius: 10,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    marginTop: 4,
-  },
-  answerButtonText: {
-    color: "black",
-    fontSize: 14,
-    fontWeight: "700",
   },
   actionRail: {
     position: "absolute",

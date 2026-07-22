@@ -20,6 +20,20 @@ service firebase.storage {
       return request.auth.token.organizationId;
     }
 
+    // Cross-references the Firestore question doc so answer-image access
+    // follows the exact same rule as the question itself (private ->
+    // owner only; otherwise -> same org). Mirrors canReadQuestionData in
+    // firestore.rules — keep both in sync if question visibility rules
+    // ever change.
+    function questionData(questionId) {
+      return firestore.get(/databases/(default)/documents/questions/$(questionId)).data;
+    }
+
+    function canReadQuestionData(data) {
+      return data.visibility == 'private' && uid() == data.ownerId ||
+             data.visibility != 'private' && organizationId() == data.organizationId;
+    }
+
     function isImageOrPdf() {
       return request.resource.contentType.matches('image/.*')
           || request.resource.contentType == 'application/pdf';
@@ -44,18 +58,31 @@ service firebase.storage {
     // Phase 3 MVP feed uploads. Unlike /orgs/{org}/questions/..., this path
     // has no org segment — the /orgs/ scheme can never admit a student with
     // organizationId == null (a path segment can never equal a real null
-    // claim), and most students have no organization yet. Scoped to the
-    // owner only, same content-type/size checks as the org-scoped variant.
+    // claim), and most students have no organization yet.
+    //
+    // Known limitation: this path has no questionId segment, only ownerId,
+    // so — unlike answers/{questionId}/{ownerId}/{fileName} below — Storage
+    // has no way to look up *which* question a file belongs to and check
+    // that specific question's visibility. The safest rule reachable
+    // without changing the upload path (out of scope this phase) is
+    // owner-only read, which happens to be exactly correct today: every
+    // question is created private, and a private question is only ever
+    // readable by its own owner anyway (see firestore.rules). If a future
+    // phase makes questions visible to more than their owner (class/friends
+    // visibility), this path will need a questionId segment added so this
+    // rule can do the same firestore.get() cross-check the answers path
+    // does.
     match /questions/{ownerId}/{fileName} {
-      allow read: if isSignedIn();
+      allow read: if isSignedIn() && uid() == ownerId;
       allow write: if isSignedIn() && uid() == ownerId
                    && isImageOrPdf() && isUnder10MB();
     }
 
-    // Phase 4 MVP answer uploads (photo or drawing PNG), same reasoning as
-    // questions/{ownerId}/{fileName} above — no org segment, owner-only.
+    // Phase 4/5: path includes questionId, so — unlike questions/{ownerId}/
+    // {fileName} above — reads can be gated on the actual related
+    // question's visibility, same as Firestore's answers/{answerId} rule.
     match /answers/{questionId}/{ownerId}/{fileName} {
-      allow read: if isSignedIn();
+      allow read: if isSignedIn() && canReadQuestionData(questionData(questionId));
       allow write: if isSignedIn() && uid() == ownerId
                    && isImageOrPdf() && isUnder10MB();
     }
