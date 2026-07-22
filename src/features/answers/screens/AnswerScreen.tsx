@@ -1,6 +1,7 @@
-import { router } from "expo-router";
-import { useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { router, useNavigation } from "expo-router";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useAuth } from "@features/authentication";
@@ -15,11 +16,32 @@ interface AnswerScreenProps {
   questionId: string;
 }
 
+const UNSAVED_DRAWING_MESSAGE = "Kaydedilmemiş çiziminiz var. Çıkmak istediğinize emin misiniz?";
+
 export function AnswerScreen({ questionId }: AnswerScreenProps) {
   const { firebaseUser } = useAuth();
+  const navigation = useNavigation();
   const [method, setMethod] = useState<AnswerMethodChoice>("photo");
+  const [hasUnsavedDrawing, setHasUnsavedDrawing] = useState(false);
+
+  // Read inside the beforeRemove listener below, which is registered once
+  // and would otherwise close over stale `method`/`hasUnsavedDrawing`
+  // values. Also doubles as the "user just switched away from drawing"
+  // reset: once method !== "drawing" the effective value is always false,
+  // regardless of whatever DrawingBoard last reported before unmounting.
+  const shouldConfirmExitRef = useRef(false);
+  useEffect(() => {
+    shouldConfirmExitRef.current = method === "drawing" && hasUnsavedDrawing;
+  }, [method, hasUnsavedDrawing]);
+
+  // Set right before a successful save navigates back, so that same
+  // navigation doesn't trip the "unsaved changes" prompt it's no longer
+  // relevant for (DrawingBoard's local `paths` state is still non-empty at
+  // that instant — the upload succeeded, not the local state clearing).
+  const suppressExitConfirmRef = useRef(false);
 
   function handleSubmitted() {
+    suppressExitConfirmRef.current = true;
     router.back();
   }
 
@@ -29,9 +51,39 @@ export function AnswerScreen({ questionId }: AnswerScreenProps) {
     onSubmitted: handleSubmitted,
   });
 
+  useEffect(() => {
+    const unsubscribe = navigation.addListener("beforeRemove", (event) => {
+      if (suppressExitConfirmRef.current || !shouldConfirmExitRef.current) return;
+
+      event.preventDefault();
+      Alert.alert("Kaydedilmemiş çizim", UNSAVED_DRAWING_MESSAGE, [
+        { text: "İptal", style: "cancel" },
+        {
+          text: "Çık",
+          style: "destructive",
+          onPress: () => navigation.dispatch(event.data.action),
+        },
+      ]);
+    });
+    return unsubscribe;
+  }, [navigation]);
+
+  const handleBackPress = useCallback(() => {
+    router.back();
+  }, []);
+
   return (
     <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
       <View style={styles.header}>
+        <Pressable
+          onPress={handleBackPress}
+          style={styles.backButton}
+          accessibilityRole="button"
+          accessibilityLabel="Geri"
+          hitSlop={8}
+        >
+          <Ionicons name="chevron-back" size={26} color="black" />
+        </Pressable>
         <Text style={styles.title}>Cevap Ver</Text>
       </View>
 
@@ -67,7 +119,7 @@ export function AnswerScreen({ questionId }: AnswerScreenProps) {
             onSubmitted={handleSubmitted}
           />
         ) : (
-          <DrawingBoard onSave={save} isSaving={isUploading} />
+          <DrawingBoard onSave={save} isSaving={isUploading} onDirtyChange={setHasUnsavedDrawing} />
         )}
       </View>
     </SafeAreaView>
@@ -80,8 +132,17 @@ const styles = StyleSheet.create({
     backgroundColor: "white",
   },
   header: {
-    paddingHorizontal: 24,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 16,
     paddingTop: 8,
+  },
+  backButton: {
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center",
   },
   title: {
     fontSize: 22,
