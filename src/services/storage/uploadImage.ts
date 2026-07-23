@@ -1,9 +1,38 @@
 import { getDownloadURL, ref, uploadBytes, uploadString } from "firebase/storage";
 
-import { storage } from "@services/firebase/config";
+import { app, auth, storage } from "@services/firebase/config";
 
 function isDataUri(uri: string): boolean {
   return uri.startsWith("data:");
+}
+
+// TEMPORARY diagnostic instrumentation — proves (or disproves) whether
+// Auth and Storage share one Firebase App instance and whether an ID token
+// is actually attached at upload time. Read-only: never touches upload
+// logic, rules, or business logic. Never logs the token itself — only
+// whether one was obtained and its length.
+async function logAuthStorageIdentity(): Promise<void> {
+  if (!__DEV__) return;
+  console.log("[ANSWER_UPLOAD] app.name", app.name);
+  console.log("[ANSWER_UPLOAD] app.options.projectId", app.options.projectId);
+  console.log("[ANSWER_UPLOAD] app.options.storageBucket", app.options.storageBucket);
+  console.log("[ANSWER_UPLOAD] storage.app.name", storage.app.name);
+  console.log("[ANSWER_UPLOAD] storage.app.options.projectId", storage.app.options.projectId);
+  console.log(
+    "[ANSWER_UPLOAD] storage.app.options.storageBucket",
+    storage.app.options.storageBucket,
+  );
+  console.log("[ANSWER_UPLOAD] storage.app === app", storage.app === app);
+  console.log("[ANSWER_UPLOAD] auth.app === app", auth.app === app);
+  console.log("[ANSWER_UPLOAD] auth.currentUser?.uid", auth.currentUser?.uid ?? null);
+  try {
+    const token = await auth.currentUser?.getIdToken();
+    console.log("[ANSWER_UPLOAD] getIdToken() succeeded", Boolean(token));
+    console.log("[ANSWER_UPLOAD] getIdToken() length", token?.length ?? 0);
+  } catch (error) {
+    const err = error as { code?: unknown; message?: unknown };
+    console.log("[ANSWER_UPLOAD] getIdToken() FAILED", err?.code, err?.message);
+  }
 }
 
 // Shared by questionImages/answerImages/avatar uploads. Two upload paths:
@@ -23,6 +52,8 @@ export async function uploadImage(
   localUri: string,
   contentType: string,
 ): Promise<string> {
+  await logAuthStorageIdentity();
+
   const storageRef = ref(storage, path);
 
   if (isDataUri(localUri)) {
