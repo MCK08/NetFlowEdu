@@ -1,9 +1,9 @@
-import { UserProfile } from "@/types/user";
+import { PublicProfile } from "@/types/publicProfile";
 
-const mockGetUserProfileOnce = jest.fn();
+const mockGetPublicProfileOnce = jest.fn();
 
-jest.mock("@services/firebase/firestore", () => ({
-  getUserProfileOnce: (uid: string) => mockGetUserProfileOnce(uid),
+jest.mock("@services/firebase/publicProfile", () => ({
+  getPublicProfileOnce: (uid: string) => mockGetPublicProfileOnce(uid),
 }));
 
 // Imported after the mock so the module under test picks up the mocked
@@ -15,10 +15,9 @@ import {
   getDisplayHandle,
 } from "@features/profiles/services/profileCacheService";
 
-function makeProfile(overrides: Partial<UserProfile> = {}): UserProfile {
+function makeProfile(overrides: Partial<PublicProfile> = {}): PublicProfile {
   return {
     uid: "user-1",
-    email: "user1@example.com",
     displayName: "User One",
     username: "userone",
     role: "student",
@@ -26,10 +25,7 @@ function makeProfile(overrides: Partial<UserProfile> = {}): UserProfile {
     photoURL: null,
     totalPoints: 0,
     weeklyPoints: 0,
-    accountStatus: "active",
-    emailVerified: true,
     createdAt: 0,
-    updatedAt: 0,
     ...overrides,
   };
 }
@@ -63,48 +59,48 @@ describe("getDisplayHandle", () => {
 describe("getCachedProfile", () => {
   beforeEach(() => {
     clearProfileCache();
-    mockGetUserProfileOnce.mockReset();
+    mockGetPublicProfileOnce.mockReset();
   });
 
   it("fetches a profile once and returns it", async () => {
-    mockGetUserProfileOnce.mockResolvedValue(makeProfile());
+    mockGetPublicProfileOnce.mockResolvedValue(makeProfile());
     const profile = await getCachedProfile("user-1");
     expect(profile?.uid).toBe("user-1");
-    expect(mockGetUserProfileOnce).toHaveBeenCalledTimes(1);
+    expect(mockGetPublicProfileOnce).toHaveBeenCalledTimes(1);
   });
 
   it("prevents duplicate reads for the same uid", async () => {
-    mockGetUserProfileOnce.mockResolvedValue(makeProfile());
+    mockGetPublicProfileOnce.mockResolvedValue(makeProfile());
 
     await getCachedProfile("user-1");
     await getCachedProfile("user-1");
     await getCachedProfile("user-1");
 
-    expect(mockGetUserProfileOnce).toHaveBeenCalledTimes(1);
+    expect(mockGetPublicProfileOnce).toHaveBeenCalledTimes(1);
   });
 
   it("dedupes concurrent in-flight requests for the same uid", async () => {
-    mockGetUserProfileOnce.mockResolvedValue(makeProfile());
+    mockGetPublicProfileOnce.mockResolvedValue(makeProfile());
 
     const [a, b] = await Promise.all([getCachedProfile("user-1"), getCachedProfile("user-1")]);
 
     expect(a).toEqual(b);
-    expect(mockGetUserProfileOnce).toHaveBeenCalledTimes(1);
+    expect(mockGetPublicProfileOnce).toHaveBeenCalledTimes(1);
   });
 
   it("still reads separately for different uids", async () => {
-    mockGetUserProfileOnce.mockImplementation((uid: string) =>
+    mockGetPublicProfileOnce.mockImplementation((uid: string) =>
       Promise.resolve(makeProfile({ uid })),
     );
 
     await getCachedProfile("user-1");
     await getCachedProfile("user-2");
 
-    expect(mockGetUserProfileOnce).toHaveBeenCalledTimes(2);
+    expect(mockGetPublicProfileOnce).toHaveBeenCalledTimes(2);
   });
 
   it("handles a denied/missing profile safely, caching null instead of throwing", async () => {
-    mockGetUserProfileOnce.mockRejectedValue(
+    mockGetPublicProfileOnce.mockRejectedValue(
       Object.assign(new Error("Missing or insufficient permissions"), {
         code: "permission-denied",
       }),
@@ -116,6 +112,6 @@ describe("getCachedProfile", () => {
 
     // A second call must not retry the failed fetch.
     await getCachedProfile("someone-elses-uid");
-    expect(mockGetUserProfileOnce).toHaveBeenCalledTimes(1);
+    expect(mockGetPublicProfileOnce).toHaveBeenCalledTimes(1);
   });
 });

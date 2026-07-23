@@ -1,4 +1,4 @@
-export type QuestionVisibility = "private" | "class" | "friends";
+export type QuestionVisibility = "private" | "public" | "class";
 
 export interface Question {
   id: string;
@@ -8,8 +8,8 @@ export interface Question {
   imageUrl: string;
   classId: string | null;
   createdAt: number;
-  likes: number;
-  comments: number;
+  likeCount: number;
+  commentCount: number;
   // Maintained server-side only by the onAnswerCreate Cloud Function —
   // firestore.rules blocks any client write to this field. See
   // functions/src/answers/onAnswerCreate.ts.

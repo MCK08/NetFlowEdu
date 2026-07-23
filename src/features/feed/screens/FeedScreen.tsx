@@ -1,12 +1,20 @@
-import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, View, useWindowDimensions } from "react-native";
+import {
+  ActivityIndicator,
+  FlatList,
+  RefreshControl,
+  StyleSheet,
+  View,
+  useWindowDimensions,
+} from "react-native";
 
 import { useAuth } from "@features/authentication";
 import { CameraButton } from "@features/upload/components/CameraButton";
+import { VisibilityPicker } from "@features/upload/components/VisibilityPicker";
 import { useUpload } from "@features/upload/hooks/useUpload";
 
 import { EmptyState } from "../components/EmptyState";
 import { FeedCard } from "../components/FeedCard";
-import { useFeed } from "../hooks/useFeed";
+import { useSocialFeed } from "../hooks/useSocialFeed";
 import { Question } from "../types";
 
 export function FeedScreen() {
@@ -14,11 +22,14 @@ export function FeedScreen() {
   const { firebaseUser, profile } = useAuth();
   const uid = firebaseUser?.uid;
   const organizationId = profile?.organizationId ?? null;
-  const ownerHandle = profile?.username ?? profile?.displayName ?? "kullanici";
-  const ownerPhotoURL = profile?.photoURL ?? null;
 
-  const { questions, isLoading, isRefreshing, refresh, prepend } = useFeed(uid);
-  const { capture, isUploading } = useUpload({ uid, organizationId, onUploaded: prepend });
+  const { questions, isLoading, isLoadingMore, isRefreshing, hasMore, loadMore, refresh, prepend } =
+    useSocialFeed(uid);
+  const { isUploading, isPickerOpen, openPicker, closePicker, captureWithVisibility } = useUpload({
+    uid,
+    organizationId,
+    onUploaded: prepend,
+  });
 
   if (isLoading) {
     return (
@@ -33,14 +44,7 @@ export function FeedScreen() {
       <FlatList
         data={questions}
         keyExtractor={(item: Question) => item.id}
-        renderItem={({ item }) => (
-          <FeedCard
-            question={item}
-            height={height}
-            ownerHandle={ownerHandle}
-            ownerPhotoURL={ownerPhotoURL}
-          />
-        )}
+        renderItem={({ item }) => <FeedCard question={item} height={height} />}
         pagingEnabled
         snapToInterval={height}
         snapToAlignment="start"
@@ -48,9 +52,26 @@ export function FeedScreen() {
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={<EmptyState height={height} />}
         refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={refresh} />}
+        onEndReachedThreshold={0.5}
+        onEndReached={() => {
+          if (hasMore) loadMore();
+        }}
+        ListFooterComponent={
+          isLoadingMore ? (
+            <View style={styles.loadingMore}>
+              <ActivityIndicator color="black" />
+            </View>
+          ) : null
+        }
       />
 
-      <CameraButton onPress={capture} isLoading={isUploading} />
+      <CameraButton onPress={openPicker} isLoading={isUploading} />
+
+      <VisibilityPicker
+        visible={isPickerOpen}
+        onSelect={captureWithVisibility}
+        onCancel={closePicker}
+      />
     </View>
   );
 }
@@ -65,5 +86,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "white",
+  },
+  loadingMore: {
+    paddingVertical: 24,
   },
 });

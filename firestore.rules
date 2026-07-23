@@ -1,10 +1,7 @@
 rules_version = '2';
 
-// Production-shaped ruleset. Collections beyond users/{uid} (questions,
-// classes, friendships, solutions, leaderboards) are still Phase 1/3+
-// skeletons — their shape may change as those phases implement real reads/
-// writes. Every rule below is deny-by-default; loosen only with a named
-// reason in the commit message.
+// Production-shaped ruleset. Every rule below is deny-by-default; loosen
+// only with a named reason in the commit message.
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -58,12 +55,23 @@ service cloud.firestore {
       return isSignedIn() && uid() == resourceOwnerId;
     }
 
-    // Shared by questions/{questionId}'s own read rule AND answers/{answerId}
-    // (an answer is readable only if its parent question is), so the two
-    // can never drift out of sync.
+    // Shared by questions/{questionId}'s own read rule AND anything that
+    // gates access on "can the caller read this question" (answers,
+    // questionComments), so they can never drift out of sync.
+    //
+    // 'class' has no real membership system yet (rosters aren't
+    // implemented) — rather than fake membership, it's treated as
+    // owner-only, same as private, until a real roster check exists. The
+    // client-facing "Sınıf" visibility option is disabled to match (see
+    // src/features/upload — "Sınıf özelliği yakında").
     function canReadQuestionData(data) {
       return data.visibility == 'private' && isOwner(data.ownerId) ||
-             data.visibility != 'private' && sameOrg(data.organizationId);
+             data.visibility == 'public' && isSignedIn() ||
+             data.visibility == 'class' && isOwner(data.ownerId);
+    }
+
+    function questionData(qid) {
+      return get(/databases/$(database)/documents/questions/$(qid)).data;
     }
 
     // ---- users/{userId} -----------------------------------------------
@@ -74,10 +82,10 @@ service cloud.firestore {
     // may read their whole profile (nothing here needs to be hidden from
     // them) but may only ever write displayName / photoURL / updatedAt.
     //
-    // There is deliberately no separate "private" profile document: every
-    // field a client is barred from writing is still something the owner
-    // is allowed to read about themselves, so field-level write validation
-    // is sufficient — see ARCHITECTURE.md and SECURITY.md.
+    // This document contains email/accountStatus, so it stays strictly
+    // owner-only — never readable cross-user. Anything another user is
+    // allowed to see about this account lives in publicProfiles/{uid}
+    // instead (safe-field copy, see below).
 
     match /users/{userId} {
       allow read: if isOwner(userId);
@@ -103,24 +111,48 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // ---- publicProfiles/{uid} -------------------------------------------
+    //
+    // Safe-field mirror of users/{uid} — never email/accountStatus/
+    // moderation data (see functions/src/profiles/syncPublicProfile.ts,
+    // the only writer, triggered on every users/{uid} write). Readable by
+    // any authenticated user; this is what makes cross-user username/
+    // avatar/points display possible without exposing the owner-only
+    // users/{uid} document.
+
+    match /publicProfiles/{uid} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
     // ---- questions/{questionId} ----------------------------------------
-    // visibility: "private" | "class" | "friends"
-    // Storage of the actual image/PDF lives in Cloud Storage; this doc is
-    // metadata only. Full membership-based visibility (class rosters,
-    // friend graphs) lands in later phases — this is the shape, not final.
+    // visibility: "private" | "public" | "class"
 
     match /questions/{questionId} {
       allow read: if isSignedIn() && canReadQuestionData(resource.data);
+
+      // 'class' is schema-reserved but not creatable yet — see
+      // canReadQuestionData's note. Only private/public are accepted.
       allow create: if isSignedIn()
                     && request.resource.data.ownerId == uid()
-                    && request.resource.data.organizationId == organizationId();
-      // answerCount is maintained only by the onAnswerCreate Cloud Function
-      // (Admin SDK, bypasses these rules) — the owner may still update
-      // other fields (e.g. a future edit feature) but can never touch the
-      // count directly, matching "don't trust the client to increment it."
+                    && request.resource.data.organizationId == organizationId()
+                    && request.resource.data.visibility in ['private', 'public']
+                    && request.resource.data.likeCount == 0
+                    && request.resource.data.commentCount == 0
+                    && request.resource.data.answerCount == 0;
+
+      // answerCount/likeCount/commentCount are maintained only by trusted
+      // Cloud Functions (Admin SDK bypasses these rules) — don't trust the
+      // client to increment any of them. visibility is immutable once
+      // created (no "constrained transition" matrix needed if it just
+      // never changes).
       allow update: if isOwner(resource.data.ownerId)
                     && request.resource.data.ownerId == resource.data.ownerId
-                    && request.resource.data.answerCount == resource.data.answerCount;
+                    && request.resource.data.visibility == resource.data.visibility
+                    && request.resource.data.answerCount == resource.data.answerCount
+                    && request.resource.data.likeCount == resource.data.likeCount
+                    && request.resource.data.commentCount == resource.data.commentCount;
+
       allow delete: if isOwner(resource.data.ownerId) || isTeacher() || isOrgAdmin();
     }
 
@@ -160,18 +192,7 @@ service cloud.firestore {
     }
 
     // ---- answers/{answerId} --------------------------------------------
-    // An answer is readable by anyone who can read its parent question —
-    // not just the answer's own owner. Under today's actual access model
-    // (every question is created private, and a private question is only
-    // ever readable by its owner) this collapses to "only the question's
-    // owner," which is also the only person who can ever reach the answer
-    // flow for that question in the first place. The indirection through
-    // canReadQuestionData is what makes this correct once class/friends
-    // visibility (Phase 6+) lets more than one person read a question.
-
-    function questionData(qid) {
-      return get(/databases/$(database)/documents/questions/$(qid)).data;
-    }
+    // An answer is readable by anyone who can read its parent question.
 
     match /answers/{answerId} {
       allow read: if isSignedIn()
@@ -184,17 +205,66 @@ service cloud.firestore {
                     && request.resource.data.createdAt == request.time
                     && request.resource.data.imageUrl is string
                     && request.resource.data.imageUrl.size() > 0
+                    && request.resource.data.likeCount == 0
                     && exists(/databases/$(database)/documents/questions/$(request.resource.data.questionId))
                     && canReadQuestionData(questionData(request.resource.data.questionId));
 
-      // No edit-answer feature exists, so disallowing all updates is both
-      // the simplest and the safest way to guarantee immutable fields
-      // (ownerId, questionId, method, createdAt) can never be tampered
-      // with after creation.
-      allow update: if false;
+      // likeCount is maintained only by toggleAnswerLike (Admin SDK). No
+      // other edit-answer feature exists, so nothing else may ever change.
+      allow update: if isOwner(resource.data.ownerId)
+                    && request.resource.data.ownerId == resource.data.ownerId
+                    && request.resource.data.questionId == resource.data.questionId
+                    && request.resource.data.method == resource.data.method
+                    && request.resource.data.imageUrl == resource.data.imageUrl
+                    && request.resource.data.createdAt == resource.data.createdAt;
 
       // Only the answer's own owner may delete it — never anyone else's,
       // including the question's owner.
+      allow delete: if isOwner(resource.data.ownerId);
+    }
+
+    // ---- questionLikes/{likeId} -----------------------------------------
+    // Doc id: `${questionId}_${userId}` (deterministic — see
+    // functions/src/social/toggleQuestionLike.ts). Written exclusively by
+    // that callable (Admin SDK, transactional with questions/{id}.likeCount)
+    // so a client can never fake a like or desync the count. Clients may
+    // read only their own like record, to render "did I like this".
+
+    match /questionLikes/{likeId} {
+      allow read: if isOwner(resource.data.userId);
+      allow write: if false;
+    }
+
+    // ---- answerLikes/{likeId} -------------------------------------------
+    // Same pattern as questionLikes — see toggleAnswerLike.ts.
+
+    match /answerLikes/{likeId} {
+      allow read: if isOwner(resource.data.userId);
+      allow write: if false;
+    }
+
+    // ---- questionComments/{commentId} -----------------------------------
+    // Readable by anyone who can read the related question (same
+    // canReadQuestionData indirection as answers). No edit feature this
+    // phase — update is fully denied. Only the comment's own owner may
+    // delete it (admin moderation deferred to a later phase, per spec).
+
+    match /questionComments/{commentId} {
+      allow read: if isSignedIn()
+                  && exists(/databases/$(database)/documents/questions/$(resource.data.questionId))
+                  && canReadQuestionData(questionData(resource.data.questionId));
+
+      allow create: if isSignedIn()
+                    && request.resource.data.ownerId == uid()
+                    && request.resource.data.status == 'active'
+                    && request.resource.data.createdAt == request.time
+                    && request.resource.data.text is string
+                    && request.resource.data.text.size() > 0
+                    && request.resource.data.text.size() <= 500
+                    && exists(/databases/$(database)/documents/questions/$(request.resource.data.questionId))
+                    && canReadQuestionData(questionData(request.resource.data.questionId));
+
+      allow update: if false;
       allow delete: if isOwner(resource.data.ownerId);
     }
 

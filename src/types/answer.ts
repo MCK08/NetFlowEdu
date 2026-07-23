@@ -7,4 +7,7 @@ export interface Answer {
   imageUrl: string;
   method: AnswerMethod;
   createdAt: number;
+  // Maintained server-side only by toggleAnswerLike — see
+  // functions/src/social/toggleAnswerLike.ts.
+  likeCount: number;
 }

@@ -5,6 +5,7 @@ import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useAuth } from "@features/authentication";
+import { QuestionVisibility } from "@/types/question";
 
 import { DrawingBoard } from "../components/DrawingBoard";
 import { PhotoAnswerForm } from "../components/PhotoAnswerForm";
@@ -14,11 +15,12 @@ type AnswerMethodChoice = "photo" | "drawing";
 
 interface AnswerScreenProps {
   questionId: string;
+  questionVisibility: QuestionVisibility;
 }
 
 const UNSAVED_DRAWING_MESSAGE = "Kaydedilmemiş çiziminiz var. Çıkmak istediğinize emin misiniz?";
 
-export function AnswerScreen({ questionId }: AnswerScreenProps) {
+export function AnswerScreen({ questionId, questionVisibility }: AnswerScreenProps) {
   const { firebaseUser } = useAuth();
   const navigation = useNavigation();
   const [method, setMethod] = useState<AnswerMethodChoice>("photo");
@@ -48,6 +50,7 @@ export function AnswerScreen({ questionId }: AnswerScreenProps) {
   const { save, isUploading } = useDrawingAnswer({
     questionId,
     uid: firebaseUser?.uid,
+    questionVisibility,
     onSubmitted: handleSubmitted,
   });
 
@@ -116,6 +119,7 @@ export function AnswerScreen({ questionId }: AnswerScreenProps) {
           <PhotoAnswerForm
             questionId={questionId}
             uid={firebaseUser?.uid}
+            questionVisibility={questionVisibility}
             onSubmitted={handleSubmitted}
           />
         ) : (

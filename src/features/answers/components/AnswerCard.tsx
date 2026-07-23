@@ -1,8 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
+import { router } from "expo-router";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
+import { useAuth } from "@features/authentication";
 import { useProfileHandle } from "@features/profiles";
+import { LikeButton, useLike } from "@features/social/likes";
 
 import { AnswerMethodBadge } from "./AnswerMethodBadge";
 import { Answer } from "../types";
@@ -22,7 +25,14 @@ function formatDate(createdAt: number): string {
 }
 
 export function AnswerCard({ answer, onPressImage }: AnswerCardProps) {
+  const { firebaseUser } = useAuth();
   const { handle, photoURL } = useProfileHandle(answer.ownerId);
+  const { liked, likeCount, toggle } = useLike({
+    targetType: "answer",
+    targetId: answer.id,
+    initialLikeCount: answer.likeCount,
+    uid: firebaseUser?.uid,
+  });
 
   return (
     <View style={styles.card}>
@@ -35,7 +45,16 @@ export function AnswerCard({ answer, onPressImage }: AnswerCardProps) {
       </Pressable>
 
       <View style={styles.footer}>
-        <View style={styles.authorRow}>
+        <Pressable
+          style={styles.authorRow}
+          onPress={() => {
+            if (answer.ownerId) {
+              router.push({ pathname: "/(student)/user/[userId]", params: { userId: answer.ownerId } });
+            }
+          }}
+          accessibilityRole="button"
+          accessibilityLabel="Profili görüntüle"
+        >
           {photoURL ? (
             <Image source={{ uri: photoURL }} style={styles.avatar} contentFit="cover" />
           ) : (
@@ -47,8 +66,17 @@ export function AnswerCard({ answer, onPressImage }: AnswerCardProps) {
             @{handle}
           </Text>
           <Text style={styles.date}>{formatDate(answer.createdAt)}</Text>
+        </Pressable>
+        <View style={styles.bottomRow}>
+          <AnswerMethodBadge method={answer.method} />
+          <LikeButton
+            liked={liked}
+            likeCount={likeCount}
+            onPress={toggle}
+            size={20}
+            color="#5B5F66"
+          />
         </View>
-        <AnswerMethodBadge method={answer.method} />
       </View>
     </View>
   );
@@ -71,10 +99,16 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
     gap: 8,
   },
+  bottomRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
   authorRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
+    minHeight: 44,
   },
   avatar: {
     width: 24,

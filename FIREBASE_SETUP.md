@@ -75,6 +75,17 @@ firebase deploy --only functions
 
 `functions/` has its own `npm install` — run it inside `functions/` before building or deploying (the root `npm install` does not install the Cloud Functions dependency tree).
 
+## 6b. Phase 6 Resources (not yet deployed)
+
+The following are implemented in this repo but must be deployed explicitly (`firebase deploy --only firestore:rules,storage:rules,firestore:indexes,functions`) before they take effect in any real Firebase project — nothing in Phase 6 has been auto-deployed:
+
+- Updated `firestore.rules` (visibility model, `publicProfiles`, `questionLikes`, `answerLikes`, `questionComments`, immutable aggregate count fields).
+- Updated `storage.rules` (path-encoded visibility for `questions/` and `answers/`, 5MB avatar cap).
+- New composite indexes in `firestore.indexes.json`: `questions` (`visibility ASC, createdAt DESC`), `questions` (`ownerId ASC, visibility ASC, createdAt DESC`), `questionComments` (`questionId ASC, createdAt ASC`).
+- New Cloud Functions: `syncPublicProfile` (trigger), `toggleQuestionLike`, `toggleAnswerLike` (callables), `onQuestionCommentCreate`, `onQuestionCommentDelete` (triggers).
+
+Firestore index builds can take time on a populated database — check the Firebase Console's Indexes tab after deploying before relying on the new queries in production.
+
 ## 7. Native Config Files (later phases)
 
 When building native binaries, download `google-services.json` (Android) and `GoogleService-Info.plist` (iOS) from the Firebase Console and place them at the project root. Both are gitignored — never commit them.

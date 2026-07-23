@@ -93,3 +93,43 @@ Configured in [tsconfig.json](tsconfig.json): `@/*`, `@features/*`, `@components
 ### Routing strategy
 
 `src/features/authentication/services/routing.ts` exports a pure function, `resolveRouteForState`, that maps `{ isAuthenticated, isEmailVerified, role }` to a target route. It's the single place this decision is made — both the centralized `RouteGuard` component (`src/features/authentication/components/RouteGuard.tsx`, mounted once in `app/_layout.tsx`) and any future deep-link handling should call it rather than re-deriving the mapping. `RouteGuard` renders an opaque splash overlay (not a route swap) while auth/profile state is still loading, so the underlying `<Stack/>` stays mounted (`useSegments`/`useRouter` need a live navigator) without ever letting protected content flash through before a redirect fires. An authenticated, verified user with no recognized role fails closed to `/unknown-role` rather than falling through to a default dashboard.
+
+## Social Feed (Phase 6)
+
+### Visibility model
+
+`Question.visibility` is `"private" | "public" | "class"`. `"class"` is schema-reserved but not creatable yet — there's no real class-membership/roster system, and rather than fake one, `firestore.rules`' `canReadQuestionData` treats `class` as owner-only (same as `private`) until a real roster check exists. The upload UI's `VisibilityPicker` shows the option disabled with "Sınıf özelliği yakında" rather than hiding it, so the eventual activation is a rules + UI-enable change, not a schema migration.
+
+### Feed query strategy
+
+Firestore can't safely serve one broad query mixing private/public/class documents — a query can only succeed if *every* possible matching document satisfies the rules for the caller, which a single `questions` query spanning visibilities can't guarantee. `src/features/feed/services/socialFeedService.ts` instead runs two **separate, rules-safe queries as sequential phases** rather than a merged/interleaved feed:
+
+1. **own** — `where ownerId == uid`, paginated (10/page), until exhausted.
+2. **public** — `where visibility == "public"`, paginated (10/page), until exhausted.
+
+This is simpler and more robust than merging two cursors by date while still matching the required priority order ("own questions first, then public"). A `seenIds` set (threaded through by `useSocialFeed`) deduplicates the case where a user's own question is also public, which would otherwise appear once per phase. `useSocialFeed` tracks pagination state in refs (not React state) so `loadMore()` never needs to be recreated per page, and a `generation` counter discards stale in-flight results from a previous refresh/uid-change.
+
+### Public profile split
+
+`users/{uid}` contains `email`/`accountStatus` and stays strictly owner-only readable (unchanged from Phase 2). A new `publicProfiles/{uid}` document — `uid`, `username`, `displayName`, `photoURL`, `role`, `organizationId`, `totalPoints`, `weeklyPoints`, `createdAt` only, **never** email/accountStatus/moderation data — is readable by any authenticated user. It's synced by `functions/src/profiles/syncPublicProfile.ts`, an `onDocumentWritten("users/{uid}")` trigger: idempotent by construction (re-running with the same source data always produces the same public copy), and deletes the public profile outright if `accountStatus` becomes `"suspended"` rather than maintaining a second "is this visible" branch through every reader.
+
+`src/features/profiles/services/profileCacheService.ts` (the uid → display-handle cache used by feed cards, answer cards, comments) now reads from `publicProfiles` instead of `users` — this is what makes cross-user username/avatar display actually work; previously every non-self lookup silently failed closed (owner-only rule) and fell back to "Kullanıcı".
+
+### Like model
+
+`questionLikes/{questionId_userId}` and `answerLikes/{answerId_userId}` — the deterministic doc id (`buildLikeId`, duplicated intentionally in `functions/src/social/likeId.ts` and `src/features/social/likes/services/likeId.ts` since one runs server-side and one client-side) is what makes toggling idempotent: there can only ever be one like document per (target, user) pair. Clients can read only their own like doc (`allow read: if isOwner(resource.data.userId)`) and can never write one directly — `toggleQuestionLike`/`toggleAnswerLike` (`functions/src/social/`) are the only path, each running the like-doc create/delete and the target's `likeCount` update inside one Firestore transaction, floored at 0. The client (`useLike`) applies an optimistic update immediately and rolls back on failure, with an `isToggling` guard against rapid double-taps firing overlapping requests.
+
+### Comment model
+
+`questionComments/{commentId}` — flat, no nested replies, questions only (not answers) this phase. `firestore.rules` validates `ownerId == uid()`, `status == "active"`, `createdAt == request.time`, and `1 <= text.size() <= 500` server-side; `validateCommentText`/`normalizeCommentText` (`src/features/social/comments/services/commentValidation.ts`, pure/testable) do the same check client-side first for a fast, specific Turkish error instead of a round-trip `permission-denied`. Read access mirrors answers: readable by anyone who can read the parent question. No edit feature — `allow update: if false`; only the comment's own owner may delete (admin moderation deferred).
+
+### Aggregate count model
+
+`answerCount`, `likeCount` (on both questions and answers), and `commentCount` are all denormalized fields, never client-writable (`firestore.rules` field-diffs every one of them on `questions`/`answers` updates). Three different write paths, chosen per how the count changes:
+
+- **answerCount / commentCount** — Firestore-triggered increment/decrement (`onAnswerCreate`, `onQuestionCommentCreate`/`onQuestionCommentDelete`). At-least-once delivery means a retried trigger could in principle double-count; accepted for the same reason as Phase 5's `answerCount` — an informational display count, not security- or scoring-sensitive. Decrements go through a transaction floored at 0 rather than a bare `FieldValue.increment(-1)`, so a delivery race can't drive the count negative.
+- **likeCount** — transactional increment/decrement inside the same transaction as the like-doc create/delete (`toggleQuestionLike`/`toggleAnswerLike`), also floored at 0. This one has to be transactional (not trigger-based) because it needs to read-then-write the like doc's existence to decide increment vs. decrement in the same atomic step.
+
+### Storage path encodes visibility
+
+Storage Rules' `firestore.get()` is empirically unsafe to depend on — a prior phase reproduced it throwing `EvaluationException: Null value error` on real requests, breaking `getDownloadURL()` even for a file's own owner (see the comment block in `storage.rules`). Now that public questions need Storage access broader than "owner only," visibility is encoded directly in the **path** instead of looked up: `questions/{public|private}/{ownerId}/{fileName}` and `answers/{public|private}/{questionId}/{ownerId}/{fileName}`. Every access check in `storage.rules` is a path-segment comparison, never a cross-service call, so it can't fail this way. `class` visibility collapses to the `private` access level (same reasoning as the Firestore rule — no real membership check yet). The client already has the question's visibility in hand at both question-upload time (`VisibilityPicker`) and answer-upload time (`QuestionDetailScreen` passes it through the `answer/[questionId]` route's `visibility` query param, defaulting to the strictest option, `private`, if the param is ever missing/malformed) — so building the correct path segment client-side needs no extra read.

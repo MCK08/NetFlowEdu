@@ -2,19 +2,27 @@ import { Image } from "expo-image";
 import { StyleSheet, Text, View } from "react-native";
 
 import { PrimaryButton } from "@components/ui/PrimaryButton";
+import { QuestionVisibility } from "@/types/question";
 
 import { usePhotoAnswer } from "../hooks/usePhotoAnswer";
 
 interface PhotoAnswerFormProps {
   questionId: string;
   uid: string | undefined;
+  questionVisibility: QuestionVisibility;
   onSubmitted: () => void;
 }
 
-export function PhotoAnswerForm({ questionId, uid, onSubmitted }: PhotoAnswerFormProps) {
+export function PhotoAnswerForm({
+  questionId,
+  uid,
+  questionVisibility,
+  onSubmitted,
+}: PhotoAnswerFormProps) {
   const { previewUri, isUploading, pickFromCamera, pickFromGallery, submit } = usePhotoAnswer({
     questionId,
     uid,
+    questionVisibility,
     onSubmitted,
   });
 

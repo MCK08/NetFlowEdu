@@ -253,8 +253,8 @@ describe("firestore.rules — questions/{questionId} answerCount protection", ()
         visibility: "private",
         imageUrl: "https://example.com/q.jpg",
         classId: null,
-        likes: 0,
-        comments: 0,
+        likeCount: 0,
+        commentCount: 0,
         answerCount: 0,
         createdAt: 1,
       });
@@ -277,12 +277,20 @@ function privateQuestionDoc(overrides: Partial<Record<string, unknown>> = {}) {
     visibility: "private",
     imageUrl: "https://example.com/question.jpg",
     classId: null,
-    likes: 0,
-    comments: 0,
+    likeCount: 0,
+    commentCount: 0,
     answerCount: 0,
     createdAt: 1,
     ...overrides,
   };
+}
+
+function publicQuestionDoc(overrides: Partial<Record<string, unknown>> = {}) {
+  return privateQuestionDoc({ visibility: "public", ...overrides });
+}
+
+function classQuestionDoc(overrides: Partial<Record<string, unknown>> = {}) {
+  return privateQuestionDoc({ visibility: "class", ...overrides });
 }
 
 function answerDoc(overrides: Partial<Record<string, unknown>> = {}) {
@@ -291,6 +299,7 @@ function answerDoc(overrides: Partial<Record<string, unknown>> = {}) {
     ownerId: "student-1",
     imageUrl: "https://example.com/answer.jpg",
     method: "photo",
+    likeCount: 0,
     createdAt: 1,
     ...overrides,
   };
@@ -501,4 +510,411 @@ describe("firestore.rules — answers/{answerId}", () => {
 
     expect(receivedCounts.at(-1)).toBe(1);
   }, 15000);
+});
+
+function publicProfileDoc(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    uid: "student-1",
+    username: "student1",
+    displayName: "Student One",
+    photoURL: null,
+    role: "student",
+    organizationId: null,
+    totalPoints: 0,
+    weeklyPoints: 0,
+    createdAt: 1,
+    ...overrides,
+  };
+}
+
+function commentDoc(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    questionId: "q1",
+    ownerId: "student-1",
+    text: "Merhaba",
+    status: "active",
+    createdAt: 1,
+    ...overrides,
+  };
+}
+
+describe("firestore.rules — questions/{questionId} visibility model", () => {
+  let testEnv: RulesTestEnvironment;
+
+  beforeAll(async () => {
+    testEnv = await initializeTestEnvironment({
+      projectId: PROJECT_ID,
+      firestore: { rules: fs.readFileSync("firestore.rules", "utf8"), host: "127.0.0.1", port: 8080 },
+    });
+  });
+
+  afterAll(async () => testEnv.cleanup());
+  afterEach(async () => testEnv.clearFirestore());
+
+  async function seedQuestion(id: string, data: Record<string, unknown>) {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "questions", id), data);
+    });
+  }
+
+  function studentContext(uid: string) {
+    return testEnv.authenticatedContext(uid, { role: "student", organizationId: null });
+  }
+
+  // Step 22 #1: private question hidden from unrelated user.
+  it("hides a private question from an unrelated user", async () => {
+    await seedQuestion("q1", privateQuestionDoc({ ownerId: "student-1" }));
+    await assertFails(getDoc(doc(studentContext("student-2").firestore(), "questions", "q1")));
+  });
+
+  // Step 22 #2: public question readable by authenticated user.
+  it("lets any authenticated user read a public question", async () => {
+    await seedQuestion("q1", publicQuestionDoc({ ownerId: "student-1" }));
+    await assertSucceeds(getDoc(doc(studentContext("student-2").firestore(), "questions", "q1")));
+  });
+
+  // Step 22 #3: unauthenticated user cannot read a public question.
+  it("denies an unauthenticated user reading a public question", async () => {
+    await seedQuestion("q1", publicQuestionDoc({ ownerId: "student-1" }));
+    await assertFails(getDoc(doc(testEnv.unauthenticatedContext().firestore(), "questions", "q1")));
+  });
+
+  // Step 22 #4: class question denied to nonmember (no roster system yet —
+  // owner-only, same as private, until one exists — see firestore.rules).
+  it("denies a class question to a non-owner (no membership system yet)", async () => {
+    await seedQuestion("q1", classQuestionDoc({ ownerId: "student-1" }));
+    await assertFails(getDoc(doc(studentContext("student-2").firestore(), "questions", "q1")));
+  });
+
+  it("still lets the owner read their own class-visibility question", async () => {
+    await seedQuestion("q1", classQuestionDoc({ ownerId: "student-1" }));
+    await assertSucceeds(getDoc(doc(studentContext("student-1").firestore(), "questions", "q1")));
+  });
+
+  it("allows creating a public question", async () => {
+    const student = studentContext("student-1");
+    await assertSucceeds(
+      addDoc(collection(student.firestore(), "questions"), {
+        ...publicQuestionDoc({ ownerId: "student-1" }),
+        createdAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  // 'class' is schema-reserved but not creatable yet.
+  it("denies creating a question with visibility 'class'", async () => {
+    const student = studentContext("student-1");
+    await assertFails(
+      addDoc(collection(student.firestore(), "questions"), {
+        ...classQuestionDoc({ ownerId: "student-1" }),
+        createdAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it("denies creating a question with a nonzero likeCount/commentCount", async () => {
+    const student = studentContext("student-1");
+    await assertFails(
+      addDoc(collection(student.firestore(), "questions"), {
+        ...publicQuestionDoc({ ownerId: "student-1", likeCount: 5 }),
+        createdAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it("denies a student changing their own question's visibility after creation", async () => {
+    await seedQuestion("q1", privateQuestionDoc({ ownerId: "student-1" }));
+    const student = studentContext("student-1");
+    await assertFails(
+      updateDoc(doc(student.firestore(), "questions", "q1"), { visibility: "public" }),
+    );
+  });
+
+  it("denies a student incrementing their own question's likeCount directly", async () => {
+    await seedQuestion("q1", publicQuestionDoc({ ownerId: "student-1" }));
+    const student = studentContext("student-1");
+    await assertFails(updateDoc(doc(student.firestore(), "questions", "q1"), { likeCount: 5 }));
+  });
+
+  it("denies a student incrementing their own question's commentCount directly", async () => {
+    await seedQuestion("q1", publicQuestionDoc({ ownerId: "student-1" }));
+    const student = studentContext("student-1");
+    await assertFails(updateDoc(doc(student.firestore(), "questions", "q1"), { commentCount: 5 }));
+  });
+});
+
+describe("firestore.rules — publicProfiles/{uid}", () => {
+  let testEnv: RulesTestEnvironment;
+
+  beforeAll(async () => {
+    testEnv = await initializeTestEnvironment({
+      projectId: PROJECT_ID,
+      firestore: { rules: fs.readFileSync("firestore.rules", "utf8"), host: "127.0.0.1", port: 8080 },
+    });
+  });
+
+  afterAll(async () => testEnv.cleanup());
+  afterEach(async () => testEnv.clearFirestore());
+
+  async function seedPublicProfile(uid: string, data: Record<string, unknown>) {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "publicProfiles", uid), data);
+    });
+  }
+
+  it("lets any authenticated user read another user's public profile", async () => {
+    await seedPublicProfile("student-1", publicProfileDoc());
+    const other = testEnv.authenticatedContext("student-2", { role: "student", organizationId: null });
+    await assertSucceeds(getDoc(doc(other.firestore(), "publicProfiles", "student-1")));
+  });
+
+  it("denies an unauthenticated user reading a public profile", async () => {
+    await seedPublicProfile("student-1", publicProfileDoc());
+    await assertFails(getDoc(doc(testEnv.unauthenticatedContext().firestore(), "publicProfiles", "student-1")));
+  });
+
+  // Step 22 #8/#9: publicProfiles never has email/accountStatus in the
+  // first place (see functions/src/profiles/syncPublicProfile.ts, the
+  // only writer) — proven here structurally: the owner-only users/{uid}
+  // doc is where those fields live, and it stays unreadable cross-user
+  // even though publicProfiles/{uid} for the same uid is readable.
+  it("keeps users/{uid} (which has email/accountStatus) unreadable cross-user even though publicProfiles/{uid} is readable", async () => {
+    await seedPublicProfile("student-1", publicProfileDoc());
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "users", "student-1"), activeUserDoc());
+    });
+    const other = testEnv.authenticatedContext("student-2", { role: "student", organizationId: null });
+
+    await assertSucceeds(getDoc(doc(other.firestore(), "publicProfiles", "student-1")));
+    await assertFails(getDoc(doc(other.firestore(), "users", "student-1")));
+  });
+
+  it("denies any client write to publicProfiles — server-only via syncPublicProfile", async () => {
+    const student = testEnv.authenticatedContext("student-1", { role: "student", organizationId: null });
+    await assertFails(setDoc(doc(student.firestore(), "publicProfiles", "student-1"), publicProfileDoc()));
+  });
+});
+
+describe("firestore.rules — questionLikes/{likeId} and answerLikes/{likeId}", () => {
+  let testEnv: RulesTestEnvironment;
+
+  beforeAll(async () => {
+    testEnv = await initializeTestEnvironment({
+      projectId: PROJECT_ID,
+      firestore: { rules: fs.readFileSync("firestore.rules", "utf8"), host: "127.0.0.1", port: 8080 },
+    });
+  });
+
+  afterAll(async () => testEnv.cleanup());
+  afterEach(async () => testEnv.clearFirestore());
+
+  function studentContext(uid: string) {
+    return testEnv.authenticatedContext(uid, { role: "student", organizationId: null });
+  }
+
+  async function seedLike(collectionName: string, id: string, data: Record<string, unknown>) {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), collectionName, id), data);
+    });
+  }
+
+  // Step 22 #13: a client can never write its own like doc directly — the
+  // only path is the toggleQuestionLike/toggleAnswerLike callables (Admin
+  // SDK), which is exactly what makes the owner unspoofable.
+  it("denies a client creating a questionLikes doc directly, even as themselves", async () => {
+    const student = studentContext("student-1");
+    await assertFails(
+      setDoc(doc(student.firestore(), "questionLikes", "q1_student-1"), {
+        userId: "student-1",
+        targetId: "q1",
+        createdAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it("denies a client creating an answerLikes doc directly", async () => {
+    const student = studentContext("student-1");
+    await assertFails(
+      setDoc(doc(student.firestore(), "answerLikes", "a1_student-1"), {
+        userId: "student-1",
+        targetId: "a1",
+        createdAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it("lets a user read their own questionLikes record", async () => {
+    await seedLike("questionLikes", "q1_student-1", {
+      userId: "student-1",
+      targetId: "q1",
+      createdAt: 1,
+    });
+    const student = studentContext("student-1");
+    await assertSucceeds(getDoc(doc(student.firestore(), "questionLikes", "q1_student-1")));
+  });
+
+  it("denies a user reading another user's questionLikes record", async () => {
+    await seedLike("questionLikes", "q1_student-1", {
+      userId: "student-1",
+      targetId: "q1",
+      createdAt: 1,
+    });
+    const otherStudent = studentContext("student-2");
+    await assertFails(getDoc(doc(otherStudent.firestore(), "questionLikes", "q1_student-1")));
+  });
+
+  it("denies a client deleting a questionLikes doc directly", async () => {
+    await seedLike("questionLikes", "q1_student-1", {
+      userId: "student-1",
+      targetId: "q1",
+      createdAt: 1,
+    });
+    const student = studentContext("student-1");
+    await assertFails(deleteDoc(doc(student.firestore(), "questionLikes", "q1_student-1")));
+  });
+});
+
+describe("firestore.rules — questionComments/{commentId}", () => {
+  let testEnv: RulesTestEnvironment;
+
+  beforeAll(async () => {
+    testEnv = await initializeTestEnvironment({
+      projectId: PROJECT_ID,
+      firestore: { rules: fs.readFileSync("firestore.rules", "utf8"), host: "127.0.0.1", port: 8080 },
+    });
+  });
+
+  afterAll(async () => testEnv.cleanup());
+  afterEach(async () => testEnv.clearFirestore());
+
+  async function seedQuestion(id: string, data: Record<string, unknown>) {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "questions", id), data);
+    });
+  }
+
+  async function seedComment(id: string, data: Record<string, unknown>) {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "questionComments", id), data);
+    });
+  }
+
+  function studentContext(uid: string) {
+    return testEnv.authenticatedContext(uid, { role: "student", organizationId: null });
+  }
+
+  it("denies an unauthenticated user reading comments", async () => {
+    await seedQuestion("q1", publicQuestionDoc({ ownerId: "student-1" }));
+    await seedComment("c1", commentDoc());
+    await assertFails(getDoc(doc(testEnv.unauthenticatedContext().firestore(), "questionComments", "c1")));
+  });
+
+  // Step 22 #21: private question comments hidden from unrelated user.
+  it("hides comments on a private question from an unrelated user", async () => {
+    await seedQuestion("q1", privateQuestionDoc({ ownerId: "student-1" }));
+    await seedComment("c1", commentDoc({ questionId: "q1", ownerId: "student-1" }));
+    await assertFails(getDoc(doc(studentContext("student-2").firestore(), "questionComments", "c1")));
+  });
+
+  it("lets any authenticated user read comments on a public question", async () => {
+    await seedQuestion("q1", publicQuestionDoc({ ownerId: "student-1" }));
+    await seedComment("c1", commentDoc({ questionId: "q1", ownerId: "student-1" }));
+    await assertSucceeds(
+      getDoc(doc(studentContext("student-2").firestore(), "questionComments", "c1")),
+    );
+  });
+
+  it("allows an authenticated user to create their own comment on a public question", async () => {
+    await seedQuestion("q1", publicQuestionDoc({ ownerId: "student-1" }));
+    const commenter = studentContext("student-2");
+    await assertSucceeds(
+      addDoc(collection(commenter.firestore(), "questionComments"), {
+        ...commentDoc({ questionId: "q1", ownerId: "student-2" }),
+        createdAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  // Step 22 #14: comment ownerId cannot be spoofed.
+  it("denies creating a comment with a spoofed ownerId", async () => {
+    await seedQuestion("q1", publicQuestionDoc({ ownerId: "student-1" }));
+    const student = studentContext("student-2");
+    await assertFails(
+      addDoc(collection(student.firestore(), "questionComments"), {
+        ...commentDoc({ questionId: "q1", ownerId: "student-1" }),
+        createdAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  // Step 22 #15: empty comment rejected.
+  it("denies creating an empty comment", async () => {
+    await seedQuestion("q1", publicQuestionDoc({ ownerId: "student-1" }));
+    const student = studentContext("student-1");
+    await assertFails(
+      addDoc(collection(student.firestore(), "questionComments"), {
+        ...commentDoc({ questionId: "q1", ownerId: "student-1", text: "" }),
+        createdAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  // Step 22 #16: over-500-character comment rejected.
+  it("denies creating a comment over 500 characters", async () => {
+    await seedQuestion("q1", publicQuestionDoc({ ownerId: "student-1" }));
+    const student = studentContext("student-1");
+    await assertFails(
+      addDoc(collection(student.firestore(), "questionComments"), {
+        ...commentDoc({ questionId: "q1", ownerId: "student-1", text: "a".repeat(501) }),
+        createdAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it("allows exactly 500 characters", async () => {
+    await seedQuestion("q1", publicQuestionDoc({ ownerId: "student-1" }));
+    const student = studentContext("student-1");
+    await assertSucceeds(
+      addDoc(collection(student.firestore(), "questionComments"), {
+        ...commentDoc({ questionId: "q1", ownerId: "student-1", text: "a".repeat(500) }),
+        createdAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it("denies creating a comment for a question the caller cannot read", async () => {
+    await seedQuestion("q1", privateQuestionDoc({ ownerId: "student-1" }));
+    const student = studentContext("student-2");
+    await assertFails(
+      addDoc(collection(student.firestore(), "questionComments"), {
+        ...commentDoc({ questionId: "q1", ownerId: "student-2" }),
+        createdAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it("denies editing a comment after creation", async () => {
+    await seedQuestion("q1", publicQuestionDoc({ ownerId: "student-1" }));
+    await seedComment("c1", commentDoc({ questionId: "q1", ownerId: "student-1" }));
+    const student = studentContext("student-1");
+    await assertFails(
+      updateDoc(doc(student.firestore(), "questionComments", "c1"), { text: "edited" }),
+    );
+  });
+
+  // Step 22 #17: user may delete own comment.
+  it("allows a user to delete their own comment", async () => {
+    await seedQuestion("q1", publicQuestionDoc({ ownerId: "student-1" }));
+    await seedComment("c1", commentDoc({ questionId: "q1", ownerId: "student-1" }));
+    const student = studentContext("student-1");
+    await assertSucceeds(deleteDoc(doc(student.firestore(), "questionComments", "c1")));
+  });
+
+  // Step 22 #18: user may not delete another user's comment.
+  it("denies a user deleting another user's comment", async () => {
+    await seedQuestion("q1", publicQuestionDoc({ ownerId: "student-1" }));
+    await seedComment("c1", commentDoc({ questionId: "q1", ownerId: "student-1" }));
+    const otherStudent = studentContext("student-2");
+    await assertFails(deleteDoc(doc(otherStudent.firestore(), "questionComments", "c1")));
+  });
 });

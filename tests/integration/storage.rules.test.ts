@@ -10,67 +10,68 @@ const PROJECT_ID = "netflowedu-storage-rules-test";
 
 // Reproduces, byte for byte, the real device failure originally reported
 // for answers/DEUlx6ODCQ5Fw17v8A17/s93LaE0VSyXgHIYG3VD8KYObu8w2/<file>.jpg —
-// auth.uid = s93LaE0VSyXgHIYG3VD8KYObu8w2 (a real production uid), path
-// shape matches storage.rules `answers/{questionId}/{ownerId}/{fileName}`
-// exactly.
+// auth.uid = s93LaE0VSyXgHIYG3VD8KYObu8w2 (a real production uid). Path now
+// includes the Phase 6 access-level segment
+// (answers/{accessLevel}/{questionId}/{ownerId}/{fileName}).
 const QUESTION_ID = "DEUlx6ODCQ5Fw17v8A17";
 const OWNER_UID = "s93LaE0VSyXgHIYG3VD8KYObu8w2";
 const FILE_NAME = "1784765856217.jpg";
-const PATH = `answers/${QUESTION_ID}/${OWNER_UID}/${FILE_NAME}`;
+const PRIVATE_ANSWER_PATH = `answers/private/${QUESTION_ID}/${OWNER_UID}/${FILE_NAME}`;
+const PUBLIC_ANSWER_PATH = `answers/public/${QUESTION_ID}/${OWNER_UID}/${FILE_NAME}`;
 
 const SMALL_JPEG_BYTES = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
 
-describe("storage.rules — answers/{questionId}/{ownerId}/{fileName}", () => {
-  let testEnv: RulesTestEnvironment;
+let testEnv: RulesTestEnvironment;
 
-  beforeAll(async () => {
-    testEnv = await initializeTestEnvironment({
-      projectId: PROJECT_ID,
-      storage: {
-        rules: fs.readFileSync("storage.rules", "utf8"),
-        host: "127.0.0.1",
-        port: 9199,
-      },
-    });
+beforeAll(async () => {
+  testEnv = await initializeTestEnvironment({
+    projectId: PROJECT_ID,
+    storage: {
+      rules: fs.readFileSync("storage.rules", "utf8"),
+      host: "127.0.0.1",
+      port: 9199,
+    },
   });
+});
 
-  afterAll(async () => {
-    await testEnv.cleanup();
-  });
+afterAll(async () => {
+  await testEnv.cleanup();
+});
 
-  afterEach(async () => {
-    await testEnv.clearStorage();
-  });
+afterEach(async () => {
+  await testEnv.clearStorage();
+});
 
-  // compat SDK's .put()/.getDownloadURL() return an UploadTask/Promise-like
-  // that isn't always a real Promise instance — .then(...) normalizes both
-  // for assertSucceeds/assertFails.
-  function put(storageRef: ReturnType<ReturnType<typeof storageFor>["ref"]>): Promise<unknown> {
-    return storageRef.put(SMALL_JPEG_BYTES, { contentType: "image/jpeg" }).then(() => undefined);
-  }
+// compat SDK's .put()/.getDownloadURL() return an UploadTask/Promise-like
+// that isn't always a real Promise instance — .then(...) normalizes both
+// for assertSucceeds/assertFails.
+function put(storageRef: ReturnType<ReturnType<typeof storageFor>["ref"]>): Promise<unknown> {
+  return storageRef.put(SMALL_JPEG_BYTES, { contentType: "image/jpeg" }).then(() => undefined);
+}
 
-  function storageFor(uid: string | null) {
-    const context = uid ? testEnv.authenticatedContext(uid) : testEnv.unauthenticatedContext();
-    return context.storage(`gs://${PROJECT_ID}.appspot.com`);
-  }
+function storageFor(uid: string | null) {
+  const context = uid ? testEnv.authenticatedContext(uid) : testEnv.unauthenticatedContext();
+  return context.storage(`gs://${PROJECT_ID}.appspot.com`);
+}
 
+describe("storage.rules — answers/private/{questionId}/{ownerId}/{fileName}", () => {
   describe("write", () => {
     it("allows the question owner to upload their own photo answer", async () => {
-      await assertSucceeds(put(storageFor(OWNER_UID).ref(PATH)));
+      await assertSucceeds(put(storageFor(OWNER_UID).ref(PRIVATE_ANSWER_PATH)));
     });
 
     it("denies the upload when unauthenticated", async () => {
-      await assertFails(put(storageFor(null).ref(PATH)));
+      await assertFails(put(storageFor(null).ref(PRIVATE_ANSWER_PATH)));
     });
 
     it("denies the upload when the caller's uid does not match the ownerId segment", async () => {
-      await assertFails(put(storageFor("someone-else-uid").ref(PATH)));
+      await assertFails(put(storageFor("someone-else-uid").ref(PRIVATE_ANSWER_PATH)));
     });
 
     it("denies the upload when contentType is not image/* or application/pdf", async () => {
       await assertFails(
         storageFor(OWNER_UID)
-          .ref(PATH)
+          .ref(PRIVATE_ANSWER_PATH)
           .put(SMALL_JPEG_BYTES, { contentType: "application/octet-stream" })
           .then(() => undefined),
       );
@@ -89,21 +90,68 @@ describe("storage.rules — answers/{questionId}/{ownerId}/{fileName}", () => {
   // suite at all, so a get() call here would fail outright if one existed.
   describe("read (getDownloadURL)", () => {
     it("allows the owner to read their own answer image right after uploading it", async () => {
-      const fileRef = storageFor(OWNER_UID).ref(PATH);
+      const fileRef = storageFor(OWNER_UID).ref(PRIVATE_ANSWER_PATH);
       await assertSucceeds(put(fileRef));
       await assertSucceeds(fileRef.getDownloadURL());
     });
 
-    it("denies a different user from reading someone else's answer image", async () => {
-      await assertSucceeds(put(storageFor(OWNER_UID).ref(PATH)));
-      const otherUsersView = storageFor("someone-else-uid").ref(PATH);
+    it("denies a different user from reading someone else's private answer image", async () => {
+      await assertSucceeds(put(storageFor(OWNER_UID).ref(PRIVATE_ANSWER_PATH)));
+      const otherUsersView = storageFor("someone-else-uid").ref(PRIVATE_ANSWER_PATH);
       await assertFails(otherUsersView.getDownloadURL());
     });
 
     it("denies an unauthenticated read", async () => {
-      await assertSucceeds(put(storageFor(OWNER_UID).ref(PATH)));
-      const unauthedView = storageFor(null).ref(PATH);
+      await assertSucceeds(put(storageFor(OWNER_UID).ref(PRIVATE_ANSWER_PATH)));
+      const unauthedView = storageFor(null).ref(PRIVATE_ANSWER_PATH);
       await assertFails(unauthedView.getDownloadURL());
     });
+  });
+});
+
+describe("storage.rules — answers/public/{questionId}/{ownerId}/{fileName}", () => {
+  it("allows any authenticated user to read a public-question answer image", async () => {
+    await assertSucceeds(put(storageFor(OWNER_UID).ref(PUBLIC_ANSWER_PATH)));
+    const otherUser = storageFor("someone-else-uid").ref(PUBLIC_ANSWER_PATH);
+    await assertSucceeds(otherUser.getDownloadURL());
+  });
+
+  it("still restricts writes to the answer's own owner", async () => {
+    await assertFails(put(storageFor("someone-else-uid").ref(PUBLIC_ANSWER_PATH)));
+  });
+
+  it("denies an unauthenticated read even for a public-question answer", async () => {
+    await assertSucceeds(put(storageFor(OWNER_UID).ref(PUBLIC_ANSWER_PATH)));
+    await assertFails(storageFor(null).ref(PUBLIC_ANSWER_PATH).getDownloadURL());
+  });
+});
+
+describe("storage.rules — questions/{accessLevel}/{ownerId}/{fileName}", () => {
+  const PRIVATE_QUESTION_PATH = `questions/private/${OWNER_UID}/q1.jpg`;
+  const PUBLIC_QUESTION_PATH = `questions/public/${OWNER_UID}/q1.jpg`;
+
+  it("allows the owner to read their own private question image", async () => {
+    const fileRef = storageFor(OWNER_UID).ref(PRIVATE_QUESTION_PATH);
+    await assertSucceeds(put(fileRef));
+    await assertSucceeds(fileRef.getDownloadURL());
+  });
+
+  it("denies a different user from reading a private question image", async () => {
+    await assertSucceeds(put(storageFor(OWNER_UID).ref(PRIVATE_QUESTION_PATH)));
+    await assertFails(storageFor("someone-else-uid").ref(PRIVATE_QUESTION_PATH).getDownloadURL());
+  });
+
+  it("allows any authenticated user to read a public question image", async () => {
+    await assertSucceeds(put(storageFor(OWNER_UID).ref(PUBLIC_QUESTION_PATH)));
+    await assertSucceeds(storageFor("someone-else-uid").ref(PUBLIC_QUESTION_PATH).getDownloadURL());
+  });
+
+  it("denies an unauthenticated read of a public question image", async () => {
+    await assertSucceeds(put(storageFor(OWNER_UID).ref(PUBLIC_QUESTION_PATH)));
+    await assertFails(storageFor(null).ref(PUBLIC_QUESTION_PATH).getDownloadURL());
+  });
+
+  it("still restricts question image writes to the owner", async () => {
+    await assertFails(put(storageFor("someone-else-uid").ref(PUBLIC_QUESTION_PATH)));
   });
 });

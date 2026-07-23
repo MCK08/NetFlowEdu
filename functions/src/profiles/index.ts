@@ -1,0 +1,1 @@
+export { syncPublicProfile } from "./syncPublicProfile";

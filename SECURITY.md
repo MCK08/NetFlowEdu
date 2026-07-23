@@ -35,7 +35,7 @@ Firestore/Storage rules check `request.auth.token.role` and `request.auth.token.
 
 ## Data Isolation
 
-Every org-scoped document carries an `orgId` field. Rules compare it against the caller's `orgId` custom claim before allowing access — this is what prevents cross-organization data leaks between tutoring centers/schools.
+Every org-scoped document carries an `organizationId` field. Rules compare it against the caller's `organizationId` custom claim before allowing access — this is what prevents cross-organization data leaks between tutoring centers/schools. (`public`-visibility questions are the one deliberate exception — "public" means visible to any authenticated user, regardless of organization, by design.)
 
 ## Threats and Mitigations
 
@@ -47,6 +47,16 @@ Every org-scoped document carries an `orgId` field. Rules compare it against the
 | Attacker enumerates registered emails via password reset | `requestPasswordReset` never surfaces whether `sendPasswordResetEmail` succeeded or failed with `auth/user-not-found` — the UI always shows one generic Turkish message. |
 | Registration partially fails after Auth account creation (e.g. network drop before `sendEmailVerification`) | Non-fatal by design: `registerStudent` swallows failures on `setDisplayName`/`sendVerificationEmail` since the account and the server-created profile are already valid; the user can resend verification from the verify-email screen. No orphaned/inconsistent Firestore state results, because the profile's creation doesn't depend on either of those steps succeeding. |
 | Suspended user keeps a live session | Checked at sign-in time (`AuthProvider.signIn()` reads the profile immediately after Auth sign-in and force-signs-out on `accountStatus === "suspended"`). Not yet a continuous real-time check while already in a session — see Known Limitations in the Phase 2 completion report. |
+
+## Social Feed (Phase 6)
+
+- **Cross-user profile exposure, fixed.** `users/{uid}` contains `email`/`accountStatus` and was already owner-only, but before Phase 6 nothing else was readable cross-user either — meaning username/avatar display for anyone but yourself silently failed and fell back to "Kullanıcı". `publicProfiles/{uid}` (readable by any authenticated user; write always denied to clients) is a safe-field-only mirror — `uid`, `username`, `displayName`, `photoURL`, `role`, `organizationId`, `totalPoints`, `weeklyPoints`, `createdAt` — synced by `functions/src/profiles/syncPublicProfile.ts`. It never contains email, `accountStatus`, or any moderation field, and is deleted outright if the source account is suspended.
+- **Likes cannot be forged or double-counted client-side.** `questionLikes`/`answerLikes` deny all direct client writes (`allow write: if false`) — the only path is `toggleQuestionLike`/`toggleAnswerLike` (Admin SDK), which verify the caller can read the target, then create/delete the deterministic `{targetId}_{userId}` like doc and update the target's `likeCount` inside one Firestore transaction. A client can read only its own like record.
+- **Comments cannot spoof an owner or bypass question visibility.** `questionComments` create requires `ownerId == request.auth.uid`, `1–500` character `text`, server `createdAt`, and — via the same `canReadQuestionData` indirection used by `answers/{answerId}` — the caller must be able to read the comment's parent question. Only the comment's own owner may delete it; no edit path exists.
+- **Aggregate counts (`answerCount`, `likeCount`, `commentCount`) are never client-writable.** `firestore.rules` field-diffs every one of them on `questions`/`answers` updates; the only writers are Cloud Functions (transactional for `likeCount`, trigger-based increment/decrement floored at 0 for the others — see ARCHITECTURE.md's "Aggregate count model").
+- **`class` visibility fails closed, not open.** There's no real class-roster system yet. Rather than fake membership, both `firestore.rules`' `canReadQuestionData` and the Storage path's access-level segment treat `class` as owner-only — identical to `private` — until a real membership check exists. The client-side `VisibilityPicker` shows the option but disabled ("Sınıf özelliği yakında"), so it's not reachable through the UI either.
+- **Storage no longer risks the `firestore.get()` failure mode for question/answer images.** A prior phase found `firestore.get()` inside Storage Rules throws `EvaluationException: Null value error` on real requests, breaking `getDownloadURL()` even for a file's own owner. Visibility is now encoded in the Storage path itself (`questions/{public|private}/{ownerId}/{fileName}`, `answers/{public|private}/{questionId}/{ownerId}/{fileName}`), so every access check is a path-segment comparison — it cannot fail this way, by construction.
+- **Avatar upload cap raised to 5 MB** (from 2 MB), per this phase's spec; still content-type-restricted to `image/*` and owner-only write.
 
 ## Reporting a Concern
 

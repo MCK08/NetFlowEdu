@@ -2,7 +2,7 @@ import * as ImagePicker from "expo-image-picker";
 
 import { createQuestion } from "@services/questions/questions";
 import { uploadQuestionImage } from "@services/storage/questionImages";
-import { Question } from "@/types/question";
+import { Question, QuestionVisibility } from "@/types/question";
 
 export class CameraPermissionDeniedError extends Error {
   constructor() {
@@ -13,6 +13,7 @@ export class CameraPermissionDeniedError extends Error {
 interface CaptureAndUploadInput {
   uid: string;
   organizationId: string | null;
+  visibility: QuestionVisibility;
 }
 
 // Returns null when the user cancels the camera without taking a photo —
@@ -37,22 +38,23 @@ export async function captureAndUploadQuestion(
   const localUri = result.assets[0]?.uri;
   if (!localUri) return null;
 
-  const imageUrl = await uploadQuestionImage(input.uid, localUri);
+  const imageUrl = await uploadQuestionImage(input.uid, localUri, input.visibility);
   const id = await createQuestion({
     ownerId: input.uid,
     organizationId: input.organizationId,
     imageUrl,
+    visibility: input.visibility,
   });
 
   return {
     id,
     ownerId: input.uid,
     organizationId: input.organizationId,
-    visibility: "private",
+    visibility: input.visibility,
     imageUrl,
     classId: null,
-    likes: 0,
-    comments: 0,
+    likeCount: 0,
+    commentCount: 0,
     answerCount: 0,
     createdAt: Date.now(),
   };

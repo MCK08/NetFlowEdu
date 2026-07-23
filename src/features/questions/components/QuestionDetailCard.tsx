@@ -1,14 +1,17 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
+import { router } from "expo-router";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
+import { useAuth } from "@features/authentication";
 import { useProfileHandle } from "@features/profiles";
+import { LikeButton, useLike } from "@features/social/likes";
 import { Question } from "@/types/question";
 
 const VISIBILITY_LABELS: Record<Question["visibility"], string> = {
-  private: "Özel",
+  private: "Sadece Ben",
+  public: "Herkese Açık",
   class: "Sınıf",
-  friends: "Arkadaşlar",
 };
 
 function formatDate(createdAt: number): string {
@@ -27,7 +30,19 @@ interface QuestionDetailCardProps {
 }
 
 export function QuestionDetailCard({ question, answerCount, onPressImage }: QuestionDetailCardProps) {
+  const { firebaseUser } = useAuth();
   const { handle, photoURL } = useProfileHandle(question.ownerId);
+  const { liked, likeCount, toggle } = useLike({
+    targetType: "question",
+    targetId: question.id,
+    initialLikeCount: question.likeCount,
+    uid: firebaseUser?.uid,
+  });
+
+  function openOwnerProfile() {
+    if (!question.ownerId) return;
+    router.push({ pathname: "/(student)/user/[userId]", params: { userId: question.ownerId } });
+  }
 
   return (
     <View style={styles.container}>
@@ -40,7 +55,12 @@ export function QuestionDetailCard({ question, answerCount, onPressImage }: Ques
       </Pressable>
 
       <View style={styles.metaRow}>
-        <View style={styles.ownerRow}>
+        <Pressable
+          style={styles.ownerRow}
+          onPress={openOwnerProfile}
+          accessibilityRole="button"
+          accessibilityLabel="Profili görüntüle"
+        >
           {photoURL ? (
             <Image source={{ uri: photoURL }} style={styles.avatar} contentFit="cover" />
           ) : (
@@ -51,17 +71,17 @@ export function QuestionDetailCard({ question, answerCount, onPressImage }: Ques
           <Text style={styles.owner} numberOfLines={1}>
             @{handle}
           </Text>
-        </View>
+        </Pressable>
 
         <View style={styles.infoRow}>
           <Text style={styles.infoText}>{formatDate(question.createdAt)}</Text>
           <Text style={styles.dot}>·</Text>
           <Text style={styles.infoText}>{VISIBILITY_LABELS[question.visibility]}</Text>
           <Text style={styles.dot}>·</Text>
-          <Text style={styles.infoText}>
-            {answerCount} {answerCount === 1 ? "cevap" : "cevap"}
-          </Text>
+          <Text style={styles.infoText}>{answerCount} cevap</Text>
         </View>
+
+        <LikeButton liked={liked} likeCount={likeCount} onPress={toggle} size={22} color="#5B5F66" />
       </View>
     </View>
   );
@@ -84,6 +104,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
+    minHeight: 44,
   },
   avatar: {
     width: 32,

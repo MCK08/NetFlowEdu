@@ -2,15 +2,23 @@ import * as ImagePicker from "expo-image-picker";
 import { useState } from "react";
 import { Alert } from "react-native";
 
+import { QuestionVisibility } from "@/types/question";
+
 import { submitAnswer } from "../services/answerService";
 
 interface UsePhotoAnswerOptions {
   questionId: string;
   uid: string | undefined;
+  questionVisibility: QuestionVisibility;
   onSubmitted: () => void;
 }
 
-export function usePhotoAnswer({ questionId, uid, onSubmitted }: UsePhotoAnswerOptions) {
+export function usePhotoAnswer({
+  questionId,
+  uid,
+  questionVisibility,
+  onSubmitted,
+}: UsePhotoAnswerOptions) {
   const [previewUri, setPreviewUri] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
 
@@ -51,7 +59,13 @@ export function usePhotoAnswer({ questionId, uid, onSubmitted }: UsePhotoAnswerO
     if (!previewUri || !uid || isUploading) return;
     setIsUploading(true);
     try {
-      await submitAnswer({ questionId, uid, localUri: previewUri, method: "photo" });
+      await submitAnswer({
+        questionId,
+        uid,
+        localUri: previewUri,
+        method: "photo",
+        questionVisibility,
+      });
       onSubmitted();
     } catch {
       Alert.alert("Yükleme başarısız", "Cevap yüklenirken bir hata oluştu. Lütfen tekrar deneyin.");

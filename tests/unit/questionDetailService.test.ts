@@ -23,8 +23,8 @@ function makeQuestion(overrides: Partial<Question> = {}): Question {
     imageUrl: "https://example.com/q1.jpg",
     classId: null,
     createdAt: 1,
-    likes: 0,
-    comments: 0,
+    likeCount: 0,
+    commentCount: 0,
     answerCount: 0,
     ...overrides,
   };

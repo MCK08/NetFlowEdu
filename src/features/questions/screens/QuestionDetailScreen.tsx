@@ -6,6 +6,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { PrimaryButton } from "@components/ui/PrimaryButton";
 import { ImageViewer } from "@components/ImageViewer";
 import { AnswerList, useQuestionAnswers } from "@features/answers";
+import { useAuth } from "@features/authentication";
+import { CommentSection } from "@features/social/comments";
 
 import { QuestionDetailCard } from "../components/QuestionDetailCard";
 import { QuestionHeader } from "../components/QuestionHeader";
@@ -16,6 +18,7 @@ interface QuestionDetailScreenProps {
 }
 
 export function QuestionDetailScreen({ questionId }: QuestionDetailScreenProps) {
+  const { firebaseUser } = useAuth();
   const { question, isLoading, errorMessage } = useQuestionDetail(questionId);
   const { answers, isLoading: answersLoading, error: answersError } = useQuestionAnswers(
     question ? questionId : undefined,
@@ -23,7 +26,11 @@ export function QuestionDetailScreen({ questionId }: QuestionDetailScreenProps) 
   const [previewUri, setPreviewUri] = useState<string | null>(null);
 
   function handleAnswer() {
-    router.push(`/(student)/answer/${questionId}`);
+    if (!question) return;
+    router.push({
+      pathname: "/(student)/answer/[questionId]",
+      params: { questionId, visibility: question.visibility },
+    });
   }
 
   if (isLoading) {
@@ -70,6 +77,8 @@ export function QuestionDetailScreen({ questionId }: QuestionDetailScreenProps) 
             onPressImage={setPreviewUri}
           />
         </View>
+
+        <CommentSection questionId={questionId} uid={firebaseUser?.uid} />
       </ScrollView>
 
       <ImageViewer visible={previewUri !== null} uri={previewUri} onClose={() => setPreviewUri(null)} />

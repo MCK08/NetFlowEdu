@@ -1,22 +1,36 @@
 import { useState } from "react";
 import { Alert } from "react-native";
 
+import { QuestionVisibility } from "@/types/question";
+
 import { submitAnswer } from "../services/answerService";
 
 interface UseDrawingAnswerOptions {
   questionId: string;
   uid: string | undefined;
+  questionVisibility: QuestionVisibility;
   onSubmitted: () => void;
 }
 
-export function useDrawingAnswer({ questionId, uid, onSubmitted }: UseDrawingAnswerOptions) {
+export function useDrawingAnswer({
+  questionId,
+  uid,
+  questionVisibility,
+  onSubmitted,
+}: UseDrawingAnswerOptions) {
   const [isUploading, setIsUploading] = useState(false);
 
   async function save(dataUri: string) {
     if (!uid || isUploading) return;
     setIsUploading(true);
     try {
-      await submitAnswer({ questionId, uid, localUri: dataUri, method: "drawing" });
+      await submitAnswer({
+        questionId,
+        uid,
+        localUri: dataUri,
+        method: "drawing",
+        questionVisibility,
+      });
       onSubmitted();
     } catch {
       Alert.alert("Yükleme başarısız", "Çizim yüklenirken bir hata oluştu. Lütfen tekrar deneyin.");

@@ -22,6 +22,7 @@ export { buildAnswerDocument } from "./answerDocument";
 export async function createAnswer(input: CreateAnswerInput): Promise<void> {
   await addDoc(collection(db, "answers"), {
     ...buildAnswerDocument(input),
+    likeCount: 0,
     createdAt: serverTimestamp(),
   });
 }
@@ -33,6 +34,7 @@ function toAnswer(id: string, data: DocumentData): Answer {
     ownerId: data.ownerId ?? "",
     imageUrl: data.imageUrl ?? "",
     method: data.method === "drawing" ? "drawing" : "photo",
+    likeCount: data.likeCount ?? 0,
     createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toMillis() : 0,
   };
 }

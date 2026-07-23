@@ -4,6 +4,19 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Phase 6 — Social Feed, User Profiles, Likes and Comments
+- Question visibility model changed from `private/class/friends` to `private/public/class`; `public` questions are readable by any authenticated user regardless of organization. `class` currently fails closed (treated as owner-only) pending a real class-roster system — the `VisibilityPicker` shows it disabled ("Sınıf özelliği yakında").
+- New `publicProfiles/{uid}` collection: a safe-field mirror of `users/{uid}` (no email/accountStatus), readable by any authenticated user, kept in sync by the new `syncPublicProfile` Cloud Function trigger. Fixes a pre-existing bug where any user but yourself would show as "Kullanıcı" everywhere.
+- Social feed rebuilt: merged own+public paginated feed (`useSocialFeed`/`socialFeedService`), sequential-phase pagination (own questions first, then public), replacing the old single-query `useFeed`/`feedService`.
+- Like system for questions and answers: `questionLikes`/`answerLikes` collections (deterministic `{targetId}_{userId}` doc IDs), toggled only via the new `toggleQuestionLike`/`toggleAnswerLike` transactional Cloud Functions callables; `LikeButton` component with optimistic UI.
+- Comment system for questions (no nested replies, no edit): `questionComments` collection, `CommentSection`/`CommentItem` components, real-time via `onSnapshot`.
+- Server-maintained aggregate counts: `likeCount` (transactional), `commentCount`/`answerCount` (trigger-based, floored at 0) — all client-writes to these fields denied by `firestore.rules`.
+- Public profile screen (`app/(student)/user/[userId].tsx`) with the user's public questions; owner rows across feed/detail/answers now navigate there.
+- Storage rules reworked: visibility is now encoded directly in the Storage path (`questions/{public|private}/...`, `answers/{public|private}/...`) instead of a cross-service `firestore.get()` lookup, which was found to throw `EvaluationException: Null value error` on real requests. Avatar upload cap raised 2MB → 5MB.
+- New Firestore indexes: `questions` (`visibility ASC, createdAt DESC`), `questions` (`ownerId ASC, visibility ASC, createdAt DESC`), `questionComments` (`questionId ASC, createdAt ASC`).
+- Tests: ~34 new Firestore rules tests, rewritten Storage rules tests for the new path scheme, new unit tests for `likeId`, `commentValidation`, `socialFeedService`, rewritten `profileCache` tests.
+- Docs: ARCHITECTURE, SECURITY, README, ROADMAP, FEATURES, FIREBASE_SETUP updated for the Phase 6 design.
+
 ### Chore — Expo SDK 52 → 54
 - Upgraded `expo` and every Expo-managed dependency (`expo-router`, `expo-image`, `expo-image-picker`, `expo-linking`, `expo-splash-screen`, `expo-status-bar`, `expo-constants`, `expo-asset`) to their SDK 54 versions via `expo install --fix`, matching the SDK the currently-published Expo Go app requires. Also bumped `react` to 19.1.0, `react-native` to 0.81.5, `react-native-reanimated` to 4.x, `react-native-safe-area-context`/`react-native-screens`/`react-native-gesture-handler`, `@react-native-async-storage/async-storage` to 2.x, and `typescript`/`@types/react`/`eslint-config-expo` to their compatible versions.
 - Added `react-native-worklets` (reanimated 4's babel plugin moved out of `react-native-reanimated` into this package) and repointed `babel.config.js` at `react-native-worklets/plugin`.

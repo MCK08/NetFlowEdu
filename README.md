@@ -63,6 +63,10 @@ npm run verify            # lint + typecheck + test + functions build
 - [CHANGELOG.md](CHANGELOG.md) — release history
 - [CLAUDE.md](CLAUDE.md) — instructions for AI-assisted development on this repo
 
+## Social Feed
+
+Phase 6 adds a public/private/class question visibility model, a merged own+public paginated feed, public user profiles, likes (questions and answers, via transactional Cloud Functions), and comments (questions only). `class` visibility is currently owner-only pending a real class-roster system in a later phase. See [ARCHITECTURE.md](ARCHITECTURE.md#social-feed-phase-6) and [SECURITY.md](SECURITY.md#social-feed-phase-6).
+
 ## Status
 
-Phase 1 (bootstrap architecture) and Phase 2 (authentication) complete. See [ROADMAP.md](ROADMAP.md) for what's next.
+Phases 1–4 and Phase 6 (social feed, profiles, likes, comments) complete. Phase 5 (spaced-repetition review) not yet started. See [ROADMAP.md](ROADMAP.md) for what's next.

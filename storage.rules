@@ -5,6 +5,14 @@ rules_version = '2';
 //   /orgs/{organizationId}/questions/{ownerId}/{questionId}/{fileName}
 //   /orgs/{organizationId}/solutions/{authorId}/{solutionId}/{fileName}
 //   /users/{userId}/avatar/{fileName}
+//
+// Storage Rules' firestore.get() is unsafe to depend on for access checks
+// — a previous phase reproduced it throwing `EvaluationException: Null
+// value error` on real requests (see tests/integration/storage.rules.test.ts
+// history), which made every getDownloadURL() fail, including for the
+// file's own owner. So visibility is encoded directly in the Storage path
+// instead of being looked up: every access-level check below is a path
+// segment comparison, never a cross-service call.
 service firebase.storage {
   match /b/{bucket}/o {
 
@@ -41,40 +49,38 @@ service firebase.storage {
                    && isImageOrPdf() && isUnder10MB();
     }
 
-    // Phase 3 MVP feed uploads. Unlike /orgs/{org}/questions/..., this path
-    // has no org segment — the /orgs/ scheme can never admit a student with
-    // organizationId == null (a path segment can never equal a real null
-    // claim), and most students have no organization yet. Owner-only read
-    // is exactly correct today: every question is created private, and a
-    // private question is only ever readable by its own owner anyway (see
-    // firestore.rules).
-    match /questions/{ownerId}/{fileName} {
+    // Phase 6: {accessLevel} is 'public' or 'private', matching
+    // src/services/storage/questionImages.ts's upload path construction
+    // (derived from the question's chosen visibility — Firestore's 'class'
+    // visibility collapses to the 'private' access level here too, since
+    // it currently has no real membership check and is owner-only-readable
+    // in firestore.rules, same as private). Public images are visible to
+    // any authenticated user; private/class images stay owner-only.
+    match /questions/public/{ownerId}/{fileName} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && uid() == ownerId
+                   && isImageOrPdf() && isUnder10MB();
+    }
+
+    match /questions/private/{ownerId}/{fileName} {
       allow read: if isSignedIn() && uid() == ownerId;
       allow write: if isSignedIn() && uid() == ownerId
                    && isImageOrPdf() && isUnder10MB();
     }
 
-    // Owner-only, same reasoning as questions/{ownerId}/{fileName} above —
-    // NOT a Firestore cross-service lookup. An earlier version of this rule
-    // called firestore.get(/databases/(default)/documents/questions/$(questionId))
-    // to check the parent question's real visibility/organizationId before
-    // allowing a read, so that a future non-private question could someday
-    // be readable by more than its owner. In practice that get() call threw
-    // `EvaluationException: Null value error` on real requests — reproduced
-    // in tests/integration/storage.rules.test.ts against the exact
-    // production path/uid/contentType — which made every getDownloadURL()
-    // on an answer image fail with storage/unauthorized, including for the
-    // image's own owner. Storage Rules' firestore.get() is a cross-service
-    // call outside this ruleset's own consistency/availability guarantees;
-    // it is not safe to depend on for a check this basic. Since every
-    // question is created private today, owner-only read via the path
-    // segment alone is both correct and exception-proof — it never touches
-    // Firestore, so it cannot fail this way. If a future phase makes
-    // questions visible to more than their owner, mirror that visibility
-    // into the Storage path itself (e.g. an org segment on this path, like
-    // /orgs/{org}/questions/... above) rather than reintroducing a
-    // Storage-to-Firestore get().
-    match /answers/{questionId}/{ownerId}/{fileName} {
+    // Phase 6: {accessLevel} mirrors the parent question's, same reasoning
+    // as questions/{accessLevel}/... above — an answer image is readable
+    // by whoever could read the question, without ever asking Storage to
+    // cross-reference Firestore. The client already has the parent
+    // Question (Question Detail screen) when uploading an answer, so it
+    // can supply this segment directly — see uploadAnswerImage.
+    match /answers/public/{questionId}/{ownerId}/{fileName} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && uid() == ownerId
+                   && isImageOrPdf() && isUnder10MB();
+    }
+
+    match /answers/private/{questionId}/{ownerId}/{fileName} {
       allow read: if isSignedIn() && uid() == ownerId;
       allow write: if isSignedIn() && uid() == ownerId
                    && isImageOrPdf() && isUnder10MB();
@@ -84,7 +90,7 @@ service firebase.storage {
       allow read: if isSignedIn();
       allow write: if isSignedIn() && uid() == userId
                    && request.resource.contentType.matches('image/.*')
-                   && request.resource.size < 2 * 1024 * 1024;
+                   && request.resource.size < 5 * 1024 * 1024;
     }
 
     match /{allPaths=**} {
