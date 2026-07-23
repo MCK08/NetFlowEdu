@@ -36,12 +36,32 @@ export async function getCachedProfile(uid: string): Promise<PublicProfile | nul
   const existing = pending.get(uid);
   if (existing) return existing;
 
+  // Two distinct "null" outcomes need two distinct caching policies:
+  //
+  // - getPublicProfileOnce RESOLVES with null when publicProfiles/{uid}
+  //   simply doesn't exist *yet* — e.g. right after a fresh signup/upload,
+  //   there's a real propagation gap before the syncPublicProfile Cloud
+  //   Function trigger has finished writing it. This is transient, so it
+  //   must NOT be cached permanently: caching it would freeze the
+  //   "Kullanıcı" fallback in place for the rest of the app session even
+  //   after the real profile becomes available moments later (confirmed
+  //   on-device — the bug this fixes; only an app restart, which clears
+  //   this in-memory Map, previously cleared the stale null).
+  // - getPublicProfileOnce REJECTS (permission-denied, etc.) for a genuine,
+  //   permanent denial — that outcome is still cached forever, exactly as
+  //   before, to avoid retrying a fetch that can never succeed.
   const fetchPromise = getPublicProfileOnce(uid)
-    .catch(() => null)
     .then((profile) => {
-      cache.set(uid, profile);
+      if (profile !== null) {
+        cache.set(uid, profile);
+      }
       pending.delete(uid);
       return profile;
+    })
+    .catch(() => {
+      cache.set(uid, null);
+      pending.delete(uid);
+      return null;
     });
 
   pending.set(uid, fetchPromise);

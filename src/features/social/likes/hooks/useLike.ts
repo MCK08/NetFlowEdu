@@ -30,10 +30,15 @@ export function useLike({ targetType, targetId, initialLikeCount, uid }: UseLike
       return;
     }
     const requestId = ++requestIdRef.current;
-    getMyLikeState(targetType, targetId, uid).then((state) => {
-      if (requestId !== requestIdRef.current) return;
-      setLiked(state);
-    });
+    getMyLikeState(targetType, targetId, uid)
+      .then((state) => {
+        if (requestId !== requestIdRef.current) return;
+        setLiked(state);
+      })
+      .catch(() => {
+        // Non-fatal — the like button just falls back to its default
+        // "not liked" state; toggling still works independently.
+      });
   }, [targetType, targetId, uid]);
 
   async function toggle() {

@@ -111,6 +111,18 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // ---- users/{uid}/savedQuestions/{questionId} ------------------------
+    // Personal bookmark list. Unlike likes, there's no shared counter to
+    // protect (a bookmark only affects the owner's own view), so this is
+    // fully client-writable — same trust level as the user's own displayName
+    // edit, just a different field. Denormalized snapshot written at save
+    // time by the client (see saveQuestion) so listing never needs an extra
+    // read per item.
+
+    match /users/{uid}/savedQuestions/{questionId} {
+      allow read, write: if isOwner(uid);
+    }
+
     // ---- publicProfiles/{uid} -------------------------------------------
     //
     // Safe-field mirror of users/{uid} — never email/accountStatus/
@@ -129,7 +141,25 @@ service cloud.firestore {
     // visibility: "private" | "public" | "class"
 
     match /questions/{questionId} {
-      allow read: if isSignedIn() && canReadQuestionData(resource.data);
+      // isOwner(...) is listed first, and separately from
+      // canReadQuestionData, on purpose: Firestore's query-provability
+      // check is purely syntactic, based on what the *query itself*
+      // constrains, never on what's actually stored. getOwnQuestionsPage's
+      // query (`where('ownerId','==',uid())`, no visibility filter) lets
+      // Firestore statically prove this left-hand branch always holds for
+      // every document the query could return (because the query's own
+      // equality filter already pins ownerId), so it never needs to
+      // inspect `visibility` at all for that query. Folding this into
+      // canReadQuestionData instead (visibility-gated on every branch,
+      // including the owner one) makes the *whole* rule depend on
+      // `visibility`, which the query doesn't constrain — Firestore then
+      // refuses to run the query at all: "Property visibility is
+      // undefined on object" (reproduced with the emulator against this
+      // exact query shape). This also matches questions.ts's own doc
+      // comment on getOwnQuestionsPage ("owner can always read their own
+      // regardless of visibility"), which the old rule never actually
+      // guaranteed at the query level, only for single-document get()s.
+      allow read: if isSignedIn() && (isOwner(resource.data.ownerId) || canReadQuestionData(resource.data));
 
       // 'class' is schema-reserved but not creatable yet — see
       // canReadQuestionData's note. Only private/public are accepted.
@@ -229,9 +259,19 @@ service cloud.firestore {
     // that callable (Admin SDK, transactional with questions/{id}.likeCount)
     // so a client can never fake a like or desync the count. Clients may
     // read only their own like record, to render "did I like this".
+    //
+    // `resource == null` guards a get() on a like the caller hasn't cast
+    // yet (the common case — most question/answer pairs have none): for a
+    // non-existent document `resource` is null, and dereferencing
+    // `resource.data` on it is a rule-evaluation error, which Firestore
+    // surfaces to the client as permission-denied (confirmed on a real
+    // device — see getMyLikeState's "missing doc just means not liked yet"
+    // comment, which was wrong before this fix). Checking `resource == null`
+    // first lets a missing like resolve to "not found" the same as any
+    // other client read, before ever touching `.data`.
 
     match /questionLikes/{likeId} {
-      allow read: if isOwner(resource.data.userId);
+      allow read: if resource == null || isOwner(resource.data.userId);
       allow write: if false;
     }
 
@@ -239,7 +279,7 @@ service cloud.firestore {
     // Same pattern as questionLikes — see toggleAnswerLike.ts.
 
     match /answerLikes/{likeId} {
-      allow read: if isOwner(resource.data.userId);
+      allow read: if resource == null || isOwner(resource.data.userId);
       allow write: if false;
     }
 

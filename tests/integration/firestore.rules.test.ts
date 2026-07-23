@@ -763,6 +763,24 @@ describe("firestore.rules — questionLikes/{likeId} and answerLikes/{likeId}", 
     await assertFails(getDoc(doc(otherStudent.firestore(), "questionLikes", "q1_student-1")));
   });
 
+  // The common case: most question/answer pairs have no like doc at all.
+  // Before `resource == null || ...` was added to the rule, this get()
+  // errored on `resource.data.userId` (resource is null for a
+  // non-existent doc), which Firestore surfaced to the client as
+  // permission-denied — reproduced on a real device via useLike's
+  // getMyLikeState() on a question that had never been liked.
+  it("lets a user read a questionLikes doc that doesn't exist yet (not liked)", async () => {
+    const student = studentContext("student-1");
+    const snapshot = await getDoc(doc(student.firestore(), "questionLikes", "q1_student-1"));
+    expect(snapshot.exists()).toBe(false);
+  });
+
+  it("lets a user read an answerLikes doc that doesn't exist yet (not liked)", async () => {
+    const student = studentContext("student-1");
+    const snapshot = await getDoc(doc(student.firestore(), "answerLikes", "a1_student-1"));
+    expect(snapshot.exists()).toBe(false);
+  });
+
   it("denies a client deleting a questionLikes doc directly", async () => {
     await seedLike("questionLikes", "q1_student-1", {
       userId: "student-1",
@@ -916,5 +934,201 @@ describe("firestore.rules — questionComments/{commentId}", () => {
     await seedComment("c1", commentDoc({ questionId: "q1", ownerId: "student-1" }));
     const otherStudent = studentContext("student-2");
     await assertFails(deleteDoc(doc(otherStudent.firestore(), "questionComments", "c1")));
+  });
+});
+
+describe("firestore.rules — users/{uid}/savedQuestions/{questionId}", () => {
+  let testEnv: RulesTestEnvironment;
+
+  beforeAll(async () => {
+    testEnv = await initializeTestEnvironment({
+      projectId: PROJECT_ID,
+      firestore: { rules: fs.readFileSync("firestore.rules", "utf8"), host: "127.0.0.1", port: 8080 },
+    });
+  });
+
+  afterAll(async () => testEnv.cleanup());
+  afterEach(async () => testEnv.clearFirestore());
+
+  function studentContext(uid: string) {
+    return testEnv.authenticatedContext(uid, { role: "student", organizationId: null });
+  }
+
+  it("lets a user save a question to their own savedQuestions", async () => {
+    const student = studentContext("student-1");
+    await assertSucceeds(
+      setDoc(doc(student.firestore(), "users", "student-1", "savedQuestions", "q1"), {
+        ownerId: "student-2",
+        organizationId: null,
+        visibility: "public",
+        imageUrl: "https://example.com/q1.jpg",
+        classId: null,
+        likeCount: 0,
+        commentCount: 0,
+        answerCount: 0,
+        createdAt: 1,
+        savedAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it("lets a user read their own savedQuestions", async () => {
+    const student = studentContext("student-1");
+    await setDoc(doc(student.firestore(), "users", "student-1", "savedQuestions", "q1"), {
+      ownerId: "student-2",
+      savedAt: serverTimestamp(),
+    });
+    await assertSucceeds(getDoc(doc(student.firestore(), "users", "student-1", "savedQuestions", "q1")));
+  });
+
+  it("denies a user reading another user's savedQuestions", async () => {
+    const otherStudent = studentContext("student-2");
+    await assertFails(
+      getDoc(doc(otherStudent.firestore(), "users", "student-1", "savedQuestions", "q1")),
+    );
+  });
+
+  it("denies a user writing to another user's savedQuestions", async () => {
+    const otherStudent = studentContext("student-2");
+    await assertFails(
+      setDoc(doc(otherStudent.firestore(), "users", "student-1", "savedQuestions", "q1"), {
+        ownerId: "student-1",
+        savedAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it("lets a user remove their own saved question", async () => {
+    const student = studentContext("student-1");
+    await setDoc(doc(student.firestore(), "users", "student-1", "savedQuestions", "q1"), {
+      ownerId: "student-2",
+      savedAt: serverTimestamp(),
+    });
+    await assertSucceeds(deleteDoc(doc(student.firestore(), "users", "student-1", "savedQuestions", "q1")));
+  });
+
+  // getSavedQuestionsPage's exact query shape — a plain orderBy with no
+  // where clause at all. Unlike questions/{questionId} (see below), this
+  // rule (`isOwner(uid)`) depends only on the {uid} *path* segment, which
+  // is always known for any query under that path — never on
+  // resource.data — so it's provable regardless of query shape.
+  it("lets a user list their own savedQuestions via a plain orderBy(savedAt) query", async () => {
+    const student = studentContext("student-1");
+    await setDoc(doc(student.firestore(), "users", "student-1", "savedQuestions", "q1"), {
+      ownerId: "student-2",
+      savedAt: serverTimestamp(),
+    });
+    const q = query(
+      collection(student.firestore(), "users", "student-1", "savedQuestions"),
+      orderBy("savedAt", "desc"),
+    );
+    await assertSucceeds(getDocs(q));
+  });
+});
+
+describe("firestore.rules — questions/{questionId} list queries (query provability)", () => {
+  let testEnv: RulesTestEnvironment;
+
+  beforeAll(async () => {
+    testEnv = await initializeTestEnvironment({
+      projectId: PROJECT_ID,
+      firestore: { rules: fs.readFileSync("firestore.rules", "utf8"), host: "127.0.0.1", port: 8080 },
+    });
+  });
+
+  afterAll(async () => testEnv.cleanup());
+  afterEach(async () => testEnv.clearFirestore());
+
+  function studentContext(uid: string) {
+    return testEnv.authenticatedContext(uid, { role: "student", organizationId: null });
+  }
+
+  async function seedQuestion(id: string, data: Record<string, unknown>) {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "questions", id), data);
+    });
+  }
+
+  // Regression test for the exact bug getOwnQuestionsPage hit in
+  // production: `where('ownerId','==',uid())` alone (no visibility
+  // filter) must be a provable query, so the owner can list ALL of their
+  // own questions regardless of visibility in one query — see the comment
+  // on the questions/{questionId} read rule.
+  it("lets the owner list their own questions (mixed visibility) via where(ownerId)+orderBy(createdAt)", async () => {
+    await seedQuestion("q1", {
+      ownerId: "student-1",
+      organizationId: null,
+      visibility: "private",
+      imageUrl: "https://example.com/q1.jpg",
+      classId: null,
+      likeCount: 0,
+      commentCount: 0,
+      answerCount: 0,
+      createdAt: 1,
+    });
+    await seedQuestion("q2", {
+      ownerId: "student-1",
+      organizationId: null,
+      visibility: "public",
+      imageUrl: "https://example.com/q2.jpg",
+      classId: null,
+      likeCount: 0,
+      commentCount: 0,
+      answerCount: 0,
+      createdAt: 2,
+    });
+
+    const student = studentContext("student-1");
+    const q = query(
+      collection(student.firestore(), "questions"),
+      where("ownerId", "==", "student-1"),
+      orderBy("createdAt", "desc"),
+    );
+    const snapshot = await assertSucceeds(getDocs(q));
+    expect(snapshot.docs.map((d) => d.id).sort()).toEqual(["q1", "q2"]);
+  });
+
+  it("still denies a different user listing someone else's private questions by ownerId", async () => {
+    await seedQuestion("q1", {
+      ownerId: "student-1",
+      organizationId: null,
+      visibility: "private",
+      imageUrl: "https://example.com/q1.jpg",
+      classId: null,
+      likeCount: 0,
+      commentCount: 0,
+      answerCount: 0,
+      createdAt: 1,
+    });
+
+    const otherStudent = studentContext("student-2");
+    const q = query(
+      collection(otherStudent.firestore(), "questions"),
+      where("ownerId", "==", "student-1"),
+      orderBy("createdAt", "desc"),
+    );
+    await assertFails(getDocs(q));
+  });
+
+  it("still lets any signed-in user list public questions via where(visibility)+orderBy(createdAt)", async () => {
+    await seedQuestion("q1", {
+      ownerId: "student-1",
+      organizationId: null,
+      visibility: "public",
+      imageUrl: "https://example.com/q1.jpg",
+      classId: null,
+      likeCount: 0,
+      commentCount: 0,
+      answerCount: 0,
+      createdAt: 1,
+    });
+
+    const otherStudent = studentContext("student-2");
+    const q = query(
+      collection(otherStudent.firestore(), "questions"),
+      where("visibility", "==", "public"),
+      orderBy("createdAt", "desc"),
+    );
+    await assertSucceeds(getDocs(q));
   });
 });

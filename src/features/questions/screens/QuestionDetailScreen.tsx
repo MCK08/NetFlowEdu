@@ -1,13 +1,23 @@
 import { router } from "expo-router";
 import { useState } from "react";
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { PrimaryButton } from "@components/ui/PrimaryButton";
 import { ImageViewer } from "@components/ImageViewer";
 import { AnswerList, useQuestionAnswers } from "@features/answers";
 import { useAuth } from "@features/authentication";
-import { CommentSection } from "@features/social/comments";
+import { CommentComposer, CommentList, useQuestionComments } from "@features/social/comments";
 
 import { QuestionDetailCard } from "../components/QuestionDetailCard";
 import { QuestionHeader } from "../components/QuestionHeader";
@@ -24,6 +34,7 @@ export function QuestionDetailScreen({ questionId }: QuestionDetailScreenProps) 
     question ? questionId : undefined,
   );
   const [previewUri, setPreviewUri] = useState<string | null>(null);
+  const comments = useQuestionComments({ questionId, uid: firebaseUser?.uid });
 
   function handleAnswer() {
     if (!question) return;
@@ -56,30 +67,54 @@ export function QuestionDetailScreen({ questionId }: QuestionDetailScreenProps) 
   }
 
   return (
-    <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
-      <QuestionHeader title="Soru" />
+    <SafeAreaView style={styles.flex} edges={["top"]}>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
+        <QuestionHeader title="Soru" />
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <QuestionDetailCard
-          question={question}
-          answerCount={answers.length}
-          onPressImage={setPreviewUri}
+        <Pressable style={styles.flex} onPress={Keyboard.dismiss} accessible={false}>
+          <ScrollView
+            contentContainerStyle={styles.content}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
+            <QuestionDetailCard
+              question={question}
+              answerCount={answers.length}
+              onPressImage={setPreviewUri}
+            />
+
+            <PrimaryButton label="Cevapla" onPress={handleAnswer} />
+
+            <View style={styles.answersSection}>
+              <Text style={styles.answersTitle}>Cevaplar</Text>
+              <AnswerList
+                answers={answers}
+                isLoading={answersLoading}
+                error={answersError}
+                onPressImage={setPreviewUri}
+              />
+            </View>
+
+            <CommentList
+              comments={comments.comments}
+              isLoading={comments.isLoading}
+              error={comments.error}
+              currentUid={firebaseUser?.uid}
+              onDelete={comments.remove}
+            />
+          </ScrollView>
+        </Pressable>
+
+        <CommentComposer
+          draft={comments.draft}
+          onChangeDraft={comments.setDraft}
+          isSubmitting={comments.isSubmitting}
+          onSubmit={comments.submit}
         />
-
-        <PrimaryButton label="Cevapla" onPress={handleAnswer} />
-
-        <View style={styles.answersSection}>
-          <Text style={styles.answersTitle}>Cevaplar</Text>
-          <AnswerList
-            answers={answers}
-            isLoading={answersLoading}
-            error={answersError}
-            onPressImage={setPreviewUri}
-          />
-        </View>
-
-        <CommentSection questionId={questionId} uid={firebaseUser?.uid} />
-      </ScrollView>
+      </KeyboardAvoidingView>
 
       <ImageViewer visible={previewUri !== null} uri={previewUri} onClose={() => setPreviewUri(null)} />
     </SafeAreaView>

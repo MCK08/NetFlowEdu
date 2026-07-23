@@ -8,6 +8,9 @@ import { useProfileHandle } from "@features/profiles";
 import { LikeButton, useLike } from "@features/social/likes";
 import { Question } from "@/types/question";
 
+import { SaveButton } from "./SaveButton";
+import { useSavedQuestion } from "../hooks/useSavedQuestion";
+
 const VISIBILITY_LABELS: Record<Question["visibility"], string> = {
   private: "Sadece Ben",
   public: "Herkese Açık",
@@ -38,6 +41,7 @@ export function QuestionDetailCard({ question, answerCount, onPressImage }: Ques
     initialLikeCount: question.likeCount,
     uid: firebaseUser?.uid,
   });
+  const { saved, toggle: toggleSaved } = useSavedQuestion(question, firebaseUser?.uid);
 
   function openOwnerProfile() {
     if (!question.ownerId) return;
@@ -81,7 +85,10 @@ export function QuestionDetailCard({ question, answerCount, onPressImage }: Ques
           <Text style={styles.infoText}>{answerCount} cevap</Text>
         </View>
 
-        <LikeButton liked={liked} likeCount={likeCount} onPress={toggle} size={22} color="#5B5F66" />
+        <View style={styles.actionsRow}>
+          <LikeButton liked={liked} likeCount={likeCount} onPress={toggle} size={22} color="#5B5F66" />
+          <SaveButton saved={saved} onPress={toggleSaved} size={22} color="#5B5F66" />
+        </View>
       </View>
     </View>
   );
@@ -137,5 +144,10 @@ const styles = StyleSheet.create({
   dot: {
     fontSize: 13,
     color: "#C4C7CC",
+  },
+  actionsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
   },
 });

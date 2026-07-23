@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Alert } from "react-native";
+import { Alert, Keyboard } from "react-native";
 
 import { createComment, deleteComment, subscribeToQuestionComments } from "@services/questions/comments";
 import { QuestionComment } from "@/types/comment";
@@ -68,6 +68,7 @@ export function useQuestionComments({ questionId, uid }: UseQuestionCommentsOpti
         text: normalizeCommentText(draft),
       });
       setDraft("");
+      Keyboard.dismiss();
     } catch {
       Alert.alert("Yorum gönderilemedi.", "Lütfen tekrar deneyin.");
     } finally {

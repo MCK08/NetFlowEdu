@@ -1,3 +1,4 @@
+import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import {
   ActivityIndicator,
   FlatList,
@@ -18,7 +19,13 @@ import { useSocialFeed } from "../hooks/useSocialFeed";
 import { Question } from "../types";
 
 export function FeedScreen() {
-  const { height } = useWindowDimensions();
+  const { height: windowHeight } = useWindowDimensions();
+  // Each card pages to exactly the space above the tab bar, not the full
+  // window height — otherwise the tab bar overlays the bottom ~50-80px of
+  // every card (where the action rail, including Save, lives), hiding it
+  // behind the bar instead of scrolling fully clear of it.
+  const tabBarHeight = useBottomTabBarHeight();
+  const height = windowHeight - tabBarHeight;
   const { firebaseUser, profile } = useAuth();
   const uid = firebaseUser?.uid;
   const organizationId = profile?.organizationId ?? null;

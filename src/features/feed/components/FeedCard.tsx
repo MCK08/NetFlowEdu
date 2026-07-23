@@ -5,6 +5,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { useAuth } from "@features/authentication";
 import { useProfileHandle } from "@features/profiles";
+import { SaveButton, useSavedQuestion } from "@features/questions";
 import { LikeButton, useLike } from "@features/social/likes";
 
 import { Question } from "../types";
@@ -43,6 +44,7 @@ export function FeedCard({ question, height }: FeedCardProps) {
     initialLikeCount: question.likeCount,
     uid: firebaseUser?.uid,
   });
+  const { saved, toggle: toggleSaved } = useSavedQuestion(question, firebaseUser?.uid);
 
   function openDetail() {
     router.push({ pathname: "/(student)/question/[questionId]", params: { questionId: question.id } });
@@ -99,6 +101,7 @@ export function FeedCard({ question, height }: FeedCardProps) {
           <Ionicons name="documents-outline" size={26} color="white" />
           <Text style={styles.actionCount}>{question.answerCount}</Text>
         </View>
+        <SaveButton saved={saved} onPress={toggleSaved} />
       </View>
     </Pressable>
   );

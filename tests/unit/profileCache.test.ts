@@ -114,4 +114,21 @@ describe("getCachedProfile", () => {
     await getCachedProfile("someone-elses-uid");
     expect(mockGetPublicProfileOnce).toHaveBeenCalledTimes(1);
   });
+
+  // Root cause of the "username shows Kullanıcı right after upload, fixed
+  // only by restarting the app" bug: publicProfiles/{uid} not existing YET
+  // (syncPublicProfile hasn't finished) resolves successfully with null —
+  // that's a transient state, not a permanent denial, so (unlike the
+  // rejected-promise case above) it must be retried on the next call
+  // instead of being cached forever.
+  it("retries on the next call when the profile doesn't exist yet (resolved null, not an error)", async () => {
+    mockGetPublicProfileOnce.mockResolvedValueOnce(null).mockResolvedValueOnce(makeProfile());
+
+    const first = await getCachedProfile("brand-new-uid");
+    expect(first).toBeNull();
+
+    const second = await getCachedProfile("brand-new-uid");
+    expect(second?.uid).toBe("user-1");
+    expect(mockGetPublicProfileOnce).toHaveBeenCalledTimes(2);
+  });
 });
