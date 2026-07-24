@@ -106,4 +106,61 @@ describe("resolveRouteForState", () => {
       }),
     ).toBe(ROUTES.verifyEmail);
   });
+
+  // Regression coverage for the production bug: a just-promoted teacher was
+  // routed into the teacher dashboard the instant Firestore's realtime
+  // listener reported onboardingStatus "complete" — a signal that reliably
+  // arrives BEFORE this client's own ID token is force-refreshed with the
+  // new role/organizationId custom claims (two independent network
+  // round-trips, no ordering guarantee between them). The very first
+  // createClass call then failed with a stale token, surfaced to the user
+  // as "Sınıf oluşturulamadı." claimsSynced closes this race: it must hold
+  // the user on verify-email even once onboardingStatus is "complete",
+  // until the client's own refresh is confirmed.
+  it("holds a user on verify-email when onboardingStatus is 'complete' but claimsSynced is explicitly false (the exact race window)", () => {
+    expect(
+      resolveRouteForState({
+        isAuthenticated: true,
+        isEmailVerified: true,
+        role: "teacher",
+        onboardingStatus: "complete",
+        claimsSynced: false,
+      }),
+    ).toBe(ROUTES.verifyEmail);
+  });
+
+  it("routes normally by role once onboardingStatus is 'complete' AND claimsSynced is true", () => {
+    expect(
+      resolveRouteForState({
+        isAuthenticated: true,
+        isEmailVerified: true,
+        role: "teacher",
+        onboardingStatus: "complete",
+        claimsSynced: true,
+      }),
+    ).toBe(ROUTES.teacher);
+  });
+
+  it("defaults claimsSynced to true when omitted — every call site before this field existed keeps working unchanged", () => {
+    expect(
+      resolveRouteForState({
+        isAuthenticated: true,
+        isEmailVerified: true,
+        role: "teacher",
+        onboardingStatus: "complete",
+      }),
+    ).toBe(ROUTES.teacher);
+  });
+
+  it("claimsSynced false has no effect while onboardingStatus is still 'provisioning' (already routed to verify-email for that reason)", () => {
+    expect(
+      resolveRouteForState({
+        isAuthenticated: true,
+        isEmailVerified: true,
+        role: "teacher",
+        onboardingStatus: "provisioning",
+        claimsSynced: false,
+      }),
+    ).toBe(ROUTES.verifyEmail);
+  });
 });

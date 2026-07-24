@@ -38,6 +38,10 @@ export interface AuthContextValue {
   isLoading: boolean;
   profileLoading: boolean;
   profileError: string | null;
+  // Production bug fix — see routing.ts's doc comment. False only in the
+  // narrow window between Firestore reporting onboardingStatus "complete"
+  // and this client's own ID token having actually been force-refreshed.
+  claimsSynced: boolean;
   signIn: (input: LoginInput) => Promise<void>;
   register: (input: RegisterInput) => Promise<void>;
   signOut: () => Promise<void>;
@@ -56,6 +60,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
+
+  // Production bug fix — see routing.ts's `claimsSynced` doc comment for the
+  // full race explanation. Defaults true (every existing session/login path
+  // behaves exactly as before); flipped false the moment this session
+  // observes onboardingStatus "pending"/"provisioning" for the current uid
+  // (a claims-changing operation is now known to be in flight), and only
+  // flipped back to true once THIS client's own ID token has actually been
+  // force-refreshed afterward (verifyAndCompleteOnboarding returning true in
+  // signIn/refreshSession below) — never merely because Firestore says
+  // "complete", which is exactly the signal that used to fire too early.
+  const [claimsSynced, setClaimsSynced] = useState(true);
 
   // Subscribe once to Firebase Auth state; cleaned up on unmount.
   useEffect(() => {
@@ -77,11 +92,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setProfile(null);
       setProfileLoading(false);
       setProfileError(null);
+      setClaimsSynced(true); // fresh session; no known claims lag yet
       return;
     }
 
     setProfileLoading(true);
     setProfileError(null);
+    setClaimsSynced(true); // reset per-uid; the watcher below will flip it if needed
 
     const timeoutId = setTimeout(() => {
       setProfileLoading(false);
@@ -114,6 +131,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [firebaseUser?.uid]);
 
+  // Production bug fix — the moment Firestore reports a claims-changing
+  // operation is in flight for this uid (pending/provisioning), mark claims
+  // as NOT synced. This is what makes RouteGuard hold the user on
+  // verify-email through the "complete" transition too, instead of routing
+  // on Firestore's write alone — see routing.ts's `claimsSynced` doc.
+  useEffect(() => {
+    const status = profile?.onboardingStatus;
+    if (status === "pending" || status === "provisioning") {
+      setClaimsSynced(false);
+    }
+  }, [profile?.onboardingStatus]);
+
   const signIn = useCallback(async (input: LoginInput) => {
     const user = await loginWithPassword(input);
     const signedInProfile = await waitForProfileDocument(user.uid, 5000);
@@ -132,7 +161,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // trigger point. verifyAndCompleteOnboarding is itself non-fatal/no-op
     // safe (re-checks email_verified, and completeOnboarding re-checks it
     // again server-side).
-    await verifyAndCompleteOnboarding(user);
+    const onboardingCompleted = await verifyAndCompleteOnboarding(user);
+    // Only meaningful when a role transition actually happened during this
+    // call (see below) — otherwise claimsSynced was never false to begin
+    // with, so this is a no-op.
+    if (onboardingCompleted) setClaimsSynced(true);
   }, []);
 
   const register = useCallback(async (input: RegisterInput) => {
@@ -171,6 +204,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!firebaseUser) return false;
     const onboardingCompleted = await verifyAndCompleteOnboarding(firebaseUser);
     setEmailVerified(firebaseUser.emailVerified);
+    // This client's own ID token has now actually been force-refreshed (see
+    // verifyAndCompleteOnboarding's guaranteed refresh-after-completeOnboarding
+    // ordering) — only NOW is it safe for RouteGuard to act on Firestore's
+    // onboardingStatus "complete", closing the race documented in routing.ts.
+    if (onboardingCompleted) setClaimsSynced(true);
     return onboardingCompleted;
   }, [firebaseUser]);
 
@@ -184,6 +222,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isLoading,
       profileLoading,
       profileError,
+      claimsSynced,
       signIn,
       register,
       signOut,
@@ -194,6 +233,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [
       firebaseUser,
       profile,
+      claimsSynced,
       emailVerified,
       isLoading,
       profileLoading,

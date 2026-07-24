@@ -22,8 +22,16 @@ function Splash() {
 export function RouteGuard({ children }: { children: ReactNode }) {
   const router = useRouter();
   const segments = useSegments();
-  const { isAuthenticated, isEmailVerified, role, profile, isLoading, profileLoading, profileError } =
-    useAuth();
+  const {
+    isAuthenticated,
+    isEmailVerified,
+    role,
+    profile,
+    isLoading,
+    profileLoading,
+    profileError,
+    claimsSynced,
+  } = useAuth();
 
   const settledEnoughToRoute = !isLoading && !(isAuthenticated && isEmailVerified && profileLoading);
   const onboardingStatus = profile?.onboardingStatus ?? null;
@@ -36,10 +44,25 @@ export function RouteGuard({ children }: { children: ReactNode }) {
       return;
     }
 
-    const target = resolveRouteForState({ isAuthenticated, isEmailVerified, role, onboardingStatus });
+    const target = resolveRouteForState({
+      isAuthenticated,
+      isEmailVerified,
+      role,
+      onboardingStatus,
+      claimsSynced,
+    });
     if (!isAtTarget(target, segments)) router.replace(target);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settledEnoughToRoute, isAuthenticated, isEmailVerified, profileError, role, onboardingStatus, segments]);
+  }, [
+    settledEnoughToRoute,
+    isAuthenticated,
+    isEmailVerified,
+    profileError,
+    role,
+    onboardingStatus,
+    claimsSynced,
+    segments,
+  ]);
 
   return (
     <View style={styles.flex}>

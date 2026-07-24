@@ -11,6 +11,18 @@ export interface RouteResolutionState {
   // Optional — omitted (or a terminal "complete") behaves exactly as before
   // this field existed. Only "pending"/"provisioning" changes the outcome.
   onboardingStatus?: OnboardingStatus | null;
+  // Optional, defaults to true — false ONLY for the narrow window between
+  // Firestore reporting onboardingStatus "complete" (via the live listener)
+  // and this client's OWN ID token actually being force-refreshed to carry
+  // the new role/organizationId custom claims. These are two independent
+  // network round-trips (Firestore's realtime channel vs. the callable's
+  // HTTPS response) with no ordering guarantee, and Firestore's push
+  // reliably arrives first — so without this flag, a just-promoted teacher
+  // is routed into the teacher dashboard while still holding a stale token,
+  // and their very first createClass call is rejected by the Cloud
+  // Function's own (correct) claims check. See AuthProvider's
+  // `claimsSynced` state for where this is actually tracked.
+  claimsSynced?: boolean;
 }
 
 // Centralized so every entry point (root guard, deep links, back navigation)
@@ -34,6 +46,15 @@ export function resolveRouteForState(state: RouteResolutionState): ResolvedRoute
   // idempotent "check again" button — is what lets onboarding actually
   // converge instead of getting stuck in "pending" forever.
   if (state.onboardingStatus === "pending" || state.onboardingStatus === "provisioning") {
+    return ROUTES.verifyEmail;
+  }
+
+  // claimsSynced defaults to true when omitted (every existing call site
+  // before this field existed keeps behaving exactly as before). Only an
+  // explicit `false` — the just-promoted-but-not-yet-refreshed window —
+  // holds the user on verify-email a little longer, same screen/button as
+  // the pending/provisioning case above.
+  if (state.claimsSynced === false) {
     return ROUTES.verifyEmail;
   }
 
