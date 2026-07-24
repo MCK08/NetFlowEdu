@@ -24,22 +24,26 @@ export interface CreateQuestionInput {
   organizationId: string | null;
   imageUrl: string;
   visibility: QuestionVisibility;
+  // Required (and only meaningful) when visibility === "class" — see
+  // firestore.rules' questions/{questionId} create rule, which checks this
+  // against the target class's own teacherId/organizationId.
+  classId?: string | null;
 }
 
 // Matches firestore.rules `allow create` exactly: ownerId must be the
 // caller's uid, organizationId must equal the caller's own claim (null for
 // students without an organization — the rule compares with ==, so a
-// literal null here is required, not omission), visibility must be
-// 'private' or 'public' (the rule rejects 'class' — see firestore.rules'
-// comment on why). Returns the new doc id so the caller can optimistically
-// prepend it to the feed.
+// literal null here is required, not omission). For visibility 'class',
+// classId must be set and the caller must be that class's own teacher — see
+// firestore.rules' comment on the create rule. Returns the new doc id so
+// the caller can optimistically prepend it to the feed.
 export async function createQuestion(input: CreateQuestionInput): Promise<string> {
   const ref = await addDoc(collection(db, "questions"), {
     ownerId: input.ownerId,
     organizationId: input.organizationId,
     visibility: input.visibility,
     imageUrl: input.imageUrl,
-    classId: null,
+    classId: input.visibility === "class" ? (input.classId ?? null) : null,
     likeCount: 0,
     commentCount: 0,
     answerCount: 0,
@@ -116,6 +120,44 @@ export async function getPublicQuestionsPage(
 ): Promise<QuestionPage> {
   const constraints = [
     where("visibility", "==", "public"),
+    orderBy("createdAt", "desc"),
+    ...(cursor ? [startAfter(cursor)] : []),
+    limit(pageSize),
+  ];
+  const snapshot = await getDocs(query(collection(db, "questions"), ...constraints));
+  return toPage(snapshot.docs, pageSize);
+}
+
+// One page of a single class's questions, newest first. Matches
+// firestore.rules (readable by any member of the class, via
+// canReadQuestionData's 'class' branch) and the classId+createdAt composite
+// index.
+//
+// Filters by BOTH classId and visibility=='class' — not classId alone.
+// Data-model-wise classId is only ever non-null for a 'class'-visibility
+// question (enforced by the create rule), so the extra filter never changes
+// which documents match. It's required for query *provability*: Firestore
+// statically proves a LIST query's rule using only the fields the query
+// itself pins. With classId alone pinned, canReadQuestionData(data)'s
+// 'class' branch still depends on the unconstrained `visibility` field
+// (`data.visibility == 'class' && ...`), which Firestore can't resolve —
+// exactly the same class of error the read rule's own comment documents for
+// getOwnQuestionsPage/`visibility`. Pinning visibility too lets Firestore
+// constant-fold canReadQuestionData's other two branches to `false` (their
+// guards become `'class' == 'private'` / `'class' == 'public'`, both
+// provably false) without ever touching `ownerId`, leaving only
+// `isClassMember(classId)` — fully resolvable from the pinned classId via
+// exists(). Reproduced failing before this filter existed, and passing
+// after, in tests/integration/firestore.rules.test.ts's
+// "classes/{classId} and members" describe block.
+export async function getClassQuestionsPage(
+  classId: string,
+  pageSize: number,
+  cursor: DocumentSnapshot<DocumentData> | null,
+): Promise<QuestionPage> {
+  const constraints = [
+    where("classId", "==", classId),
+    where("visibility", "==", "class"),
     orderBy("createdAt", "desc"),
     ...(cursor ? [startAfter(cursor)] : []),
     limit(pageSize),

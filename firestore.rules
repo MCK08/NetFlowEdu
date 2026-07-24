@@ -59,19 +59,28 @@ service cloud.firestore {
     // gates access on "can the caller read this question" (answers,
     // questionComments), so they can never drift out of sync.
     //
-    // 'class' has no real membership system yet (rosters aren't
-    // implemented) — rather than fake membership, it's treated as
-    // owner-only, same as private, until a real roster check exists. The
-    // client-facing "Sınıf" visibility option is disabled to match (see
-    // src/features/upload — "Sınıf özelliği yakında").
+    // 'class' visibility is readable by any member of the target class
+    // (student or teacher) — see classes/{classId}/members/{uid} below,
+    // written exclusively by the join/create/remove Cloud Functions.
     function canReadQuestionData(data) {
       return data.visibility == 'private' && isOwner(data.ownerId) ||
              data.visibility == 'public' && isSignedIn() ||
-             data.visibility == 'class' && isOwner(data.ownerId);
+             data.visibility == 'class' && isClassMember(data.classId);
     }
 
     function questionData(qid) {
       return get(/databases/$(database)/documents/questions/$(qid)).data;
+    }
+
+    // ---- classes helpers -------------------------------------------------
+
+    function isClassMember(classId) {
+      return isSignedIn()
+          && exists(/databases/$(database)/documents/classes/$(classId)/members/$(uid()));
+    }
+
+    function classData(classId) {
+      return get(/databases/$(database)/documents/classes/$(classId)).data;
     }
 
     // ---- users/{userId} -----------------------------------------------
@@ -106,7 +115,24 @@ service cloud.firestore {
                     && request.resource.data.totalPoints == resource.data.totalPoints
                     && request.resource.data.weeklyPoints == resource.data.weeklyPoints
                     && request.resource.data.accountStatus == resource.data.accountStatus
-                    && request.resource.data.createdAt == resource.data.createdAt;
+                    && request.resource.data.createdAt == resource.data.createdAt
+                    // onboardingStatus/requestedRole are exclusively
+                    // Cloud-Function-managed (see
+                    // functions/src/onboarding/{initializeOnboarding,completeOnboarding}.ts).
+                    // Every account created before these fields existed has
+                    // no such keys at all, and plain `==` on a missing map
+                    // key throws ("Property ... is undefined"), not just
+                    // evaluates falsy — so this uses .get(key, default) to
+                    // treat "absent" as a real, comparable value instead. A
+                    // client update is only ever allowed if both fields stay
+                    // exactly as they were (present-and-equal, or
+                    // absent-and-still-absent) — a client can never set,
+                    // clear, or backdate onboarding state, or swap
+                    // requestedRole, themselves.
+                    && request.resource.data.get('onboardingStatus', null)
+                       == resource.data.get('onboardingStatus', null)
+                    && request.resource.data.get('requestedRole', null)
+                       == resource.data.get('requestedRole', null);
 
       allow delete: if false;
     }
@@ -161,15 +187,27 @@ service cloud.firestore {
       // guaranteed at the query level, only for single-document get()s.
       allow read: if isSignedIn() && (isOwner(resource.data.ownerId) || canReadQuestionData(resource.data));
 
-      // 'class' is schema-reserved but not creatable yet — see
-      // canReadQuestionData's note. Only private/public are accepted.
+      // private/public: any signed-in user, no classId. 'class': only the
+      // class's own teacher may post into it — checked against the class
+      // doc itself (teacherId + organizationId), not just the caller's own
+      // claims, so a teacher can never post into a class they don't own
+      // even if organizationId happens to match.
       allow create: if isSignedIn()
                     && request.resource.data.ownerId == uid()
                     && request.resource.data.organizationId == organizationId()
-                    && request.resource.data.visibility in ['private', 'public']
                     && request.resource.data.likeCount == 0
                     && request.resource.data.commentCount == 0
-                    && request.resource.data.answerCount == 0;
+                    && request.resource.data.answerCount == 0
+                    && (
+                         request.resource.data.visibility in ['private', 'public']
+                         && request.resource.data.classId == null
+                         ||
+                         request.resource.data.visibility == 'class'
+                         && isTeacher()
+                         && request.resource.data.classId is string
+                         && classData(request.resource.data.classId).teacherId == uid()
+                         && classData(request.resource.data.classId).organizationId == organizationId()
+                       );
 
       // answerCount/likeCount/commentCount are maintained only by trusted
       // Cloud Functions (Admin SDK bypasses these rules) — don't trust the
@@ -186,12 +224,51 @@ service cloud.firestore {
       allow delete: if isOwner(resource.data.ownerId) || isTeacher() || isOrgAdmin();
     }
 
-    // ---- classes/{classId} ---------------------------------------------
+    // ---- organizations/{organizationId} ---------------------------------
+    // A teacher's personal workspace, created exclusively by
+    // completeOnboarding (Admin SDK) when a new account picks "teacher" at
+    // registration — see functions/src/onboarding/completeOnboarding.ts.
+    // Never client-writable, matching every other server-managed collection
+    // in this file. Read is limited to the owner — nothing today needs a
+    // student or another teacher to read someone else's organization doc
+    // directly (class access is already gated by class membership, not by
+    // reading the organization itself).
+    match /organizations/{organizationId} {
+      allow read: if isOwner(resource.data.ownerId);
+      allow write: if false;
+    }
 
+    // ---- classes/{classId} ---------------------------------------------
+    // Every field here (joinCode especially) is Cloud-Function-managed —
+    // see functions/src/classes/. A client `create`/`update` would let a
+    // teacher mint their own join code (bypassing the uniqueness reservation
+    // in classJoinCodes/{code}) or silently rewrite memberCount, so all
+    // writes are denied and funneled through createClass /
+    // regenerateClassJoinCode / joinClassByCode / leaveClass /
+    // removeClassMember instead — same pattern as usernames/{username}.
+    //
+    // Read is restricted to the owning teacher or a current member (not
+    // "anyone in the org") because the document contains the join code
+    // itself: any org member being able to read it would let them join
+    // without ever being given the code, defeating its purpose. A member
+    // already has the code (they used it to join), so exposing it back to
+    // them leaks nothing new.
     match /classes/{classId} {
-      allow read: if sameOrg(resource.data.organizationId);
-      allow create: if isTeacher() && request.resource.data.organizationId == organizationId();
-      allow update, delete: if isTeacher() && isOwner(resource.data.teacherId) || isOrgAdmin();
+      allow read: if isSignedIn() && (resource.data.teacherId == uid() || isClassMember(classId));
+      allow write: if false;
+    }
+
+    // ---- classes/{classId}/members/{memberUid} --------------------------
+    // Membership is exclusively Cloud-Function-managed (joinClassByCode /
+    // leaveClass / removeClassMember) so a student can never add themselves
+    // (or anyone else) directly, and memberCount on the parent class can
+    // never desync from the actual member docs. Read is limited to the
+    // member's own row or the owning teacher (member list) — students don't
+    // get a roster of their classmates in this phase, matching the spec's
+    // "view class members" being a teacher-only capability.
+    match /classes/{classId}/members/{memberUid} {
+      allow read: if isSignedIn() && (isOwner(memberUid) || classData(classId).teacherId == uid());
+      allow write: if false;
     }
 
     // ---- friendships/{friendshipId} -------------------------------------
@@ -312,6 +389,13 @@ service cloud.firestore {
     // Written exclusively by the setUsername Cloud Function (Admin SDK,
     // bypasses these rules) as a uniqueness reservation. Never read or
     // written by clients directly.
+
+    // ---- classJoinCodes/{code} ------------------------------------------
+    // Same uniqueness-reservation pattern as usernames/{username} above —
+    // written exclusively by createClass / regenerateClassJoinCode (Admin
+    // SDK). Never read or written by clients; joinClassByCode resolves a
+    // code to a classId server-side instead of the client querying this
+    // collection directly, so a client can't enumerate valid codes.
 
     // Default deny for anything not explicitly matched above.
     match /{document=**} {

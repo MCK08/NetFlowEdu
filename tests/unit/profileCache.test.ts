@@ -12,7 +12,7 @@ jest.mock("@services/firebase/publicProfile", () => ({
 import {
   clearProfileCache,
   getCachedProfile,
-  getDisplayHandle,
+  getPublicIdentity,
 } from "@features/profiles/services/profileCacheService";
 
 function makeProfile(overrides: Partial<PublicProfile> = {}): PublicProfile {
@@ -30,29 +30,42 @@ function makeProfile(overrides: Partial<PublicProfile> = {}): PublicProfile {
   };
 }
 
-describe("getDisplayHandle", () => {
-  it("prefers username when present", () => {
-    expect(getDisplayHandle(makeProfile({ username: "ayse123" }))).toBe("ayse123");
-  });
-
-  it("falls back to displayName when username is null", () => {
-    expect(getDisplayHandle(makeProfile({ username: null, displayName: "Ayşe Yılmaz" }))).toBe(
-      "Ayşe Yılmaz",
+describe("getPublicIdentity", () => {
+  it("uses displayName as primary and @username as secondary", () => {
+    expect(getPublicIdentity(makeProfile({ displayName: "Sinem Hoca", username: "sinemmat" }))).toEqual(
+      { primaryName: "Sinem Hoca", usernameHandle: "@sinemmat" },
     );
   });
 
+  it("falls back to @username as primary when displayName is missing", () => {
+    expect(getPublicIdentity(makeProfile({ username: "ayse123", displayName: "" }))).toEqual({
+      primaryName: "@ayse123",
+      usernameHandle: null,
+    });
+  });
+
   it("falls back to Kullanıcı when both username and displayName are missing", () => {
-    expect(getDisplayHandle(makeProfile({ username: null, displayName: "" }))).toBe("Kullanıcı");
+    expect(getPublicIdentity(makeProfile({ username: null, displayName: "" }))).toEqual({
+      primaryName: "Kullanıcı",
+      usernameHandle: null,
+    });
+  });
+
+  // The exact production bug this whole fallback chain exists to prevent:
+  // a bare "@" with nothing after it must never render.
+  it("never returns a bare '@' with nothing after it", () => {
+    const result = getPublicIdentity(makeProfile({ username: null, displayName: "" }));
+    expect(result.primaryName).not.toBe("@");
   });
 
   it("falls back to Kullanıcı when the profile itself is null", () => {
-    expect(getDisplayHandle(null)).toBe("Kullanıcı");
+    expect(getPublicIdentity(null)).toEqual({ primaryName: "Kullanıcı", usernameHandle: null });
   });
 
   it("never returns the uid, even when it is the only identifying field available", () => {
     const profile = makeProfile({ uid: "some-raw-uid-value", username: null, displayName: "" });
-    expect(getDisplayHandle(profile)).not.toBe("some-raw-uid-value");
-    expect(getDisplayHandle(profile)).toBe("Kullanıcı");
+    expect(getPublicIdentity(profile).primaryName).not.toBe("some-raw-uid-value");
+    expect(getPublicIdentity(profile).primaryName).toBe("Kullanıcı");
   });
 });
 
@@ -108,7 +121,7 @@ describe("getCachedProfile", () => {
 
     const profile = await getCachedProfile("someone-elses-uid");
     expect(profile).toBeNull();
-    expect(getDisplayHandle(profile)).toBe("Kullanıcı");
+    expect(getPublicIdentity(profile).primaryName).toBe("Kullanıcı");
 
     // A second call must not retry the failed fetch.
     await getCachedProfile("someone-elses-uid");

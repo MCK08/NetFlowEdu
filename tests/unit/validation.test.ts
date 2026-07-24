@@ -8,23 +8,52 @@ import {
   validatePasswordConfirmation,
   validateRegisterInput,
   validateTermsAccepted,
+  validateUsername,
 } from "@features/authentication/validation";
 
 describe("validateDisplayName", () => {
   it("rejects empty input", () => {
-    expect(validateDisplayName("")).toBe("Ad soyad gerekli.");
+    expect(validateDisplayName("")).toBe("Görünen ad gerekli.");
   });
 
   it("rejects names shorter than 2 characters after trim", () => {
-    expect(validateDisplayName(" a ")).toBe("Ad soyad en az 2 karakter olmalı.");
+    expect(validateDisplayName(" a ")).toBe("Görünen ad en az 2 karakter olmalı.");
   });
 
   it("rejects names longer than 60 characters", () => {
-    expect(validateDisplayName("a".repeat(61))).toBe("Ad soyad en fazla 60 karakter olabilir.");
+    expect(validateDisplayName("a".repeat(61))).toBe("Görünen ad en fazla 60 karakter olabilir.");
   });
 
   it("accepts a valid name", () => {
     expect(validateDisplayName("Ayşe Yılmaz")).toBeUndefined();
+  });
+
+  // displayName is a public, chosen name — not a legal name — and may
+  // freely contain spaces ("Sinem Hoca", "Matematikçi Burak").
+  it("accepts a display name containing multiple spaces", () => {
+    expect(validateDisplayName("Matematikçi Burak Yıldız")).toBeUndefined();
+  });
+});
+
+describe("validateUsername", () => {
+  it("rejects empty input", () => {
+    expect(validateUsername("")).toBe("Kullanıcı adı gerekli.");
+  });
+
+  it("rejects a username containing a space", () => {
+    expect(validateUsername("sinem mat")).toBeDefined();
+  });
+
+  it("rejects a username containing special characters", () => {
+    expect(validateUsername("sinem@mat")).toBeDefined();
+  });
+
+  it("accepts a valid username", () => {
+    expect(validateUsername("sinemmat")).toBeUndefined();
+  });
+
+  it("accepts underscores", () => {
+    expect(validateUsername("sinem_mat")).toBeUndefined();
   });
 });
 
@@ -99,7 +128,6 @@ describe("validateRegisterInput", () => {
     confirmPassword: "Valid123",
     acceptedTerms: true,
     intendedRole: "student" as const,
-    organizationName: "",
   };
 
   it("returns no errors for fully valid student input", () => {
@@ -115,7 +143,6 @@ describe("validateRegisterInput", () => {
       confirmPassword: "different",
       acceptedTerms: false,
       intendedRole: "student",
-      organizationName: "",
     });
 
     expect(Object.keys(errors).sort()).toEqual(
@@ -133,22 +160,8 @@ describe("validateRegisterInput", () => {
     expect(errors.username).toBeDefined();
   });
 
-  it("requires organizationName when intendedRole is teacher", () => {
+  it("accepts teacher input with no organization name field at all — the server generates it", () => {
     const errors = validateRegisterInput({ ...validInput, intendedRole: "teacher" });
-    expect(errors.organizationName).toBe("Kurum adı gerekli.");
-  });
-
-  it("does not require organizationName for a student", () => {
-    const errors = validateRegisterInput(validInput);
-    expect(errors.organizationName).toBeUndefined();
-  });
-
-  it("accepts teacher input with an organizationName", () => {
-    const errors = validateRegisterInput({
-      ...validInput,
-      intendedRole: "teacher",
-      organizationName: "Örnek Lise",
-    });
     expect(hasErrors(errors)).toBe(false);
   });
 });

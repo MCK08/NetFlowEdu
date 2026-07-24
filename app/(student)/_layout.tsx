@@ -6,6 +6,7 @@ export default function StudentLayout() {
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="question/[questionId]" />
       <Stack.Screen name="user/[userId]" />
+      <Stack.Screen name="class/[classId]" />
       {/*
         Full-screen card, not a modal sheet: the drawing canvas needs sole
         ownership of vertical pan gestures, and iOS's modal presentation

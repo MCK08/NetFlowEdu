@@ -1,7 +1,8 @@
-// The intended role only decides whether a teacherRequests/{uid} document is
-// filed after registration (see authService.registerStudent) — the account
-// itself is always created as a student. Only adminSetUserRole can ever
-// grant the teacher role.
+// The role the user picks at registration is finalized server-side by the
+// completeOnboarding callable (see authService.registerStudent) — "teacher"
+// gets promoted immediately, with a personal organization created for them,
+// no admin approval step. Only completeOnboarding (once, ever, per account)
+// and adminSetUserRole (later, admin-only) can change a user's role.
 export type IntendedRole = "student" | "teacher";
 
 export interface RegisterInput {
@@ -12,7 +13,6 @@ export interface RegisterInput {
   confirmPassword: string;
   acceptedTerms: boolean;
   intendedRole: IntendedRole;
-  organizationName: string;
 }
 
 export interface LoginInput {

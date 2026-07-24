@@ -13,7 +13,6 @@ const INITIAL_INPUT: RegisterInput = {
   confirmPassword: "",
   acceptedTerms: false,
   intendedRole: "student",
-  organizationName: "",
 };
 
 export function useRegisterForm() {
@@ -29,22 +28,21 @@ export function useRegisterForm() {
 
   interface SubmitResult {
     success: boolean;
-    teacherRequestSubmitted: boolean;
   }
 
   async function submit(): Promise<SubmitResult> {
     setFormError(null);
     const errors = validateRegisterInput(input);
     setFieldErrors(errors);
-    if (hasErrors(errors)) return { success: false, teacherRequestSubmitted: false };
+    if (hasErrors(errors)) return { success: false };
 
     setIsSubmitting(true);
     try {
-      const { teacherRequestSubmitted } = await register(input);
-      return { success: true, teacherRequestSubmitted };
+      await register(input);
+      return { success: true };
     } catch (error) {
       setFormError(mapAuthErrorToMessage(error));
-      return { success: false, teacherRequestSubmitted: false };
+      return { success: false };
     } finally {
       setIsSubmitting(false);
     }

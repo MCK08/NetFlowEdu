@@ -34,7 +34,7 @@ interface QuestionDetailCardProps {
 
 export function QuestionDetailCard({ question, answerCount, onPressImage }: QuestionDetailCardProps) {
   const { firebaseUser } = useAuth();
-  const { handle, photoURL } = useProfileHandle(question.ownerId);
+  const { primaryName, usernameHandle, photoURL } = useProfileHandle(question.ownerId);
   const { liked, likeCount, toggle } = useLike({
     targetType: "question",
     targetId: question.id,
@@ -72,9 +72,16 @@ export function QuestionDetailCard({ question, answerCount, onPressImage }: Ques
               <Ionicons name="person" size={16} color="#8A8F98" />
             </View>
           )}
-          <Text style={styles.owner} numberOfLines={1}>
-            @{handle}
-          </Text>
+          <View style={styles.nameColumn}>
+            <Text style={styles.owner} numberOfLines={1}>
+              {primaryName}
+            </Text>
+            {usernameHandle ? (
+              <Text style={styles.handle} numberOfLines={1}>
+                {usernameHandle}
+              </Text>
+            ) : null}
+          </View>
         </Pressable>
 
         <View style={styles.infoRow}>
@@ -126,11 +133,17 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  nameColumn: {
+    flexShrink: 1,
+  },
   owner: {
     fontSize: 16,
     fontWeight: "700",
     color: "black",
-    flexShrink: 1,
+  },
+  handle: {
+    fontSize: 13,
+    color: "#8A8F98",
   },
   infoRow: {
     flexDirection: "row",

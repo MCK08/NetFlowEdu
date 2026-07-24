@@ -6,6 +6,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { ImageViewer } from "@components/ImageViewer";
+import { resolvePublicIdentity } from "@utils/publicIdentity";
 
 import { usePublicProfile } from "../hooks/usePublicProfile";
 import { usePublicUserQuestions } from "../hooks/usePublicUserQuestions";
@@ -57,7 +58,7 @@ export function PublicProfileScreen({ userId }: PublicProfileScreenProps) {
     );
   }
 
-  const handle = profile.username || profile.displayName || "Kullanıcı";
+  const identity = resolvePublicIdentity(profile);
 
   return (
     <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
@@ -73,8 +74,10 @@ export function PublicProfileScreen({ userId }: PublicProfileScreenProps) {
           )}
         </View>
 
-        <Text style={styles.username}>@{handle}</Text>
-        {profile.displayName ? <Text style={styles.displayName}>{profile.displayName}</Text> : null}
+        <Text style={styles.username}>{identity.primaryName}</Text>
+        {identity.usernameHandle ? (
+          <Text style={styles.displayName}>{identity.usernameHandle}</Text>
+        ) : null}
 
         <View style={styles.badge}>
           <Text style={styles.badgeText}>{ROLE_LABELS[profile.role] ?? profile.role}</Text>

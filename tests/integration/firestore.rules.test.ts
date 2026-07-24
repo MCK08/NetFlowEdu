@@ -171,6 +171,86 @@ describe("firestore.rules — users/{uid}", () => {
     );
   });
 
+  // Onboarding completion (role/organizationId finalization) is
+  // Cloud-Function-only — see functions/src/onboarding/completeOnboarding.ts.
+  // A client can't set the flag that gates it, which is what makes "role
+  // selection happens exactly once, ever" an enforced guarantee and not
+  // just convention: even if a client tried to fake completion (to make a
+  // later real completeOnboarding call believe it already ran and skip
+  // straight to the idempotent branch) or clear it (to try calling
+  // completeOnboarding again for a role switch), the field itself never
+  // moves via a direct write.
+  it("denies a student setting their own onboardingStatus directly", async () => {
+    await seedUser("student-1", activeUserDoc());
+    const student = testEnv.authenticatedContext("student-1", {
+      role: "student",
+      organizationId: null,
+    });
+    await assertFails(
+      updateDoc(doc(student.firestore(), "users", "student-1"), {
+        onboardingStatus: "complete",
+      }),
+    );
+  });
+
+  it("denies a student changing their own onboardingStatus once already set", async () => {
+    await seedUser("student-1", activeUserDoc({ onboardingStatus: "complete" }));
+    const student = testEnv.authenticatedContext("student-1", {
+      role: "student",
+      organizationId: null,
+    });
+    await assertFails(
+      updateDoc(doc(student.firestore(), "users", "student-1"), { onboardingStatus: "pending" }),
+    );
+  });
+
+  it("denies a student changing their own requestedRole directly (cannot self-promote)", async () => {
+    await seedUser(
+      "student-1",
+      activeUserDoc({ onboardingStatus: "pending", requestedRole: "student" }),
+    );
+    const student = testEnv.authenticatedContext("student-1", {
+      role: "student",
+      organizationId: null,
+    });
+    await assertFails(
+      updateDoc(doc(student.firestore(), "users", "student-1"), { requestedRole: "teacher" }),
+    );
+  });
+
+  // username is exclusively set through the setUsername callable's secure
+  // reservation transaction (see functions/src/users/setUsername.ts) — a
+  // direct client write must be denied just like every other server-managed
+  // field, matching the "profile edits cannot change protected fields"
+  // requirement.
+  it("denies a student setting their own username directly", async () => {
+    await seedUser("student-1", activeUserDoc());
+    const student = testEnv.authenticatedContext("student-1", {
+      role: "student",
+      organizationId: null,
+    });
+    await assertFails(
+      updateDoc(doc(student.firestore(), "users", "student-1"), { username: "hacked" }),
+    );
+  });
+
+  // A client CAN still update displayName/photoURL/updatedAt even after
+  // onboarding has completed — completing onboarding doesn't lock the
+  // profile-edit surface, only the server-managed fields.
+  it("still allows a student to update displayName after onboarding has completed", async () => {
+    await seedUser("student-1", activeUserDoc({ onboardingStatus: "complete" }));
+    const student = testEnv.authenticatedContext("student-1", {
+      role: "student",
+      organizationId: null,
+    });
+    await assertSucceeds(
+      updateDoc(doc(student.firestore(), "users", "student-1"), {
+        displayName: "New Name",
+        updatedAt: 2,
+      }),
+    );
+  });
+
   // 10. Student cannot delete profile.
   it("denies a student deleting their own profile", async () => {
     await seedUser("student-1", activeUserDoc());
@@ -579,9 +659,11 @@ describe("firestore.rules — questions/{questionId} visibility model", () => {
     await assertFails(getDoc(doc(testEnv.unauthenticatedContext().firestore(), "questions", "q1")));
   });
 
-  // Step 22 #4: class question denied to nonmember (no roster system yet —
-  // owner-only, same as private, until one exists — see firestore.rules).
-  it("denies a class question to a non-owner (no membership system yet)", async () => {
+  // Step 22 #4 (Phase 7 update): a class question with no real class behind
+  // it (classId: null, the default here) denies everyone but its owner —
+  // isClassMember(null) can never resolve true. Real membership-gated
+  // access is covered by the dedicated "classes" describe block below.
+  it("denies a class question with no class behind it to a non-owner", async () => {
     await seedQuestion("q1", classQuestionDoc({ ownerId: "student-1" }));
     await assertFails(getDoc(doc(studentContext("student-2").firestore(), "questions", "q1")));
   });
@@ -601,8 +683,10 @@ describe("firestore.rules — questions/{questionId} visibility model", () => {
     );
   });
 
-  // 'class' is schema-reserved but not creatable yet.
-  it("denies creating a question with visibility 'class'", async () => {
+  // A student (not a teacher, and no real class behind classId: null) can
+  // never create a 'class'-visibility question — full teacher+class-owner
+  // coverage lives in the dedicated "classes" describe block below.
+  it("denies a student creating a question with visibility 'class'", async () => {
     const student = studentContext("student-1");
     await assertFails(
       addDoc(collection(student.firestore(), "questions"), {
@@ -1130,5 +1214,505 @@ describe("firestore.rules — questions/{questionId} list queries (query provabi
       orderBy("createdAt", "desc"),
     );
     await assertSucceeds(getDocs(q));
+  });
+});
+
+function classDoc(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    name: "10-A Matematik",
+    organizationId: "org-1",
+    teacherId: "teacher-1",
+    joinCode: "ABC123",
+    createdAt: 1,
+    updatedAt: 1,
+    memberCount: 1,
+    status: "active",
+    ...overrides,
+  };
+}
+
+function classMemberDoc(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    uid: "student-1",
+    role: "student",
+    joinedAt: 1,
+    displayName: "Student One",
+    photoURL: null,
+    ...overrides,
+  };
+}
+
+// Note: class *mutations* (create/join/leave/remove member/regenerate code)
+// are exclusively Cloud-Function-only (see firestore.rules' classes/{classId}
+// and classes/{classId}/members/{memberUid} — both `allow write: if false`),
+// the same pattern already used for usernames/{username} and
+// questionLikes/{likeId}. Rules-unit-testing exercises firestore.rules
+// only, not Cloud Functions logic, so "teacher can create a class" /
+// "student can join with a valid code" / "duplicate join is idempotent" /
+// "student can leave own class" / "teacher can remove own class member" are
+// verified by (a) the tests below proving direct client writes to these
+// paths are denied for EVERY role (proving the Cloud-Function-only
+// invariant these callables rely on), (b) unit tests for the pure
+// generateJoinCode/normalizeJoinCode helpers (tests/unit/classJoinCode.test.ts),
+// and (c) code review of functions/src/classes/*.ts's role/ownership checks
+// — matching the exact depth already established for toggleQuestionLike/
+// setUsername in this suite, where the transaction logic itself was never
+// exercised against a live Functions emulator either.
+describe("firestore.rules — classes/{classId} and members", () => {
+  let testEnv: RulesTestEnvironment;
+
+  beforeAll(async () => {
+    testEnv = await initializeTestEnvironment({
+      projectId: PROJECT_ID,
+      firestore: { rules: fs.readFileSync("firestore.rules", "utf8"), host: "127.0.0.1", port: 8080 },
+    });
+  });
+
+  afterAll(async () => testEnv.cleanup());
+  afterEach(async () => testEnv.clearFirestore());
+
+  function teacherContext(uid: string, organizationId: string | null = "org-1") {
+    return testEnv.authenticatedContext(uid, { role: "teacher", organizationId });
+  }
+
+  function studentContext(uid: string, organizationId: string | null = "org-1") {
+    return testEnv.authenticatedContext(uid, { role: "student", organizationId });
+  }
+
+  async function seedClass(classId: string, data: Record<string, unknown>) {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "classes", classId), data);
+    });
+  }
+
+  async function seedMember(classId: string, memberUid: string, data: Record<string, unknown>) {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "classes", classId, "members", memberUid), data);
+    });
+  }
+
+  // ---- classes/{classId} read/write --------------------------------------
+
+  it("lets the owning teacher read their own class", async () => {
+    await seedClass("class-1", classDoc());
+    await assertSucceeds(getDoc(doc(teacherContext("teacher-1").firestore(), "classes", "class-1")));
+  });
+
+  it("lets a class member read the class", async () => {
+    await seedClass("class-1", classDoc());
+    await seedMember("class-1", "student-1", classMemberDoc());
+    await assertSucceeds(getDoc(doc(studentContext("student-1").firestore(), "classes", "class-1")));
+  });
+
+  it("denies a non-member, non-owner from reading the class (even same org)", async () => {
+    await seedClass("class-1", classDoc());
+    await assertFails(getDoc(doc(studentContext("student-2").firestore(), "classes", "class-1")));
+  });
+
+  it("denies a direct client create of a class, even for a teacher (Cloud-Function-only)", async () => {
+    const teacher = teacherContext("teacher-1");
+    await assertFails(setDoc(doc(teacher.firestore(), "classes", "class-1"), classDoc()));
+  });
+
+  it("denies a direct client update of a class by its own teacher (Cloud-Function-only)", async () => {
+    await seedClass("class-1", classDoc());
+    const teacher = teacherContext("teacher-1");
+    await assertFails(updateDoc(doc(teacher.firestore(), "classes", "class-1"), { name: "Hacked" }));
+  });
+
+  // ---- classes/{classId}/members/{memberUid} read/write ------------------
+
+  it("lets a member read their own membership row", async () => {
+    await seedClass("class-1", classDoc());
+    await seedMember("class-1", "student-1", classMemberDoc());
+    await assertSucceeds(
+      getDoc(doc(studentContext("student-1").firestore(), "classes", "class-1", "members", "student-1")),
+    );
+  });
+
+  it("lets the owning teacher read any member row", async () => {
+    await seedClass("class-1", classDoc());
+    await seedMember("class-1", "student-1", classMemberDoc());
+    await assertSucceeds(
+      getDoc(doc(teacherContext("teacher-1").firestore(), "classes", "class-1", "members", "student-1")),
+    );
+  });
+
+  it("denies one student from reading another student's membership row", async () => {
+    await seedClass("class-1", classDoc());
+    await seedMember("class-1", "student-1", classMemberDoc());
+    await assertFails(
+      getDoc(doc(studentContext("student-2").firestore(), "classes", "class-1", "members", "student-1")),
+    );
+  });
+
+  it("denies a student adding themselves as a member directly (Cloud-Function-only join)", async () => {
+    await seedClass("class-1", classDoc());
+    const student = studentContext("student-1");
+    await assertFails(
+      setDoc(
+        doc(student.firestore(), "classes", "class-1", "members", "student-1"),
+        classMemberDoc(),
+      ),
+    );
+  });
+
+  it("denies a teacher removing a member via a direct delete (Cloud-Function-only)", async () => {
+    await seedClass("class-1", classDoc());
+    await seedMember("class-1", "student-1", classMemberDoc());
+    const teacher = teacherContext("teacher-1");
+    await assertFails(
+      deleteDoc(doc(teacher.firestore(), "classes", "class-1", "members", "student-1")),
+    );
+  });
+
+  // ---- questions: visibility 'class' read/create --------------------------
+
+  it("denies a non-member reading a class question", async () => {
+    await seedClass("class-1", classDoc());
+    await seedMember("class-1", "teacher-1", classMemberDoc({ uid: "teacher-1", role: "teacher" }));
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(
+        doc(context.firestore(), "questions", "q1"),
+        classQuestionDoc({ ownerId: "teacher-1", classId: "class-1", organizationId: "org-1" }),
+      );
+    });
+    await assertFails(getDoc(doc(studentContext("student-2").firestore(), "questions", "q1")));
+  });
+
+  it("lets a class member read a class question", async () => {
+    await seedClass("class-1", classDoc());
+    await seedMember("class-1", "student-1", classMemberDoc());
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(
+        doc(context.firestore(), "questions", "q1"),
+        classQuestionDoc({ ownerId: "teacher-1", classId: "class-1", organizationId: "org-1" }),
+      );
+    });
+    await assertSucceeds(getDoc(doc(studentContext("student-1").firestore(), "questions", "q1")));
+  });
+
+  it("denies a student posting a class question", async () => {
+    await seedClass("class-1", classDoc());
+    const student = studentContext("student-1");
+    await assertFails(
+      addDoc(collection(student.firestore(), "questions"), {
+        ...classQuestionDoc({ ownerId: "student-1", classId: "class-1", organizationId: "org-1" }),
+        createdAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  // Blocker 3 regression: firestore.rules' isTeacher()/organizationId()
+  // read ONLY the caller's custom-claims token — never users/{uid}.role —
+  // so even a Firestore document that (somehow) already says role:
+  // "teacher" grants nothing until the matching custom claim is actually
+  // set, which completeOnboarding only ever does after verifying
+  // request.auth.token.email_verified server-side. This is what makes
+  // "an unverified account can't get usable teacher privileges" a property
+  // of the rules themselves, not just of what the client happens to call.
+  it("denies posting a class question when the caller's own users/{uid} doc says teacher but their auth claims still say student", async () => {
+    await seedClass("class-1", classDoc({ teacherId: "not-yet-a-teacher" }));
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "users", "not-yet-a-teacher"), {
+        uid: "not-yet-a-teacher",
+        role: "teacher",
+        organizationId: "org-1",
+        onboardingStatus: "provisioning", // claims not reconciled yet
+      });
+    });
+    // Claims (what the rule actually checks) still say student — exactly
+    // the state a caller would be in between the Firestore transaction
+    // committing and setCustomUserClaims ever running.
+    const stillStudentClaims = testEnv.authenticatedContext("not-yet-a-teacher", {
+      role: "student",
+      organizationId: null,
+    });
+    await assertFails(
+      addDoc(collection(stillStudentClaims.firestore(), "questions"), {
+        ...classQuestionDoc({
+          ownerId: "not-yet-a-teacher",
+          classId: "class-1",
+          organizationId: "org-1",
+        }),
+        createdAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it("lets the owning teacher post a question to their own class", async () => {
+    await seedClass("class-1", classDoc());
+    const teacher = teacherContext("teacher-1");
+    await assertSucceeds(
+      addDoc(collection(teacher.firestore(), "questions"), {
+        ...classQuestionDoc({ ownerId: "teacher-1", classId: "class-1", organizationId: "org-1" }),
+        createdAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it("denies a different teacher posting into a class they don't own", async () => {
+    await seedClass("class-1", classDoc());
+    const otherTeacher = teacherContext("teacher-2");
+    await assertFails(
+      addDoc(collection(otherTeacher.firestore(), "questions"), {
+        ...classQuestionDoc({ ownerId: "teacher-2", classId: "class-1", organizationId: "org-1" }),
+        createdAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it("denies posting into a class from a different organization", async () => {
+    await seedClass("class-1", classDoc({ organizationId: "org-1" }));
+    // Same uid as the class's teacherId, but the caller's *claim* is a
+    // different org than the class's own organizationId — proves the rule
+    // checks the class doc's org, not just "is this uid the teacherId".
+    const teacher = teacherContext("teacher-1", "org-2");
+    await assertFails(
+      addDoc(collection(teacher.firestore(), "questions"), {
+        ...classQuestionDoc({ ownerId: "teacher-1", classId: "class-1", organizationId: "org-2" }),
+        createdAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  // ---- getClassQuestionsPage LIST query (query provability) --------------
+  //
+  // Regression coverage for a bug found in pre-deployment audit: the
+  // production query was `where('classId','==',classId)` alone (no
+  // visibility filter). Firestore's LIST-query provability check statically
+  // proves the read rule using only the fields the query itself pins. With
+  // only classId pinned, the read rule's `isOwner(resource.data.ownerId) ||
+  // canReadQuestionData(resource.data)` couldn't be resolved: `isOwner`
+  // needs `ownerId` (unconstrained by this query), and canReadQuestionData's
+  // branches are each gated by `data.visibility == '...'`, which is ALSO
+  // unconstrained by a classId-only query — so Firestore rejected the whole
+  // query with "Property ownerId is undefined on object." before returning
+  // any documents at all.
+  //
+  // The fix was entirely in the query (src/services/questions/questions.ts'
+  // getClassQuestionsPage now also filters `where('visibility','==','class')`
+  // — not the rule, which is unchanged) — see that function's comment for
+  // the full provability walkthrough. Pinning visibility lets Firestore
+  // constant-fold canReadQuestionData's 'private'/'public' branches to
+  // `false` (their guards become `'class' == 'private'` / `'class' ==
+  // 'public'`, both provably false) without ever touching `ownerId`,
+  // leaving only `isClassMember(classId)` — fully resolvable from the
+  // pinned classId via exists(). This is a legitimate, data-model-true
+  // filter (classId is only ever non-null for a 'class'-visibility question
+  // — enforced by the create rule), not a query added merely to appease the
+  // rule engine, and it changes which documents match nothing.
+  describe("getClassQuestionsPage LIST query (query provability)", () => {
+    async function seedClassQuestion(id: string, overrides: Partial<Record<string, unknown>> = {}) {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await setDoc(
+          doc(context.firestore(), "questions", id),
+          classQuestionDoc({
+            ownerId: "teacher-1",
+            classId: "class-1",
+            organizationId: "org-1",
+            ...overrides,
+          }),
+        );
+      });
+    }
+
+    function classQuestionListQuery(
+      firestore: ReturnType<ReturnType<typeof studentContext>["firestore"]>,
+      classId: string,
+    ) {
+      return query(
+        collection(firestore, "questions"),
+        where("classId", "==", classId),
+        where("visibility", "==", "class"),
+        orderBy("createdAt", "desc"),
+      );
+    }
+
+    // Regression test: reproduces the EXACT query shape that failed before
+    // the fix (classId equality alone, no visibility filter) — proves it is
+    // still rejected outright (not silently empty-filtered), documenting
+    // the bug this describe block exists to prevent from recurring.
+    it("[regression] the pre-fix query shape (classId alone, no visibility filter) is still unprovable", async () => {
+      await seedClass("class-1", classDoc());
+      await seedMember("class-1", "student-1", classMemberDoc());
+      await seedClassQuestion("q1");
+
+      const unfiltered = query(
+        collection(studentContext("student-1").firestore(), "questions"),
+        where("classId", "==", "class-1"),
+        orderBy("createdAt", "desc"),
+      );
+      await assertFails(getDocs(unfiltered));
+    });
+
+    it("lets a class member list the class's questions", async () => {
+      await seedClass("class-1", classDoc());
+      await seedMember("class-1", "student-1", classMemberDoc());
+      await seedClassQuestion("q1");
+
+      const student = studentContext("student-1");
+      const snap = await assertSucceeds(getDocs(classQuestionListQuery(student.firestore(), "class-1")));
+      expect(snap.docs.map((d) => d.id)).toEqual(["q1"]);
+    });
+
+    it("lets the owning teacher list their own class's questions", async () => {
+      await seedClass("class-1", classDoc());
+      await seedMember("class-1", "teacher-1", classMemberDoc({ uid: "teacher-1", role: "teacher" }));
+      await seedClassQuestion("q1");
+
+      const teacher = teacherContext("teacher-1");
+      const snap = await assertSucceeds(getDocs(classQuestionListQuery(teacher.firestore(), "class-1")));
+      expect(snap.docs.map((d) => d.id)).toEqual(["q1"]);
+    });
+
+    it("denies a non-member from listing the class's questions", async () => {
+      await seedClass("class-1", classDoc());
+      await seedClassQuestion("q1");
+
+      const outsider = studentContext("student-2");
+      await assertFails(getDocs(classQuestionListQuery(outsider.firestore(), "class-1")));
+    });
+
+    it("denies a removed member from continuing to list the class's questions", async () => {
+      await seedClass("class-1", classDoc());
+      await seedMember("class-1", "student-1", classMemberDoc());
+      await seedClassQuestion("q1");
+
+      const student = studentContext("student-1");
+      // Confirm access while still a member, then simulate removeClassMember
+      // deleting the membership row (Cloud-Function-only in production —
+      // done here with rules disabled, matching how every other test in
+      // this suite seeds/mutates state that only Cloud Functions may write).
+      await assertSucceeds(getDocs(classQuestionListQuery(student.firestore(), "class-1")));
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await deleteDoc(doc(context.firestore(), "classes", "class-1", "members", "student-1"));
+      });
+      await assertFails(getDocs(classQuestionListQuery(student.firestore(), "class-1")));
+    });
+
+    it("never leaks another class's questions to a member of a different class", async () => {
+      await seedClass("class-1", classDoc());
+      await seedClass("class-2", classDoc({ teacherId: "teacher-2" }));
+      await seedMember("class-1", "student-1", classMemberDoc());
+      await seedMember("class-2", "student-2", classMemberDoc({ uid: "student-2" }));
+      await seedClassQuestion("q1", { classId: "class-1" });
+      await seedClassQuestion("q2", { classId: "class-2", ownerId: "teacher-2" });
+
+      // Querying class-1 as a class-1 member only ever returns q1, even
+      // though q2 (a different class's question) exists in the same
+      // collection and the caller is a class member — of the *other* class.
+      const student = studentContext("student-1");
+      const snap = await assertSucceeds(getDocs(classQuestionListQuery(student.firestore(), "class-1")));
+      expect(snap.docs.map((d) => d.id)).toEqual(["q1"]);
+    });
+
+    // Confirms the fix is additive, not a change to sibling query shapes —
+    // both pre-existing list queries still behave exactly as before.
+    it("leaves getOwnQuestionsPage's query behavior unchanged", async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await setDoc(
+          doc(context.firestore(), "questions", "own-1"),
+          privateQuestionDoc({ ownerId: "student-1" }),
+        );
+      });
+      const student = studentContext("student-1");
+      const q = query(
+        collection(student.firestore(), "questions"),
+        where("ownerId", "==", "student-1"),
+        orderBy("createdAt", "desc"),
+      );
+      const snap = await assertSucceeds(getDocs(q));
+      expect(snap.docs.map((d) => d.id)).toEqual(["own-1"]);
+    });
+
+    it("leaves getPublicQuestionsPage's query behavior unchanged", async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await setDoc(
+          doc(context.firestore(), "questions", "pub-1"),
+          publicQuestionDoc({ ownerId: "student-2" }),
+        );
+      });
+      const student = studentContext("student-1");
+      const q = query(
+        collection(student.firestore(), "questions"),
+        where("visibility", "==", "public"),
+        orderBy("createdAt", "desc"),
+      );
+      const snap = await assertSucceeds(getDocs(q));
+      expect(snap.docs.map((d) => d.id)).toEqual(["pub-1"]);
+    });
+  });
+});
+
+function organizationDoc(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    name: "Ayşe Yılmaz Sınıfları",
+    ownerId: "teacher-1",
+    status: "active",
+    createdAt: 1,
+    updatedAt: 1,
+    ...overrides,
+  };
+}
+
+// organizations/{organizationId} — created exclusively by completeOnboarding
+// (Admin SDK) when a new account picks "teacher" at registration. See
+// functions/src/onboarding/completeOnboarding.ts. The transaction/claims
+// logic itself isn't exercisable via rules-unit-testing (same precedent as
+// createClass/joinClassByCode — verified instead by code review + the
+// buildOrganizationName unit test), so this describe block covers exactly
+// what the rules layer is responsible for: nobody but the owner can read
+// it, and nobody — owner included — can write it directly.
+describe("firestore.rules — organizations/{organizationId}", () => {
+  let testEnv: RulesTestEnvironment;
+
+  beforeAll(async () => {
+    testEnv = await initializeTestEnvironment({
+      projectId: PROJECT_ID,
+      firestore: { rules: fs.readFileSync("firestore.rules", "utf8"), host: "127.0.0.1", port: 8080 },
+    });
+  });
+
+  afterAll(async () => testEnv.cleanup());
+  afterEach(async () => testEnv.clearFirestore());
+
+  function teacherContext(uid: string, organizationId: string | null = null) {
+    return testEnv.authenticatedContext(uid, { role: "teacher", organizationId });
+  }
+
+  async function seedOrg(id: string, data: Record<string, unknown>) {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "organizations", id), data);
+    });
+  }
+
+  it("lets the owning teacher read their own organization", async () => {
+    await seedOrg("org-1", organizationDoc());
+    await assertSucceeds(
+      getDoc(doc(teacherContext("teacher-1").firestore(), "organizations", "org-1")),
+    );
+  });
+
+  it("denies a different teacher from reading someone else's organization", async () => {
+    await seedOrg("org-1", organizationDoc());
+    await assertFails(
+      getDoc(doc(teacherContext("teacher-2").firestore(), "organizations", "org-1")),
+    );
+  });
+
+  it("denies a client creating an organization directly, even as its own owner", async () => {
+    const teacher = teacherContext("teacher-1");
+    await assertFails(
+      setDoc(doc(teacher.firestore(), "organizations", "org-1"), organizationDoc()),
+    );
+  });
+
+  it("denies the owning teacher from updating their own organization directly", async () => {
+    await seedOrg("org-1", organizationDoc());
+    const teacher = teacherContext("teacher-1", "org-1");
+    await assertFails(
+      updateDoc(doc(teacher.firestore(), "organizations", "org-1"), { name: "Hacked" }),
+    );
   });
 });

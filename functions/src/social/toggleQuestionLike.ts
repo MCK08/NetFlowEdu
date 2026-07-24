@@ -39,7 +39,15 @@ export const toggleQuestionLike = onCall<ToggleQuestionLikeRequest>(
         throw new HttpsError("not-found", "Soru bulunamadı.");
       }
       const question = questionSnap.data() ?? {};
-      if (!canReadQuestion(question, caller.uid)) {
+
+      let isMember = false;
+      if (question.visibility === "class" && typeof question.classId === "string") {
+        const memberSnap = await tx.get(
+          db.collection("classes").doc(question.classId).collection("members").doc(caller.uid),
+        );
+        isMember = memberSnap.exists;
+      }
+      if (!canReadQuestion(question, caller.uid, isMember)) {
         throw new HttpsError("permission-denied", "Bu soruya erişim izniniz yok.");
       }
 

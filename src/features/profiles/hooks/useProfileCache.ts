@@ -1,21 +1,28 @@
 import { useEffect, useState } from "react";
 
-import { getCachedProfile, getDisplayHandle } from "../services/profileCacheService";
+import { getCachedProfile, getPublicIdentity } from "../services/profileCacheService";
 
-interface ProfileHandle {
-  handle: string;
+interface ProfileIdentity {
+  primaryName: string;
+  usernameHandle: string | null;
   photoURL: string | null;
   isLoading: boolean;
 }
 
-const INITIAL: ProfileHandle = { handle: "Kullanıcı", photoURL: null, isLoading: true };
+const INITIAL: ProfileIdentity = {
+  primaryName: "Kullanıcı",
+  usernameHandle: null,
+  photoURL: null,
+  isLoading: true,
+};
 
-// Resolves a uid to a display handle (username -> displayName ->
-// "Kullanıcı", never uid) and avatar, via the shared profile cache. Safe
-// against unmount/uid-change races: a stale in-flight fetch can never
-// clobber state after the hook has moved on to a different uid.
-export function useProfileHandle(uid: string | undefined): ProfileHandle {
-  const [state, setState] = useState<ProfileHandle>(INITIAL);
+// Resolves a uid to a public identity (displayName primary, @username
+// secondary — see resolvePublicIdentity) and avatar, via the shared
+// profile cache. Safe against unmount/uid-change races: a stale in-flight
+// fetch can never clobber state after the hook has moved on to a different
+// uid.
+export function useProfileHandle(uid: string | undefined): ProfileIdentity {
+  const [state, setState] = useState<ProfileIdentity>(INITIAL);
 
   useEffect(() => {
     if (!uid) {
@@ -28,8 +35,10 @@ export function useProfileHandle(uid: string | undefined): ProfileHandle {
 
     getCachedProfile(uid).then((profile) => {
       if (cancelled) return;
+      const identity = getPublicIdentity(profile);
       setState({
-        handle: getDisplayHandle(profile),
+        primaryName: identity.primaryName,
+        usernameHandle: identity.usernameHandle,
         photoURL: profile?.photoURL ?? null,
         isLoading: false,
       });

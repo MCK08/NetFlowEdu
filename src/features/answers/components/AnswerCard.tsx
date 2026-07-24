@@ -26,7 +26,7 @@ function formatDate(createdAt: number): string {
 
 export function AnswerCard({ answer, onPressImage }: AnswerCardProps) {
   const { firebaseUser } = useAuth();
-  const { handle, photoURL } = useProfileHandle(answer.ownerId);
+  const { primaryName, usernameHandle, photoURL } = useProfileHandle(answer.ownerId);
   const { liked, likeCount, toggle } = useLike({
     targetType: "answer",
     targetId: answer.id,
@@ -62,9 +62,16 @@ export function AnswerCard({ answer, onPressImage }: AnswerCardProps) {
               <Ionicons name="person" size={14} color="#8A8F98" />
             </View>
           )}
-          <Text style={styles.author} numberOfLines={1}>
-            @{handle}
-          </Text>
+          <View style={styles.nameColumn}>
+            <Text style={styles.author} numberOfLines={1}>
+              {primaryName}
+            </Text>
+            {usernameHandle ? (
+              <Text style={styles.handle} numberOfLines={1}>
+                {usernameHandle}
+              </Text>
+            ) : null}
+          </View>
           <Text style={styles.date}>{formatDate(answer.createdAt)}</Text>
         </Pressable>
         <View style={styles.bottomRow}>
@@ -123,11 +130,17 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  nameColumn: {
+    flexShrink: 1,
+  },
   author: {
     fontSize: 13,
     fontWeight: "700",
     color: "black",
-    flexShrink: 1,
+  },
+  handle: {
+    fontSize: 11,
+    color: "#8A8F98",
   },
   date: {
     fontSize: 12,

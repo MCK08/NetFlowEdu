@@ -17,16 +17,19 @@ export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
+// displayName is the public, chosen name shown throughout the app — not
+// necessarily a legal name — so it may contain spaces freely ("Sinem
+// Hoca", "Matematikçi Burak"). Only length is validated.
 export function validateDisplayName(displayName: string): string | undefined {
   const trimmed = displayName.trim();
   if (trimmed.length === 0) {
-    return "Ad soyad gerekli.";
+    return "Görünen ad gerekli.";
   }
   if (trimmed.length < 2) {
-    return "Ad soyad en az 2 karakter olmalı.";
+    return "Görünen ad en az 2 karakter olmalı.";
   }
   if (trimmed.length > 60) {
-    return "Ad soyad en fazla 60 karakter olabilir.";
+    return "Görünen ad en fazla 60 karakter olabilir.";
   }
   return undefined;
 }
@@ -89,14 +92,6 @@ export function validateTermsAccepted(accepted: boolean): string | undefined {
   return accepted ? undefined : "Devam etmek için kullanım koşullarını kabul etmelisiniz.";
 }
 
-export function validateOrganizationName(
-  intendedRole: RegisterInput["intendedRole"],
-  organizationName: string,
-): string | undefined {
-  if (intendedRole !== "teacher") return undefined;
-  return organizationName.trim().length === 0 ? "Kurum adı gerekli." : undefined;
-}
-
 export function validateRegisterInput(input: RegisterInput): RegisterFieldErrors {
   const errors: RegisterFieldErrors = {};
 
@@ -117,12 +112,6 @@ export function validateRegisterInput(input: RegisterInput): RegisterFieldErrors
 
   const termsError = validateTermsAccepted(input.acceptedTerms);
   if (termsError) errors.acceptedTerms = termsError;
-
-  const organizationNameError = validateOrganizationName(
-    input.intendedRole,
-    input.organizationName,
-  );
-  if (organizationNameError) errors.organizationName = organizationNameError;
 
   return errors;
 }

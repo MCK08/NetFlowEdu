@@ -42,7 +42,16 @@ export const toggleAnswerLike = onCall<ToggleAnswerLikeRequest>(
         throw new HttpsError("failed-precondition", "Cevap geçerli bir soruya bağlı değil.");
       }
       const questionSnap = await tx.get(db.collection("questions").doc(questionId));
-      if (!questionSnap.exists || !canReadQuestion(questionSnap.data() ?? {}, caller.uid)) {
+      const question = questionSnap.data() ?? {};
+
+      let isMember = false;
+      if (questionSnap.exists && question.visibility === "class" && typeof question.classId === "string") {
+        const memberSnap = await tx.get(
+          db.collection("classes").doc(question.classId).collection("members").doc(caller.uid),
+        );
+        isMember = memberSnap.exists;
+      }
+      if (!questionSnap.exists || !canReadQuestion(question, caller.uid, isMember)) {
         throw new HttpsError("permission-denied", "Bu cevaba erişim izniniz yok.");
       }
 

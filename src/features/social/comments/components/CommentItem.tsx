@@ -21,7 +21,7 @@ interface CommentItemProps {
 }
 
 export function CommentItem({ comment, isOwnComment, onDelete }: CommentItemProps) {
-  const { handle, photoURL } = useProfileHandle(comment.ownerId);
+  const { primaryName, usernameHandle, photoURL } = useProfileHandle(comment.ownerId);
 
   return (
     <View style={styles.row}>
@@ -36,8 +36,13 @@ export function CommentItem({ comment, isOwnComment, onDelete }: CommentItemProp
       <View style={styles.body}>
         <View style={styles.headerRow}>
           <Text style={styles.author} numberOfLines={1}>
-            @{handle}
+            {primaryName}
           </Text>
+          {usernameHandle ? (
+            <Text style={styles.handle} numberOfLines={1}>
+              {usernameHandle}
+            </Text>
+          ) : null}
           <Text style={styles.date}>{formatDate(comment.createdAt)}</Text>
         </View>
         <Text style={styles.text}>{comment.text}</Text>
@@ -91,6 +96,10 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "black",
     flexShrink: 1,
+  },
+  handle: {
+    fontSize: 11,
+    color: "#8A8F98",
   },
   date: {
     fontSize: 11,

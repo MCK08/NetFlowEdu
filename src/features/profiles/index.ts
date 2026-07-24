@@ -1,2 +1,2 @@
 export { useProfileHandle } from "./hooks/useProfileCache";
-export { getCachedProfile, getDisplayHandle } from "./services/profileCacheService";
+export { getCachedProfile, getPublicIdentity } from "./services/profileCacheService";

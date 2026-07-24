@@ -17,6 +17,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { PrimaryButton } from "@components/ui/PrimaryButton";
 import { useAuth } from "@features/authentication";
 import { ROUTES } from "@constants/routes";
+import { resolvePublicIdentity } from "@utils/publicIdentity";
 
 import { QuestionGridItem } from "../components/QuestionGridItem";
 import { ArchiveMode, useQuestionArchive } from "../hooks/useQuestionArchive";
@@ -73,7 +74,7 @@ export function ProfileScreen() {
     return <SafeAreaView style={styles.flex} />;
   }
 
-  const displayHandle = profile.username ?? profile.displayName ?? "Kullanıcı";
+  const identity = resolvePublicIdentity(profile);
   const itemSize = width / GRID_COLUMNS;
 
   return (
@@ -101,8 +102,10 @@ export function ProfileScreen() {
               )}
             </View>
 
-            <Text style={styles.username}>@{displayHandle}</Text>
-            <Text style={styles.displayName}>{profile.displayName}</Text>
+            <Text style={styles.username}>{identity.primaryName}</Text>
+            {identity.usernameHandle ? (
+              <Text style={styles.displayName}>{identity.usernameHandle}</Text>
+            ) : null}
 
             <View style={styles.card}>
               <InfoRow label="Rol" value={ROLE_LABELS[profile.role] ?? profile.role} />

@@ -1,19 +1,11 @@
 import { getPublicProfileOnce } from "@services/firebase/publicProfile";
 import { PublicProfile } from "@/types/publicProfile";
+import { PublicIdentity, resolvePublicIdentity } from "@utils/publicIdentity";
 
-const FALLBACK_HANDLE = "Kullanıcı";
-
-// Never fall back to uid — the fallback chain stops at a fixed Turkish
+// Never falls back to uid — the fallback chain stops at a fixed Turkish
 // string precisely so a raw Firebase UID can never end up on screen.
-//
-// Uses truthiness, not `??`: displayName is a legitimately reachable ""
-// (see functions/src/triggers/onUserCreate.ts's `user.displayName ?? ""`,
-// e.g. when a client-side setDisplayName call failed silently), and `??`
-// only falls through on null/undefined — it would happily return "" as a
-// "resolved" handle instead of continuing down the fallback chain.
-export function getDisplayHandle(profile: PublicProfile | null): string {
-  if (!profile) return FALLBACK_HANDLE;
-  return profile.username || profile.displayName || FALLBACK_HANDLE;
+export function getPublicIdentity(profile: PublicProfile | null): PublicIdentity {
+  return resolvePublicIdentity(profile);
 }
 
 // uid -> resolved public profile (or null if unavailable/deleted/
@@ -29,7 +21,7 @@ const pending = new Map<string, Promise<PublicProfile | null>>();
 // user — see firestore.rules and functions/src/profiles/syncPublicProfile.ts).
 // A missing doc (not yet synced, or the account was suspended) is treated
 // as "profile unavailable," not a crash — cached as null so we don't retry
-// every render, and getDisplayHandle falls back to "Kullanıcı" for it.
+// every render, and getPublicIdentity falls back to "Kullanıcı" for it.
 export async function getCachedProfile(uid: string): Promise<PublicProfile | null> {
   if (cache.has(uid)) return cache.get(uid) ?? null;
 

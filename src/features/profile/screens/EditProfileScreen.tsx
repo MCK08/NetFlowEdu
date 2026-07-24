@@ -9,8 +9,18 @@ import { TextField } from "@components/ui/TextField";
 import { useEditProfileForm } from "../hooks/useEditProfileForm";
 
 export function EditProfileScreen() {
-  const { displayName, setDisplayName, previewPhotoUri, pickPhoto, isSaving, submit } =
-    useEditProfileForm();
+  const {
+    displayName,
+    setDisplayName,
+    username,
+    setUsername,
+    hasExistingUsername,
+    usernameError,
+    previewPhotoUri,
+    pickPhoto,
+    isSaving,
+    submit,
+  } = useEditProfileForm();
 
   return (
     <KeyboardSafeScreen>
@@ -28,12 +38,25 @@ export function EditProfileScreen() {
       </Pressable>
 
       <TextField
-        label="Ad Soyad"
+        label="Görünen Ad"
         value={displayName}
         onChangeText={setDisplayName}
         autoComplete="name"
         textContentType="name"
       />
+
+      <TextField
+        label="Kullanıcı Adı"
+        value={username}
+        onChangeText={setUsername}
+        errorMessage={usernameError ?? undefined}
+        editable={!hasExistingUsername}
+        autoCapitalize="none"
+        autoComplete="username"
+      />
+      {hasExistingUsername ? (
+        <Text style={styles.usernameLockedHint}>Kullanıcı adı sonradan değiştirilemiyor.</Text>
+      ) : null}
 
       <PrimaryButton label="Kaydet" onPress={submit} isLoading={isSaving} />
     </KeyboardSafeScreen>
@@ -68,5 +91,10 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     color: "#3358D9",
+  },
+  usernameLockedHint: {
+    fontSize: 12,
+    color: "#8A8F98",
+    marginTop: -8,
   },
 });

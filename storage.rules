@@ -68,6 +68,30 @@ service firebase.storage {
                    && isImageOrPdf() && isUnder10MB();
     }
 
+    // Phase 7: class questions. Storage still can't safely call
+    // firestore.get() (see the file header), so it can't verify "is this
+    // uid actually a member of classId" the way firestore.rules' isClassMember
+    // does — the best it can check from the path alone is "same
+    // organization, signed in". This is a deliberate, narrower-than-ideal
+    // trust boundary, same shape as 'public' already accepting "any signed-in
+    // user": within-org classmates who are NOT in this specific class could
+    // in principle read the blob if they guessed the exact
+    // classId/ownerId/timestamp-filename path, but they can never discover
+    // that path — the only place imageUrl is exposed is inside the
+    // question document itself, which firestore.rules' isClassMember DOES
+    // correctly gate. Write only checks path-ownership (uid == ownerId),
+    // not "does this uid actually own classId" — same as every other
+    // access level here; the real gate on whether a valid class question
+    // can ever be created is firestore.rules' create rule on
+    // questions/{questionId}, checked immediately after this upload by
+    // createQuestion. An orphaned blob with no matching Firestore doc is
+    // never linked or discoverable.
+    match /questions/class/{organizationId}/{classId}/{ownerId}/{fileName} {
+      allow read: if isSignedIn() && organizationId() == organizationId;
+      allow write: if isSignedIn() && uid() == ownerId
+                   && isImageOrPdf() && isUnder10MB();
+    }
+
     // Phase 6: {accessLevel} mirrors the parent question's, same reasoning
     // as questions/{accessLevel}/... above — an answer image is readable
     // by whoever could read the question, without ever asking Storage to

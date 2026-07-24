@@ -4,7 +4,7 @@ import { createContext, ReactNode, useCallback, useEffect, useMemo, useState } f
 import { UserProfile, UserRole } from "@/types/user";
 import { auth } from "@services/firebase/config";
 import { subscribeToUserProfile } from "@services/firebase/firestore";
-import { reloadCurrentUser, refreshIdToken, signOutCurrentUser } from "@services/firebase/auth";
+import { refreshIdToken, signOutCurrentUser } from "@services/firebase/auth";
 
 import { ForgotPasswordInput, LoginInput, RegisterInput } from "../types";
 import {
@@ -14,6 +14,7 @@ import {
   requestPasswordReset,
   resendVerificationEmail,
 } from "../services/authService";
+import { verifyAndCompleteOnboarding } from "../services/onboardingSession";
 import { waitForProfileDocument } from "../services/profileWait";
 
 // Thrown by signIn() when the account's Firestore profile says
@@ -38,7 +39,7 @@ export interface AuthContextValue {
   profileLoading: boolean;
   profileError: string | null;
   signIn: (input: LoginInput) => Promise<void>;
-  register: (input: RegisterInput) => Promise<{ teacherRequestSubmitted: boolean }>;
+  register: (input: RegisterInput) => Promise<void>;
   signOut: () => Promise<void>;
   sendPasswordReset: (input: ForgotPasswordInput) => Promise<void>;
   resendVerification: () => Promise<void>;
@@ -123,11 +124,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     await refreshIdToken(user);
+
+    // Covers the path where email verification happened OUTSIDE the app
+    // (the user tapped the link in their mail client, then just logged in
+    // fresh, never tapping "check again" in-app) — refreshSession's hook
+    // into Stage 2 only fires from that in-app button, so this is the other
+    // trigger point. verifyAndCompleteOnboarding is itself non-fatal/no-op
+    // safe (re-checks email_verified, and completeOnboarding re-checks it
+    // again server-side).
+    await verifyAndCompleteOnboarding(user);
   }, []);
 
   const register = useCallback(async (input: RegisterInput) => {
-    const { teacherRequestSubmitted } = await registerStudent(input);
-    return { teacherRequestSubmitted };
+    await registerStudent(input);
   }, []);
 
   const signOut = useCallback(async () => {
@@ -143,10 +152,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await resendVerificationEmail(firebaseUser);
   }, [firebaseUser]);
 
+  // Also drives Stage 2 of onboarding: once the reloaded Auth user reports
+  // emailVerified, this calls completeOnboarding (which itself re-checks
+  // request.auth.token.email_verified server-side — the client-observed
+  // flag here is only what decides whether to bother calling at all, never
+  // the actual authorization). A second token refresh afterward is what
+  // lets a just-promoted teacher's client-side calls (e.g. createClass)
+  // pass firestore.rules' claims checks immediately, without waiting for
+  // the token's natural expiry. Failure here is non-fatal and silently
+  // retried on the next refreshSession call (e.g. the user tapping "check
+  // again") — completeOnboarding is idempotent/retry-safe by design (see
+  // its own doc comment), so there's no risk of double-acting.
   const refreshSession = useCallback(async () => {
     if (!firebaseUser) return;
-    await reloadCurrentUser(firebaseUser);
-    await refreshIdToken(firebaseUser);
+    await verifyAndCompleteOnboarding(firebaseUser);
     setEmailVerified(firebaseUser.emailVerified);
   }, [firebaseUser]);
 

@@ -12,6 +12,13 @@ export default function StudentTabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="classes"
+        options={{
+          title: "Sınıflarım",
+          tabBarIcon: ({ color, size }) => <Ionicons name="school" color={color} size={size} />,
+        }}
+      />
+      <Tabs.Screen
         name="profile"
         options={{
           title: "Profil",

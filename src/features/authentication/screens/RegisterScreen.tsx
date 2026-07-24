@@ -16,14 +16,10 @@ export function RegisterScreen() {
   const { input, setField, fieldErrors, formError, isSubmitting, submit } = useRegisterForm();
 
   async function handleSubmit() {
-    const { success, teacherRequestSubmitted } = await submit();
+    const { success } = await submit();
     if (!success) return;
 
-    router.replace(
-      teacherRequestSubmitted
-        ? `${ROUTES.verifyEmail}?teacherRequestPending=1`
-        : ROUTES.verifyEmail,
-    );
+    router.replace(ROUTES.verifyEmail);
   }
 
   return (
@@ -59,7 +55,7 @@ export function RegisterScreen() {
       </View>
 
       <TextField
-        label="Ad Soyad"
+        label="Görünen Ad"
         value={input.displayName}
         onChangeText={(value) => setField("displayName", value)}
         errorMessage={fieldErrors.displayName}
@@ -75,16 +71,6 @@ export function RegisterScreen() {
         autoCapitalize="none"
         autoComplete="username"
       />
-
-      {input.intendedRole === "teacher" ? (
-        <TextField
-          label="Kurum Adı"
-          value={input.organizationName}
-          onChangeText={(value) => setField("organizationName", value)}
-          errorMessage={fieldErrors.organizationName}
-          autoComplete="organization"
-        />
-      ) : null}
 
       <TextField
         label="E-posta"

@@ -37,7 +37,7 @@ function formatDate(createdAt: number): string {
 // touch.
 export function FeedCard({ question, height }: FeedCardProps) {
   const { firebaseUser } = useAuth();
-  const { handle, photoURL } = useProfileHandle(question.ownerId);
+  const { primaryName, usernameHandle, photoURL } = useProfileHandle(question.ownerId);
   const { liked, likeCount, toggle } = useLike({
     targetType: "question",
     targetId: question.id,
@@ -78,9 +78,16 @@ export function FeedCard({ question, height }: FeedCardProps) {
               <Ionicons name="person" size={16} color="white" />
             </View>
           )}
-          <Text style={styles.username} numberOfLines={1}>
-            @{handle}
-          </Text>
+          <View style={styles.nameColumn}>
+            <Text style={styles.username} numberOfLines={1}>
+              {primaryName}
+            </Text>
+            {usernameHandle ? (
+              <Text style={styles.handle} numberOfLines={1}>
+                {usernameHandle}
+              </Text>
+            ) : null}
+          </View>
         </Pressable>
         <View style={styles.metaRow}>
           <Text style={styles.date}>{formatDate(question.createdAt)}</Text>
@@ -141,11 +148,18 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  nameColumn: {
+    flexShrink: 1,
+  },
   username: {
     color: "white",
     fontSize: 15,
     fontWeight: "700",
-    flexShrink: 1,
+  },
+  handle: {
+    color: "white",
+    fontSize: 12,
+    opacity: 0.85,
   },
   metaRow: {
     flexDirection: "row",

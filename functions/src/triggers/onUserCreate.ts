@@ -41,6 +41,15 @@ export const onUserCreate = functionsV1.auth.user().onCreate(async (user) => {
     weeklyPoints: 0,
     accountStatus: "active",
     emailVerified: user.emailVerified,
+    // Explicit server-created onboarding state — see
+    // functions/src/onboarding/. Only an account with this field present
+    // AND exactly "pending" may ever pick a role via initializeOnboarding/
+    // completeOnboarding. A document from before this field existed simply
+    // never has it, which onboarding treats as "already complete", not
+    // "pending" — that's what makes a pre-existing account unable to call
+    // its way into a role change.
+    onboardingStatus: "pending",
+    requestedRole: null,
     createdAt: now,
     updatedAt: now,
   });
