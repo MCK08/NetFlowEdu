@@ -13,12 +13,14 @@
 const mockUsersStore = new Map<string, Record<string, unknown> | undefined>();
 const mockOrgsStore = new Map<string, Record<string, unknown> | undefined>();
 const mockClaimsStore = new Map<string, Record<string, unknown> | undefined>();
+const mockPublicProfilesStore = new Map<string, Record<string, unknown> | undefined>();
 
 const SERVER_TIMESTAMP = "__SERVER_TIMESTAMP__";
 
 function mockStoreFor(collection: string) {
   if (collection === "users") return mockUsersStore;
   if (collection === "organizations") return mockOrgsStore;
+  if (collection === "publicProfiles") return mockPublicProfilesStore;
   throw new Error(`unexpected collection ${collection}`);
 }
 
@@ -83,15 +85,39 @@ jest.mock("firebase-admin/auth", () => ({
   }),
 }));
 
+jest.mock("firebase-functions/v2", () => ({
+  logger: { info: () => undefined, error: () => undefined },
+}));
+
 // eslint-disable-next-line import/first
 import { completeOnboarding } from "../../functions/src/onboarding/completeOnboarding";
 // eslint-disable-next-line import/first
 import { initializeOnboarding } from "../../functions/src/onboarding/initializeOnboarding";
+// eslint-disable-next-line import/first
+import { syncPublicProfile } from "../../functions/src/profiles/syncPublicProfile";
 
 function resetStores() {
   mockUsersStore.clear();
   mockOrgsStore.clear();
   mockClaimsStore.clear();
+  mockPublicProfilesStore.clear();
+}
+
+// Mirrors the exact shape syncPublicProfile's onDocumentWritten handler
+// reads (event.params.uid, event.data.after.exists/.data()) — built from
+// whatever's currently in mockUsersStore for that uid, the same way a real
+// users/{uid} write's "after" snapshot would look.
+function userWrittenEvent(uid: string) {
+  const data = mockUsersStore.get(uid);
+  return {
+    params: { uid },
+    data: {
+      after: {
+        exists: data !== undefined,
+        data: () => data,
+      },
+    },
+  } as never;
 }
 
 function callerRequest(uid: string, data: Record<string, unknown>, emailVerified = true) {
@@ -195,6 +221,39 @@ describe("completeOnboarding — fresh pending accounts", () => {
       organizationId: "uid-1",
       onboardingStatus: "complete",
     });
+  });
+
+  // Regression test for the "teacher shows as Öğrenci" investigation: for a
+  // specific real account (sistemdisi2025@gmail.com), production data showed
+  // users/{uid}.role, publicProfiles/{uid}.role, and the Auth custom claim
+  // all stuck at "student" — all three agreeing with each other, none
+  // conflicting, because completeOnboarding had simply never run to
+  // completion (onboardingStatus was still "pending"). This proves the
+  // *intended* end state once completeOnboarding does complete: all three
+  // independent role sources — Firestore users/{uid} (read by AuthProvider/
+  // RouteGuard/ProfileScreen), the Auth custom claim (read by firestore.rules
+  // and Cloud Functions authorization), and publicProfiles/{uid} (read by
+  // PublicProfileScreen/social features, kept in sync by the separate
+  // syncPublicProfile trigger) — converge on "teacher", with no manual
+  // reconciliation step required.
+  it("after a successful teacher onboarding, users/{uid}, custom claims, and publicProfiles/{uid} all agree role === 'teacher'", async () => {
+    seedUser("uid-1", freshPendingUser({ requestedRole: "teacher", displayName: "Eray Hoca" }));
+    mockClaimsStore.set("uid-1", { role: "student", organizationId: null });
+
+    await completeOnboarding.run(callerRequest("uid-1", {}, true));
+
+    // Source 1: Firestore users/{uid} — what AuthProvider/RouteGuard/ProfileScreen read.
+    expect(mockUsersStore.get("uid-1")).toMatchObject({ role: "teacher" });
+
+    // Source 2: Auth custom claims — what firestore.rules and Cloud Functions authorize against.
+    expect(mockClaimsStore.get("uid-1")).toMatchObject({ role: "teacher" });
+
+    // Source 3: publicProfiles/{uid} — kept in sync by the users/{uid} write
+    // trigger, exercised here directly against the resulting document, the
+    // same way it fires in production immediately after completeOnboarding's
+    // write.
+    await syncPublicProfile.run(userWrittenEvent("uid-1"));
+    expect(mockPublicProfilesStore.get("uid-1")).toMatchObject({ role: "teacher" });
   });
 
   it("rejects an unverified caller and grants nothing", async () => {

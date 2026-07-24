@@ -2,9 +2,9 @@ import { useRouter, useSegments } from "expo-router";
 import { ReactNode, useEffect } from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 
-import { ROUTES } from "@constants/routes";
-
 import { useAuth } from "../hooks/useAuth";
+import { resolveRouteForState } from "../services/routing";
+import { isAtTarget } from "../services/routeTarget";
 
 function Splash() {
   return (
@@ -15,54 +15,31 @@ function Splash() {
 }
 
 // Single centralized place that decides which route group the current auth
-// state is allowed to be in, and redirects otherwise. Every branch only
-// calls router.replace() when the current location doesn't already match
-// its target, so settled states never loop.
+// state is allowed to be in, and redirects otherwise. The decision itself
+// lives in resolveRouteForState (routing.ts) — the one place, shared with
+// its own unit tests, that this and every other entry point agree on —
+// rather than being reimplemented here.
 export function RouteGuard({ children }: { children: ReactNode }) {
   const router = useRouter();
   const segments = useSegments();
-  const { isAuthenticated, isEmailVerified, role, isLoading, profileLoading, profileError } =
+  const { isAuthenticated, isEmailVerified, role, profile, isLoading, profileLoading, profileError } =
     useAuth();
 
   const settledEnoughToRoute = !isLoading && !(isAuthenticated && isEmailVerified && profileLoading);
+  const onboardingStatus = profile?.onboardingStatus ?? null;
 
   useEffect(() => {
     if (!settledEnoughToRoute) return;
 
-    const group = segments[0];
-    const path = "/" + segments.join("/");
-
-    if (!isAuthenticated) {
-      if (group !== "(auth)") router.replace(ROUTES.login);
-      return;
-    }
-
-    if (!isEmailVerified) {
-      if (path !== ROUTES.verifyEmail) router.replace(ROUTES.verifyEmail);
-      return;
-    }
-
     if (profileError) {
-      if (group !== "unknown-role") router.replace("/unknown-role");
+      if (!isAtTarget("/unknown-role", segments)) router.replace("/unknown-role");
       return;
     }
 
-    switch (role) {
-      case "student":
-        if (group !== "(student)") router.replace(ROUTES.student);
-        return;
-      case "teacher":
-        if (group !== "(teacher)") router.replace(ROUTES.teacher);
-        return;
-      case "organization_admin":
-      case "platform_admin":
-        if (group !== "(admin)") router.replace(ROUTES.admin);
-        return;
-      default:
-        if (group !== "unknown-role") router.replace("/unknown-role");
-    }
+    const target = resolveRouteForState({ isAuthenticated, isEmailVerified, role, onboardingStatus });
+    if (!isAtTarget(target, segments)) router.replace(target);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settledEnoughToRoute, isAuthenticated, isEmailVerified, profileError, role, segments]);
+  }, [settledEnoughToRoute, isAuthenticated, isEmailVerified, profileError, role, onboardingStatus, segments]);
 
   return (
     <View style={styles.flex}>

@@ -43,7 +43,7 @@ export interface AuthContextValue {
   signOut: () => Promise<void>;
   sendPasswordReset: (input: ForgotPasswordInput) => Promise<void>;
   resendVerification: () => Promise<void>;
-  refreshSession: () => Promise<void>;
+  refreshSession: () => Promise<boolean>;
 }
 
 export const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -159,14 +159,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // the actual authorization). A second token refresh afterward is what
   // lets a just-promoted teacher's client-side calls (e.g. createClass)
   // pass firestore.rules' claims checks immediately, without waiting for
-  // the token's natural expiry. Failure here is non-fatal and silently
-  // retried on the next refreshSession call (e.g. the user tapping "check
-  // again") — completeOnboarding is idempotent/retry-safe by design (see
-  // its own doc comment), so there's no risk of double-acting.
+  // the token's natural expiry.
+  //
+  // Returns whether Stage 2 actually completed. A `false` result is not an
+  // error to swallow here — the caller (useEmailVerification's
+  // checkVerified, ultimately the verify-email screen's button) uses it to
+  // decide whether it's safe to navigate away or whether the user needs to
+  // retry. completeOnboarding is idempotent/retry-safe by design (see its
+  // own doc comment), so retrying is always safe and never double-acts.
   const refreshSession = useCallback(async () => {
-    if (!firebaseUser) return;
-    await verifyAndCompleteOnboarding(firebaseUser);
+    if (!firebaseUser) return false;
+    const onboardingCompleted = await verifyAndCompleteOnboarding(firebaseUser);
     setEmailVerified(firebaseUser.emailVerified);
+    return onboardingCompleted;
   }, [firebaseUser]);
 
   const value = useMemo<AuthContextValue>(

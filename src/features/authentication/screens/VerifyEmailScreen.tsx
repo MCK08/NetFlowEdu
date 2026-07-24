@@ -14,7 +14,6 @@ export function VerifyEmailScreen() {
   const { teacherRequestPending } = useLocalSearchParams<{ teacherRequestPending?: string }>();
   const {
     email,
-    isEmailVerified,
     isResending,
     isChecking,
     error,
@@ -24,9 +23,18 @@ export function VerifyEmailScreen() {
     signOut,
   } = useEmailVerification();
 
+  // Uses ONLY checkVerified()'s own return value, not the `isEmailVerified`
+  // destructured above — that binding is fixed at this render, so by the
+  // time the async checkVerified() call resolves (after it has just called
+  // setEmailVerified(true) inside AuthProvider) it's already stale, and
+  // `verified && isEmailVerified` would read the pre-tap `false` and never
+  // navigate on the very first successful tap. checkVerified() already
+  // implies "email is verified" — verifyAndCompleteOnboarding only
+  // attempts completion after confirming that fresh, post-reload — so its
+  // result alone is the correct, non-stale signal.
   async function handleCheck() {
-    const verified = await checkVerified();
-    if (verified && isEmailVerified) {
+    const onboardingCompleted = await checkVerified();
+    if (onboardingCompleted) {
       router.replace("/");
     }
   }

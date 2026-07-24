@@ -44,8 +44,8 @@ describe("verifyAndCompleteOnboarding — refresh order (audited requirement)", 
     });
   });
 
-  it("runs reload -> getIdToken(true) -> completeOnboarding -> getIdToken(true), in exactly that order, for a verified user", async () => {
-    await verifyAndCompleteOnboarding(makeUser(true));
+  it("runs reload -> getIdToken(true) -> completeOnboarding -> getIdToken(true), in exactly that order, for a verified user, and reports success", async () => {
+    await expect(verifyAndCompleteOnboarding(makeUser(true))).resolves.toBe(true);
 
     expect(calls).toEqual([
       "reload",
@@ -74,17 +74,23 @@ describe("verifyAndCompleteOnboarding — refresh order (audited requirement)", 
     expect(secondRefreshIndex).toBeGreaterThan(completeEndIndex);
   });
 
-  it("still reloads and refreshes the token once even for an unverified user, but never calls completeOnboarding", async () => {
-    await verifyAndCompleteOnboarding(makeUser(false));
+  it("still reloads and refreshes the token once even for an unverified user, but never calls completeOnboarding, and reports failure", async () => {
+    await expect(verifyAndCompleteOnboarding(makeUser(false))).resolves.toBe(false);
 
     expect(calls).toEqual(["reload", "getIdToken(true)"]);
     expect(mockCompleteOnboarding).not.toHaveBeenCalled();
   });
 
-  it("does not throw when completeOnboarding fails, and never loops — exactly one attempt per call", async () => {
+  // Regression test for the production bug: a teacher's onboarding got
+  // permanently stuck at onboardingStatus="pending" because a
+  // completeOnboarding failure here used to be silently swallowed (resolved
+  // undefined, indistinguishable from success) — nothing ever told the
+  // caller (and therefore the user) that Stage 2 hadn't actually completed,
+  // so nothing ever retried it.
+  it("does not throw when completeOnboarding fails, reports failure (not success) via its return value, and never loops — exactly one attempt per call", async () => {
     mockCompleteOnboarding.mockRejectedValueOnce(new Error("network error"));
 
-    await expect(verifyAndCompleteOnboarding(makeUser(true))).resolves.toBeUndefined();
+    await expect(verifyAndCompleteOnboarding(makeUser(true))).resolves.toBe(false);
 
     expect(mockCompleteOnboarding).toHaveBeenCalledTimes(1);
     // The post-completion refresh is skipped when completeOnboarding
@@ -93,10 +99,14 @@ describe("verifyAndCompleteOnboarding — refresh order (audited requirement)", 
     expect(mockRefreshIdToken).toHaveBeenCalledTimes(1);
   });
 
-  it("a second, independent call is safe (no shared state, no accumulating loop)", async () => {
-    await verifyAndCompleteOnboarding(makeUser(true));
-    await verifyAndCompleteOnboarding(makeUser(true));
+  it("a second, independent call is safe (no shared state, no accumulating loop), and a retry after a failure can still report success", async () => {
+    mockCompleteOnboarding.mockRejectedValueOnce(new Error("transient error"));
 
+    const first = await verifyAndCompleteOnboarding(makeUser(true));
+    const second = await verifyAndCompleteOnboarding(makeUser(true));
+
+    expect(first).toBe(false);
+    expect(second).toBe(true);
     expect(mockCompleteOnboarding).toHaveBeenCalledTimes(2);
     expect(mockReloadCurrentUser).toHaveBeenCalledTimes(2);
   });

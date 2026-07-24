@@ -1,3 +1,5 @@
+import { OnboardingStatus } from "@utils/onboardingStatus";
+
 export type UserRole = "student" | "teacher" | "organization_admin" | "platform_admin";
 
 export type AccountStatus = "active" | "suspended";
@@ -21,6 +23,13 @@ export interface UserProfile {
   weeklyPoints: number;
   accountStatus: AccountStatus;
   emailVerified: boolean;
+  // Stage-2 onboarding state (functions/src/onboarding/completeOnboarding.ts).
+  // "pending"/"provisioning" means the role/claims grant hasn't actually
+  // completed yet, even if the account's `role` already looks like a
+  // terminal value (e.g. the "student" onUserCreate defaults everyone to
+  // until Stage 2 promotes it) — see RouteGuard, which treats this as "not
+  // done yet, route back to the retry screen" rather than trusting `role`.
+  onboardingStatus: OnboardingStatus;
   createdAt: number;
   updatedAt: number;
 }

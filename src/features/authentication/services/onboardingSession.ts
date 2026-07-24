@@ -29,30 +29,42 @@ import { completeOnboarding } from "@services/firebase/functions";
 //                                   new role/organizationId claims, with no
 //                                   logout/login or reinstall required
 //
-// Non-fatal by design: a failure at any point is swallowed. There's no
-// risk of a refresh/onboarding loop from that — this function is only ever
-// invoked by explicit user action (the verify-email screen's button) or
-// once at sign-in, never on a timer or automatic retry loop. A failed
-// attempt just means the next explicit trigger (another tap, another
-// login) retries — safe because completeOnboarding is itself idempotent
-// (see functions/src/onboarding/completeOnboarding.ts).
+// A completeOnboarding failure never throws out of this function — sign-in
+// must never be blocked by an onboarding hiccup, and this same function is
+// also called from signIn(). But it is NOT silently discarded either: the
+// boolean return value tells the caller whether Stage 2 actually finished,
+// so a caller that specifically exists to drive onboarding completion
+// (AuthProvider.refreshSession, in turn the verify-email screen's button)
+// can tell the difference between "done" and "still stuck" and let the
+// user retry — instead of navigating away as if it had succeeded. Before
+// this, a failed call here (e.g. a transient network/claims-propagation
+// error right after verifying) left onboardingStatus stuck at "pending"
+// forever with zero visibility and zero retry, which is exactly the
+// "teacher shows as student forever" production bug this fixes.
+//
+// Retry-safe to call repeatedly regardless of outcome — completeOnboarding
+// is itself idempotent (see functions/src/onboarding/completeOnboarding.ts),
+// so returning false here is always safe to retry, never double-acts.
 //
 // Deliberately does NOT touch users/{uid}.role for any authorization
 // decision — it only refreshes the ID token so firestore.rules' claims
 // checks (the actual backend authorization boundary) see the new values.
 // Firestore profile state and routing are handled elsewhere: the live
 // users/{uid} onSnapshot subscription (AuthProvider) and RouteGuard react
-// to the change on their own once it lands.
-export async function verifyAndCompleteOnboarding(user: User): Promise<void> {
+// to the change on their own once it lands — RouteGuard specifically also
+// checks onboardingStatus (see routing.ts), so a caller that returned
+// false here is kept on the retry screen rather than routed away.
+export async function verifyAndCompleteOnboarding(user: User): Promise<boolean> {
   await reloadCurrentUser(user);
   await refreshIdToken(user);
 
-  if (!user.emailVerified) return;
+  if (!user.emailVerified) return false;
 
   try {
     await completeOnboarding();
     await refreshIdToken(user);
+    return true;
   } catch {
-    // Non-fatal — see doc comment above.
+    return false;
   }
 }

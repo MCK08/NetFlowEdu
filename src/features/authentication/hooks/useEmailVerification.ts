@@ -47,12 +47,23 @@ export function useEmailVerification() {
     }
   }
 
+  // Returns whether onboarding is actually done — not just whether the call
+  // completed without throwing. refreshSession() itself never throws for a
+  // failed completeOnboarding (see onboardingSession.ts), so without
+  // checking its boolean result this would previously report "verified"
+  // even when the role/claims grant silently failed, letting the caller
+  // navigate away from the one screen that can retry it.
   async function checkVerified(): Promise<boolean> {
     setError(null);
     setIsChecking(true);
     try {
-      await refreshSession();
-      return true;
+      const onboardingCompleted = await refreshSession();
+      if (!onboardingCompleted) {
+        setError(
+          "E-postanız doğrulandı ancak hesap tipiniz ayarlanamadı. Lütfen tekrar deneyin.",
+        );
+      }
+      return onboardingCompleted;
     } catch (err) {
       setError(mapAuthErrorToMessage(err));
       return false;

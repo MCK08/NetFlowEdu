@@ -10,6 +10,7 @@ import {
 } from "firebase/firestore";
 
 import { UserProfile } from "@/types/user";
+import { resolveOnboardingStatus } from "@utils/onboardingStatus";
 import { db } from "./config";
 
 function toMillis(value: Timestamp | number | undefined): number {
@@ -30,6 +31,7 @@ function toUserProfile(uid: string, data: DocumentData): UserProfile {
     weeklyPoints: data.weeklyPoints ?? 0,
     accountStatus: data.accountStatus ?? "active",
     emailVerified: data.emailVerified ?? false,
+    onboardingStatus: resolveOnboardingStatus(data.onboardingStatus),
     createdAt: toMillis(data.createdAt),
     updatedAt: toMillis(data.updatedAt),
   };
