@@ -27,6 +27,16 @@ export class SuspendedAccountError extends Error {
   }
 }
 
+// Thrown by resendVerification() when there is no signed-in Auth user to
+// send to (e.g. session expired/signed out while sitting on VerifyEmailScreen).
+// Previously this case was a silent no-op — the button showed a loading
+// spinner, resolved, and gave zero feedback, indistinguishable from success.
+export class NoCurrentUserError extends Error {
+  constructor() {
+    super("NO_CURRENT_USER");
+  }
+}
+
 const PROFILE_WAIT_TIMEOUT_MS = 10000;
 
 export interface AuthContextValue {
@@ -43,7 +53,7 @@ export interface AuthContextValue {
   // and this client's own ID token having actually been force-refreshed.
   claimsSynced: boolean;
   signIn: (input: LoginInput) => Promise<void>;
-  register: (input: RegisterInput) => Promise<void>;
+  register: (input: RegisterInput) => Promise<{ verificationEmailSent: boolean }>;
   signOut: () => Promise<void>;
   sendPasswordReset: (input: ForgotPasswordInput) => Promise<void>;
   resendVerification: () => Promise<void>;
@@ -169,7 +179,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const register = useCallback(async (input: RegisterInput) => {
-    await registerStudent(input);
+    const { verificationEmailSent } = await registerStudent(input);
+    return { verificationEmailSent };
   }, []);
 
   const signOut = useCallback(async () => {
@@ -181,7 +192,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const resendVerification = useCallback(async () => {
-    if (!firebaseUser) return;
+    if (!firebaseUser) throw new NoCurrentUserError();
     await resendVerificationEmail(firebaseUser);
   }, [firebaseUser]);
 

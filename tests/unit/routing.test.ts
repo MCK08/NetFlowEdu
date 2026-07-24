@@ -163,4 +163,21 @@ describe("resolveRouteForState", () => {
       }),
     ).toBe(ROUTES.verifyEmail);
   });
+
+  // Regression coverage for the "Çıkış Yap" button appearing to do nothing:
+  // once signed out, !isAuthenticated must win outright — a pending teacher
+  // account's onboardingStatus/claimsSynced must never pull them back onto
+  // verify-email after a successful sign-out, which would look identical to
+  // "logout didn't do anything" even though Firebase Auth itself succeeded.
+  it("sends a signed-out user to login even if they were a pending teacher with claimsSynced false — logout is never overridden by onboarding state", () => {
+    expect(
+      resolveRouteForState({
+        isAuthenticated: false,
+        isEmailVerified: false,
+        role: "teacher",
+        onboardingStatus: "pending",
+        claimsSynced: false,
+      }),
+    ).toBe(ROUTES.login);
+  });
 });

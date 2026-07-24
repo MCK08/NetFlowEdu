@@ -25,6 +25,26 @@ describe("mapAuthErrorToMessage", () => {
     );
   });
 
+  it("maps auth/user-token-expired and the continue-uri codes (unreachable today, but mapped defensively)", () => {
+    expect(mapAuthErrorToMessage({ code: "auth/user-token-expired" })).toBe(
+      "Oturumunuzun süresi doldu. Lütfen tekrar giriş yapın.",
+    );
+    expect(mapAuthErrorToMessage({ code: "auth/invalid-continue-uri" })).not.toBe(
+      "Bir şeyler ters gitti. Lütfen tekrar deneyin.",
+    );
+    expect(mapAuthErrorToMessage({ code: "auth/unauthorized-continue-uri" })).not.toBe(
+      "Bir şeyler ters gitti. Lütfen tekrar deneyin.",
+    );
+    expect(mapAuthErrorToMessage({ code: "auth/missing-continue-uri" })).not.toBe(
+      "Bir şeyler ters gitti. Lütfen tekrar deneyin.",
+    );
+  });
+
+  it("maps a null current-user (no signed-in Auth user) to a controlled, understandable message rather than a generic/no error", () => {
+    const message = mapAuthErrorToMessage(new Error("NO_CURRENT_USER"));
+    expect(message).toBe("Oturumunuz bulunamadı. Lütfen tekrar giriş yapın.");
+  });
+
   it("falls back to a generic message for unknown codes", () => {
     expect(mapAuthErrorToMessage({ code: "auth/some-unmapped-code" })).toBe(
       "Bir şeyler ters gitti. Lütfen tekrar deneyin.",

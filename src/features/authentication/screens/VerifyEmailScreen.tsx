@@ -10,12 +10,19 @@ import { useEmailVerification } from "../hooks/useEmailVerification";
 const TEACHER_REQUEST_PENDING_MESSAGE =
   "Öğretmen hesap talebiniz gönderildi.\nOnaylandıktan sonra hesabınız Öğretmen hesabına dönüştürülecek.";
 
+const EMAIL_SEND_FAILED_MESSAGE =
+  "Doğrulama e-postası gönderilemedi. Lütfen aşağıdaki butonla tekrar deneyin.";
+
 export function VerifyEmailScreen() {
-  const { teacherRequestPending } = useLocalSearchParams<{ teacherRequestPending?: string }>();
+  const { teacherRequestPending, emailFailed } = useLocalSearchParams<{
+    teacherRequestPending?: string;
+    emailFailed?: string;
+  }>();
   const {
     email,
     isResending,
     isChecking,
+    isSigningOut,
     error,
     cooldownSeconds,
     resend,
@@ -43,12 +50,14 @@ export function VerifyEmailScreen() {
     <KeyboardSafeScreen>
       <Text style={styles.title}>E-postanızı Doğrulayın</Text>
       <Text style={styles.subtitle}>
-        {email
-          ? `${email} adresine bir doğrulama bağlantısı gönderdik.`
-          : "E-posta adresinize bir doğrulama bağlantısı gönderdik."}
+        {emailFailed
+          ? "Hesabınız oluşturuldu ancak doğrulama e-postası gönderilemedi."
+          : email
+            ? `${email} adresine bir doğrulama bağlantısı gönderdik.`
+            : "E-posta adresinize bir doğrulama bağlantısı gönderdik."}
       </Text>
 
-      <FormError message={error} />
+      <FormError message={error ?? (emailFailed ? EMAIL_SEND_FAILED_MESSAGE : null)} />
 
       {teacherRequestPending ? (
         <Text style={styles.teacherRequestText}>{TEACHER_REQUEST_PENDING_MESSAGE}</Text>
@@ -72,7 +81,12 @@ export function VerifyEmailScreen() {
         variant="secondary"
       />
 
-      <PrimaryButton label="Çıkış Yap" onPress={signOut} variant="secondary" />
+      <PrimaryButton
+        label="Çıkış Yap"
+        onPress={signOut}
+        isLoading={isSigningOut}
+        variant="secondary"
+      />
     </KeyboardSafeScreen>
   );
 }

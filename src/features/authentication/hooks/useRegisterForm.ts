@@ -28,6 +28,7 @@ export function useRegisterForm() {
 
   interface SubmitResult {
     success: boolean;
+    verificationEmailSent?: boolean;
   }
 
   async function submit(): Promise<SubmitResult> {
@@ -38,8 +39,8 @@ export function useRegisterForm() {
 
     setIsSubmitting(true);
     try {
-      await register(input);
-      return { success: true };
+      const { verificationEmailSent } = await register(input);
+      return { success: true, verificationEmailSent };
     } catch (error) {
       setFormError(mapAuthErrorToMessage(error));
       return { success: false };

@@ -12,6 +12,14 @@ const AUTH_ERROR_MESSAGES: Record<string, string> = {
   "auth/network-request-failed": "Bağlantı hatası. İnternet bağlantınızı kontrol edin.",
   "auth/requires-recent-login": "Bu işlem için yeniden giriş yapmanız gerekiyor.",
   "auth/popup-closed-by-user": "İşlem iptal edildi.",
+  "auth/user-token-expired": "Oturumunuzun süresi doldu. Lütfen tekrar giriş yapın.",
+  // Only reachable if actionCodeSettings is ever passed to
+  // sendEmailVerification — this codebase currently does not pass one (see
+  // services/firebase/auth.ts), so these are unused today but mapped in
+  // case that changes.
+  "auth/invalid-continue-uri": "Uygulama yapılandırmasında bir sorun var. Lütfen destek ile iletişime geçin.",
+  "auth/unauthorized-continue-uri": "Uygulama yapılandırmasında bir sorun var. Lütfen destek ile iletişime geçin.",
+  "auth/missing-continue-uri": "Uygulama yapılandırmasında bir sorun var. Lütfen destek ile iletişime geçin.",
   // setUsername.ts (a callable) — the Firebase JS SDK surfaces callable
   // HttpsError codes prefixed with "functions/". "already-exists" is
   // specifically "someone else already has this username" — the one
@@ -36,6 +44,9 @@ function isFirebaseError(error: unknown): error is FirebaseError {
 // available to whoever calls this (log it yourself at the call site if
 // needed); this function never logs anything itself.
 export function mapAuthErrorToMessage(error: unknown): string {
+  if (error instanceof Error && error.message === "NO_CURRENT_USER") {
+    return "Oturumunuz bulunamadı. Lütfen tekrar giriş yapın.";
+  }
   if (isFirebaseError(error)) {
     return AUTH_ERROR_MESSAGES[error.code] ?? DEFAULT_MESSAGE;
   }

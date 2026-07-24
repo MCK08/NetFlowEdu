@@ -16,10 +16,13 @@ export function RegisterScreen() {
   const { input, setField, fieldErrors, formError, isSubmitting, submit } = useRegisterForm();
 
   async function handleSubmit() {
-    const { success } = await submit();
+    const { success, verificationEmailSent } = await submit();
     if (!success) return;
 
-    router.replace(ROUTES.verifyEmail);
+    router.replace({
+      pathname: ROUTES.verifyEmail,
+      params: verificationEmailSent === false ? { emailFailed: "1" } : {},
+    });
   }
 
   return (

@@ -18,6 +18,13 @@ import { waitForProfileDocument } from "./profileWait";
 
 export interface RegisterResult {
   user: User;
+  // False when sendVerificationEmail actually failed during registration —
+  // the account still exists in Firebase Auth (never rolled back for this),
+  // so the caller must not claim "we sent you an email" and must instead let
+  // the user retry from the resend button on VerifyEmailScreen. Never
+  // inferred from "registration didn't throw" — that used to be exactly the
+  // bug: a swallowed send failure was indistinguishable from success.
+  verificationEmailSent: boolean;
 }
 
 function isEmailAlreadyInUse(error: unknown): boolean {
@@ -84,10 +91,19 @@ export async function registerStudent(input: RegisterInput): Promise<RegisterRes
     // Non-fatal — see comment above.
   }
 
+  let verificationEmailSent = true;
   try {
     await sendVerificationEmail(user);
-  } catch {
-    // Non-fatal — user can use "resend verification" on the next screen.
+  } catch (error) {
+    // Non-fatal for registration itself — the Auth account already exists
+    // and must not be rolled back — but no longer silently discarded: the
+    // caller needs to know so it can avoid claiming the email was sent
+    // (previous bug) and instead let the user retry via resend.
+    verificationEmailSent = false;
+    if (typeof __DEV__ !== "undefined" && __DEV__) {
+      const code = error instanceof FirebaseError ? error.code : "unknown";
+      console.warn("[authService] sendVerificationEmail failed during registration", { code });
+    }
   }
 
   await waitForProfileDocument(user.uid);
@@ -115,7 +131,7 @@ export async function registerStudent(input: RegisterInput): Promise<RegisterRes
   // setDisplayName's eventual-consistency propagation into Firebase Auth.
   await initializeOnboarding(input.intendedRole, displayName);
 
-  return { user };
+  return { user, verificationEmailSent };
 }
 
 export async function loginWithPassword(input: LoginInput): Promise<User> {
@@ -139,7 +155,15 @@ export async function requestPasswordReset(email: string): Promise<void> {
 }
 
 export async function resendVerificationEmail(user: User): Promise<void> {
-  await sendVerificationEmail(user);
+  try {
+    await sendVerificationEmail(user);
+  } catch (error) {
+    if (typeof __DEV__ !== "undefined" && __DEV__) {
+      const code = error instanceof FirebaseError ? error.code : "unknown";
+      console.warn("[authService] resendVerificationEmail failed", { code });
+    }
+    throw error;
+  }
 }
 
 // Reloads the Auth user (to pick up a fresh emailVerified flag) and forces

@@ -1,18 +1,26 @@
 import { useEffect, useRef, useState } from "react";
 
 import { mapAuthErrorToMessage } from "../services/errorMapper";
+import { runGuardedOnce } from "../services/guardedAction";
 import { useAuth } from "./useAuth";
 
 const RESEND_COOLDOWN_SECONDS = 30;
 
 export function useEmailVerification() {
-  const { firebaseUser, isEmailVerified, resendVerification, refreshSession, signOut } =
+  const { firebaseUser, isEmailVerified, resendVerification, refreshSession, signOut: signOutAuth } =
     useAuth();
   const [isResending, setIsResending] = useState(false);
   const [isChecking, setIsChecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cooldownSeconds, setCooldownSeconds] = useState(0);
+  const [isSigningOut, setIsSigningOut] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
+  // Synchronous guard against duplicate parallel sends on rapid multi-click —
+  // isResending (state) only takes effect on the next render, so two taps in
+  // the same tick could both pass an `isResending` check before either
+  // re-render happens. A ref updates immediately, closing that gap.
+  const isResendingRef = useRef(false);
+  const isSigningOutRef = useRef(false);
 
   useEffect(() => {
     return () => {
@@ -34,17 +42,19 @@ export function useEmailVerification() {
   }
 
   async function resend() {
-    if (cooldownSeconds > 0 || isResending) return;
-    setError(null);
-    setIsResending(true);
-    try {
-      await resendVerification();
-      startCooldown();
-    } catch (err) {
-      setError(mapAuthErrorToMessage(err));
-    } finally {
-      setIsResending(false);
-    }
+    if (cooldownSeconds > 0) return;
+    await runGuardedOnce(isResendingRef, async () => {
+      setError(null);
+      setIsResending(true);
+      try {
+        await resendVerification();
+        startCooldown();
+      } catch (err) {
+        setError(mapAuthErrorToMessage(err));
+      } finally {
+        setIsResending(false);
+      }
+    });
   }
 
   // Returns whether onboarding is actually done — not just whether the call
@@ -72,11 +82,37 @@ export function useEmailVerification() {
     }
   }
 
+  // Previously wired directly to the raw AuthProvider.signOut with no
+  // try/catch, loading state, or double-click guard — unlike resend/
+  // checkVerified above. A thrown error (e.g. auth/network-request-failed)
+  // became an unhandled promise rejection with zero visible feedback: the
+  // button appeared to do nothing, the user stayed authenticated-but-
+  // unverified, and RouteGuard kept forcing them back to this exact screen
+  // for any other route (e.g. trying to register with a different email).
+  async function signOut() {
+    await runGuardedOnce(isSigningOutRef, async () => {
+      setError(null);
+      setIsSigningOut(true);
+      try {
+        await signOutAuth();
+        // No explicit navigation here — RouteGuard reacts to isAuthenticated
+        // becoming false (via the auth state listener) and replaces the
+        // route to ROUTES.login itself; see routing.ts's !isAuthenticated
+        // check, which takes priority over every other routing rule.
+      } catch (err) {
+        setError(mapAuthErrorToMessage(err));
+      } finally {
+        setIsSigningOut(false);
+      }
+    });
+  }
+
   return {
     email: firebaseUser?.email ?? "",
     isEmailVerified,
     isResending,
     isChecking,
+    isSigningOut,
     error,
     cooldownSeconds,
     resend,
