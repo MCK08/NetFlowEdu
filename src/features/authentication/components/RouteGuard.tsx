@@ -3,8 +3,7 @@ import { ReactNode, useEffect } from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 
 import { useAuth } from "../hooks/useAuth";
-import { resolveRouteForState } from "../services/routing";
-import { isAtAnyTarget, isAtTarget, PUBLIC_AUTH_ROUTES } from "../services/routeTarget";
+import { decideRouteGuardTarget } from "../services/routeGuardDecision";
 
 function Splash() {
   return (
@@ -16,9 +15,11 @@ function Splash() {
 
 // Single centralized place that decides which route group the current auth
 // state is allowed to be in, and redirects otherwise. The decision itself
-// lives in resolveRouteForState (routing.ts) — the one place, shared with
-// its own unit tests, that this and every other entry point agree on —
-// rather than being reimplemented here.
+// lives in decideRouteGuardTarget (routeGuardDecision.ts) — the one place,
+// exhaustively unit-tested (state×screen matrix + navigation-loop
+// simulation) — rather than being reimplemented here. This component's only
+// job is to feed it the current segments/auth state each render and act on
+// the result.
 export function RouteGuard({ children }: { children: ReactNode }) {
   const router = useRouter();
   const segments = useSegments();
@@ -37,36 +38,11 @@ export function RouteGuard({ children }: { children: ReactNode }) {
   const onboardingStatus = profile?.onboardingStatus ?? null;
 
   useEffect(() => {
-    if (!settledEnoughToRoute) return;
-
-    if (profileError) {
-      if (!isAtTarget("/unknown-role", segments)) router.replace("/unknown-role");
-      return;
-    }
-
-    const target = resolveRouteForState({
-      isAuthenticated,
-      isEmailVerified,
-      role,
-      onboardingStatus,
-      claimsSynced,
-    });
-
-    // resolveRouteForState always resolves "unauthenticated" to the single
-    // literal ROUTES.login — but login, register, and forgot-password are
-    // ALL valid places for an unauthenticated user to be (see
-    // PUBLIC_AUTH_ROUTES's doc comment). Without this allowance, tapping
-    // "Kayıt Ol" on login would get force-replaced back to login on every
-    // RouteGuard re-render, since isAtTarget(login, register-segments) is
-    // correctly `false` (login and register are distinct screens). This
-    // allowance does NOT apply to verify-email — losing auth while there
-    // (e.g. after signOut) must still force a real navigation to login.
-    const alreadyOnAllowedPublicAuthScreen =
-      !isAuthenticated && isAtAnyTarget(PUBLIC_AUTH_ROUTES, segments);
-
-    if (!isAtTarget(target, segments) && !alreadyOnAllowedPublicAuthScreen) {
-      router.replace(target);
-    }
+    const target = decideRouteGuardTarget(
+      { settledEnoughToRoute, profileError, isAuthenticated, isEmailVerified, role, onboardingStatus, claimsSynced },
+      segments,
+    );
+    if (target !== null) router.replace(target);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     settledEnoughToRoute,

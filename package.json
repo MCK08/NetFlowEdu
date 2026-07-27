@@ -11,7 +11,7 @@
     "lint": "eslint . --ext .ts,.tsx",
     "typecheck": "tsc --noEmit",
     "test": "jest",
-    "test:rules": "firebase emulators:exec --only firestore,storage \"jest --config jest.rules.config.js\"",
+    "test:rules": "firebase emulators:exec --only firestore,storage,auth \"jest --config jest.rules.config.js\"",
     "emulators": "firebase emulators:start",
     "functions:build": "cd functions && npm run build",
     "verify": "npm run lint && npm run typecheck && npm run test && npm run functions:build"
