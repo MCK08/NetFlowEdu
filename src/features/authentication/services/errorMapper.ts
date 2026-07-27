@@ -52,3 +52,54 @@ export function mapAuthErrorToMessage(error: unknown): string {
   }
   return DEFAULT_MESSAGE;
 }
+
+// Stage-2 onboarding (completeOnboarding) failures, mapped SEPARATELY from
+// AUTH_ERROR_MESSAGES on purpose: several callable codes are overloaded
+// across features and mean completely different things depending on which
+// callable raised them. "functions/failed-precondition" is the concrete
+// case — setUsername raises it for "you already have a username", while
+// completeOnboarding raises it for "Hesap türü seçilmemiş". Routing an
+// onboarding failure through the generic map showed the user the username
+// message, which is simply wrong and not actionable.
+const ONBOARDING_FAILURE_MESSAGES: Record<string, string> = {
+  // completeOnboarding's requestedRole guard. The account exists and the
+  // email is verified, but Stage 1 never recorded which account type was
+  // picked — so there is nothing for Stage 2 to grant. Recoverable only by
+  // finishing registration again for this same email.
+  "functions/failed-precondition":
+    "Hesap türünüz kaydedilmemiş. Lütfen çıkış yapıp aynı e-posta ile kaydı tamamlayın.",
+  "functions/not-found": "Hesabınız bulunamadı. Lütfen tekrar kayıt olun.",
+  "functions/unauthenticated": "Oturumunuz bulunamadı. Lütfen tekrar giriş yapın.",
+  "functions/permission-denied": "Bu işlem için yetkiniz yok.",
+  // Transient/retryable — the same button press can simply be repeated,
+  // and completeOnboarding is idempotent so repeating is always safe.
+  "functions/unavailable": "Bağlantı sorunu. Lütfen tekrar deneyin.",
+  "functions/internal": "Sunucu hatası. Lütfen tekrar deneyin.",
+  "functions/deadline-exceeded": "İşlem zaman aşımına uğradı. Lütfen tekrar deneyin.",
+  "functions/resource-exhausted": "Çok fazla deneme yapıldı. Lütfen biraz sonra tekrar deneyin.",
+  // Client-side sentinels (never reach the network) — see onboardingSession.
+  "client/email-not-verified":
+    "E-posta adresiniz henüz doğrulanmamış görünüyor. Bağlantıya tıkladıktan sonra tekrar deneyin.",
+  "client/no-current-user": "Oturumunuz bulunamadı. Lütfen tekrar giriş yapın.",
+};
+
+const ONBOARDING_DEFAULT_MESSAGE =
+  "Hesap tipiniz ayarlanamadı. Lütfen tekrar deneyin.";
+
+// Codes worth telling the user to just press the button again for.
+const RETRYABLE_ONBOARDING_CODES = new Set([
+  "functions/unavailable",
+  "functions/internal",
+  "functions/deadline-exceeded",
+  "functions/resource-exhausted",
+  "client/email-not-verified",
+]);
+
+export function isRetryableOnboardingFailure(code: string | undefined): boolean {
+  return code !== undefined && RETRYABLE_ONBOARDING_CODES.has(code);
+}
+
+export function mapOnboardingFailureToMessage(code: string | undefined): string {
+  if (code === undefined) return ONBOARDING_DEFAULT_MESSAGE;
+  return ONBOARDING_FAILURE_MESSAGES[code] ?? ONBOARDING_DEFAULT_MESSAGE;
+}

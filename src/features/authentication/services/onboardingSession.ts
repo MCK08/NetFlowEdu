@@ -1,3 +1,4 @@
+import { FirebaseError } from "firebase/app";
 import { User } from "firebase/auth";
 
 import { reloadCurrentUser, refreshIdToken } from "@services/firebase/auth";
@@ -54,17 +55,50 @@ import { completeOnboarding } from "@services/firebase/functions";
 // to the change on their own once it lands — RouteGuard specifically also
 // checks onboardingStatus (see routing.ts), so a caller that returned
 // false here is kept on the retry screen rather than routed away.
-export async function verifyAndCompleteOnboarding(user: User): Promise<boolean> {
+export interface OnboardingCompletionResult {
+  completed: boolean;
+  // The real reason completion didn't happen. Present only when
+  // `completed` is false. Either a Firebase/callable code (e.g.
+  // "functions/failed-precondition") or one of the "client/*" sentinels
+  // below for the cases that never reach the network at all.
+  //
+  // Production incident (2026-07-27): this used to be a bare
+  // `catch { return false; }`. completeOnboarding was throwing
+  // `functions/failed-precondition` ("Hesap türü seçilmemiş") on every one
+  // of five real-device attempts, and every one of those codes was
+  // discarded here — so the screen could only ever show its generic
+  // "hesap tipiniz ayarlanamadı" text, and nothing (UI or Metro log) ever
+  // named the actual problem. Keeping the code is what makes the failure
+  // diagnosable and lets the UI distinguish retryable from permanent.
+  failureCode?: string;
+}
+
+export const EMAIL_NOT_VERIFIED_CODE = "client/email-not-verified";
+export const NO_CURRENT_USER_CODE = "client/no-current-user";
+
+export async function verifyAndCompleteOnboarding(
+  user: User,
+): Promise<OnboardingCompletionResult> {
   await reloadCurrentUser(user);
   await refreshIdToken(user);
 
-  if (!user.emailVerified) return false;
+  if (!user.emailVerified) {
+    return { completed: false, failureCode: EMAIL_NOT_VERIFIED_CODE };
+  }
 
   try {
     await completeOnboarding();
     await refreshIdToken(user);
-    return true;
-  } catch {
-    return false;
+    return { completed: true };
+  } catch (error) {
+    const failureCode = error instanceof FirebaseError ? error.code : "unknown";
+    if (typeof __DEV__ !== "undefined" && __DEV__) {
+      // uid is truncated and no email/token is ever logged.
+      console.warn("[onboarding] completeOnboarding failed", {
+        uid6: user.uid.slice(0, 6),
+        code: failureCode,
+      });
+    }
+    return { completed: false, failureCode };
   }
 }

@@ -108,6 +108,36 @@ export async function registerStudent(input: RegisterInput): Promise<RegisterRes
 
   await waitForProfileDocument(user.uid);
 
+  // MUST stay ahead of setUsername. Production incident (2026-07-27): this
+  // call used to run LAST, after setUsername. A user picked an already-taken
+  // username, setUsername threw `functions/already-exists`, registerStudent
+  // re-threw (correctly — a taken username has to reach the user), and
+  // initializeOnboarding therefore never ran. requestedRole stayed null.
+  //
+  // That would merely have been a failed registration to retry, except the
+  // Auth account already exists by this point, so onAuthStateChanged has
+  // already fired and RouteGuard has already replaced the route to
+  // verify-email (an authenticated+unverified session resolves there — see
+  // routeGuardDecision.ts). The register screen's "username taken" error is
+  // therefore rendered on a screen the user is no longer looking at, and
+  // they land on verify-email holding an account with requestedRole=null.
+  // Verifying their email then made completeOnboarding throw
+  // `functions/failed-precondition` ("Hesap türü seçilmemiş") forever — a
+  // permanently stranded account with no in-app recovery path.
+  //
+  // requestedRole is the user's core intent and the one input Stage 2 can
+  // never reconstruct on its own, so it is persisted here — immediately
+  // after the profile document exists and before ANY step that can fail for
+  // a user-correctable reason. initializeOnboarding is safe in this position:
+  // it needs only users/{uid} to exist, it never touches username, it is
+  // idempotent, and requestedRole is write-once server-side (see
+  // functions/src/onboarding/initializeOnboarding.ts).
+  //
+  // The exact typed displayName is passed directly as an argument here —
+  // not read back off the Auth user object — so this can never race against
+  // setDisplayName's eventual-consistency propagation into Firebase Auth.
+  await initializeOnboarding(input.intendedRole, displayName);
+
   // Not swallowed — see comment above. The one exception is "this uid
   // already owns exactly this normalized username" — verified against the
   // account's own stored value (an owner-only-readable field, so this
@@ -115,6 +145,12 @@ export async function registerStudent(input: RegisterInput): Promise<RegisterRes
   // A mismatch (this uid owns a DIFFERENT username) re-throws instead of
   // silently continuing — never replaces, never releases, never changes
   // the existing reservation.
+  //
+  // Still fatal, and still last: a taken username must reach the caller.
+  // What changed is that failing here no longer costs the account its
+  // requestedRole, so the user can resubmit with a different username (the
+  // email-already-in-use path above signs them back in) and Stage 2 can
+  // complete either way.
   try {
     await setUsername(username);
   } catch (error) {
@@ -125,11 +161,6 @@ export async function registerStudent(input: RegisterInput): Promise<RegisterRes
       existingProfile?.username?.toLowerCase() === username.toLowerCase();
     if (!ownsRequestedUsername) throw error;
   }
-
-  // The exact typed displayName is passed directly as an argument here —
-  // not read back off the Auth user object — so this can never race against
-  // setDisplayName's eventual-consistency propagation into Firebase Auth.
-  await initializeOnboarding(input.intendedRole, displayName);
 
   return { user, verificationEmailSent };
 }

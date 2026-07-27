@@ -14,7 +14,11 @@ import {
   requestPasswordReset,
   resendVerificationEmail,
 } from "../services/authService";
-import { verifyAndCompleteOnboarding } from "../services/onboardingSession";
+import {
+  NO_CURRENT_USER_CODE,
+  OnboardingCompletionResult,
+  verifyAndCompleteOnboarding,
+} from "../services/onboardingSession";
 import { waitForProfileDocument } from "../services/profileWait";
 
 // Thrown by signIn() when the account's Firestore profile says
@@ -57,7 +61,7 @@ export interface AuthContextValue {
   signOut: () => Promise<void>;
   sendPasswordReset: (input: ForgotPasswordInput) => Promise<void>;
   resendVerification: () => Promise<void>;
-  refreshSession: () => Promise<boolean>;
+  refreshSession: () => Promise<OnboardingCompletionResult>;
 }
 
 export const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -171,11 +175,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // trigger point. verifyAndCompleteOnboarding is itself non-fatal/no-op
     // safe (re-checks email_verified, and completeOnboarding re-checks it
     // again server-side).
-    const onboardingCompleted = await verifyAndCompleteOnboarding(user);
+    const { completed } = await verifyAndCompleteOnboarding(user);
     // Only meaningful when a role transition actually happened during this
     // call (see below) — otherwise claimsSynced was never false to begin
     // with, so this is a no-op.
-    if (onboardingCompleted) setClaimsSynced(true);
+    if (completed) setClaimsSynced(true);
   }, []);
 
   const register = useCallback(async (input: RegisterInput) => {
@@ -211,16 +215,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // decide whether it's safe to navigate away or whether the user needs to
   // retry. completeOnboarding is idempotent/retry-safe by design (see its
   // own doc comment), so retrying is always safe and never double-acts.
-  const refreshSession = useCallback(async () => {
-    if (!firebaseUser) return false;
-    const onboardingCompleted = await verifyAndCompleteOnboarding(firebaseUser);
+  const refreshSession = useCallback(async (): Promise<OnboardingCompletionResult> => {
+    if (!firebaseUser) return { completed: false, failureCode: NO_CURRENT_USER_CODE };
+    const result = await verifyAndCompleteOnboarding(firebaseUser);
     setEmailVerified(firebaseUser.emailVerified);
     // This client's own ID token has now actually been force-refreshed (see
     // verifyAndCompleteOnboarding's guaranteed refresh-after-completeOnboarding
     // ordering) — only NOW is it safe for RouteGuard to act on Firestore's
     // onboardingStatus "complete", closing the race documented in routing.ts.
-    if (onboardingCompleted) setClaimsSynced(true);
-    return onboardingCompleted;
+    if (result.completed) setClaimsSynced(true);
+    return result;
   }, [firebaseUser]);
 
   const value = useMemo<AuthContextValue>(

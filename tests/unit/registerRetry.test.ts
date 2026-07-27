@@ -72,10 +72,28 @@ function usernameTakenByOtherError() {
 }
 
 beforeEach(() => {
-  jest.clearAllMocks();
+  // mockReset, NOT jest.clearAllMocks(): clearAllMocks only clears recorded
+  // calls, leaving any UNCONSUMED mockResolvedValueOnce/mockRejectedValueOnce
+  // still queued on the mock. Reordering initializeOnboarding ahead of
+  // setUsername changed how many "once" values each test consumes, which
+  // exposed that leftovers were silently leaking into the following test and
+  // making these assertions order-dependent. Resetting each mock makes every
+  // test start from a known, isolated state.
+  [
+    mockCreateUserAccount,
+    mockSignInWithPassword,
+    mockSetDisplayName,
+    mockSendVerificationEmail,
+    mockGetUserProfileOnce,
+    mockSetUsername,
+    mockInitializeOnboarding,
+    mockWaitForProfileDocument,
+  ].forEach((m) => m.mockReset());
+
   mockSetDisplayName.mockResolvedValue(undefined);
   mockSendVerificationEmail.mockResolvedValue(undefined);
   mockWaitForProfileDocument.mockResolvedValue(null);
+  mockSetUsername.mockResolvedValue({ success: true, username: "sinemmat" });
   mockInitializeOnboarding.mockResolvedValue({ onboardingStatus: "pending", requestedRole: "student" });
 });
 
@@ -130,8 +148,12 @@ describe("registerStudent retry — setUsername succeeded, initializeOnboarding 
 
     await expect(registerStudent(baseInput({ username: "burakmat" }))).rejects.toBe(error);
 
-    // Never proceeds to onboarding on a mismatch.
-    expect(mockInitializeOnboarding).not.toHaveBeenCalled();
+    // Stage 1 (requestedRole) now runs BEFORE the username step — see the
+    // 2026-07-27 incident comment in authService.registerStudent. So it HAS
+    // run even though the username mismatch aborts registration, and that is
+    // exactly the intent: the account keeps its requestedRole and stays
+    // recoverable instead of being stranded with requestedRole=null.
+    expect(mockInitializeOnboarding).toHaveBeenCalledTimes(1);
   });
 
   it("4. a username owned by a DIFFERENT uid still returns the normal already-exists error, unaffected", async () => {
@@ -142,9 +164,11 @@ describe("registerStudent retry — setUsername succeeded, initializeOnboarding 
     await expect(registerStudent(baseInput())).rejects.toBe(error);
 
     // already-exists is never treated as "mine" — no profile lookup, no
-    // silent continuation, no onboarding call.
+    // silent continuation. Stage 1 still ran first (see test 3's comment),
+    // which is what leaves this account recoverable: the user can resubmit
+    // with a different username and Stage 2 can still complete.
     expect(mockGetUserProfileOnce).not.toHaveBeenCalled();
-    expect(mockInitializeOnboarding).not.toHaveBeenCalled();
+    expect(mockInitializeOnboarding).toHaveBeenCalledTimes(1);
   });
 
   it("5. direct username changes remain unsupported — a mismatch never results in a second setUsername call to overwrite it", async () => {

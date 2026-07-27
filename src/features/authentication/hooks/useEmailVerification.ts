@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-import { mapAuthErrorToMessage } from "../services/errorMapper";
+import { mapAuthErrorToMessage, mapOnboardingFailureToMessage } from "../services/errorMapper";
 import { runGuardedOnce } from "../services/guardedAction";
 import { useAuth } from "./useAuth";
 
@@ -67,13 +67,17 @@ export function useEmailVerification() {
     setError(null);
     setIsChecking(true);
     try {
-      const onboardingCompleted = await refreshSession();
-      if (!onboardingCompleted) {
-        setError(
-          "E-postanız doğrulandı ancak hesap tipiniz ayarlanamadı. Lütfen tekrar deneyin.",
-        );
+      const { completed, failureCode } = await refreshSession();
+      if (!completed) {
+        // Production incident (2026-07-27): this used to hard-code one
+        // generic sentence for EVERY failure, because the boolean it got
+        // back carried no reason. The real code was
+        // functions/failed-precondition ("Hesap türü seçilmemiş") and the
+        // user had no way to learn that, or that it was permanent rather
+        // than worth retrying. Now the actual reason drives the message.
+        setError(mapOnboardingFailureToMessage(failureCode));
       }
-      return onboardingCompleted;
+      return completed;
     } catch (err) {
       setError(mapAuthErrorToMessage(err));
       return false;

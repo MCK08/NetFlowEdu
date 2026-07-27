@@ -45,7 +45,7 @@ describe("verifyAndCompleteOnboarding — refresh order (audited requirement)", 
   });
 
   it("runs reload -> getIdToken(true) -> completeOnboarding -> getIdToken(true), in exactly that order, for a verified user, and reports success", async () => {
-    await expect(verifyAndCompleteOnboarding(makeUser(true))).resolves.toBe(true);
+    await expect(verifyAndCompleteOnboarding(makeUser(true))).resolves.toEqual({ completed: true });
 
     expect(calls).toEqual([
       "reload",
@@ -75,7 +75,7 @@ describe("verifyAndCompleteOnboarding — refresh order (audited requirement)", 
   });
 
   it("still reloads and refreshes the token once even for an unverified user, but never calls completeOnboarding, and reports failure", async () => {
-    await expect(verifyAndCompleteOnboarding(makeUser(false))).resolves.toBe(false);
+    await expect(verifyAndCompleteOnboarding(makeUser(false))).resolves.toEqual({ completed: false, failureCode: "client/email-not-verified" });
 
     expect(calls).toEqual(["reload", "getIdToken(true)"]);
     expect(mockCompleteOnboarding).not.toHaveBeenCalled();
@@ -90,7 +90,7 @@ describe("verifyAndCompleteOnboarding — refresh order (audited requirement)", 
   it("does not throw when completeOnboarding fails, reports failure (not success) via its return value, and never loops — exactly one attempt per call", async () => {
     mockCompleteOnboarding.mockRejectedValueOnce(new Error("network error"));
 
-    await expect(verifyAndCompleteOnboarding(makeUser(true))).resolves.toBe(false);
+    await expect(verifyAndCompleteOnboarding(makeUser(true))).resolves.toEqual({ completed: false, failureCode: "unknown" });
 
     expect(mockCompleteOnboarding).toHaveBeenCalledTimes(1);
     // The post-completion refresh is skipped when completeOnboarding
@@ -105,8 +105,8 @@ describe("verifyAndCompleteOnboarding — refresh order (audited requirement)", 
     const first = await verifyAndCompleteOnboarding(makeUser(true));
     const second = await verifyAndCompleteOnboarding(makeUser(true));
 
-    expect(first).toBe(false);
-    expect(second).toBe(true);
+    expect(first.completed).toBe(false);
+    expect(second.completed).toBe(true);
     expect(mockCompleteOnboarding).toHaveBeenCalledTimes(2);
     expect(mockReloadCurrentUser).toHaveBeenCalledTimes(2);
   });
