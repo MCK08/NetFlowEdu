@@ -13,18 +13,33 @@ export function useStudentClasses(uid: string | undefined) {
   const [isJoining, setIsJoining] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
+  // Returns whether the list actually loaded. Production bug: this used to
+  // swallow its own failure and return void, so joinByCode below could not
+  // tell a successful refresh from a failed one — it reported success either
+  // way, the screen closed the join modal, and the error message this sets
+  // was destroyed along with the modal that was the only place rendering it.
+  // The student saw literally nothing: no error, no success, no class.
+  const load = useCallback(async (): Promise<boolean> => {
     if (!uid) {
       setClasses([]);
       setIsLoading(false);
-      return;
+      return false;
     }
     setIsLoading(true);
     try {
       const result = await getStudentClasses(uid);
       setClasses(result);
-    } catch {
+      return true;
+    } catch (error) {
+      // Raw Firestore codes here (e.g. "permission-denied"), not callable
+      // "functions/*" codes — the real one goes to the dev log so a silent
+      // rules failure like the collection-group one can never hide again.
+      const code = error instanceof FirebaseError ? error.code : "unknown";
+      if (typeof __DEV__ !== "undefined" && __DEV__) {
+        console.warn("[studentClasses] load failed", { op: "getStudentClasses", code });
+      }
       setErrorMessage("Sınıflar yüklenemedi. Lütfen tekrar deneyin.");
+      return false;
     } finally {
       setIsLoading(false);
     }
@@ -43,8 +58,14 @@ export function useStudentClasses(uid: string | undefined) {
     setErrorMessage(null);
     try {
       await joinClassByCode(code);
-      await load();
-      return true;
+      // The join itself succeeded, but if the list cannot be re-read the
+      // student must NOT be told everything worked — that combination
+      // (successful join + failed refresh) is exactly what produced the
+      // "nothing happens" report: the modal closed on a reported success
+      // and took the only visible error surface with it. Reporting false
+      // keeps the modal open so load()'s message is actually seen.
+      const refreshed = await load();
+      return refreshed;
     } catch (error) {
       // Never collapse every failure into one message: a valid code that
       // fails for a backend reason must not be reported as "invalid code"

@@ -1,7 +1,7 @@
 import { useFocusEffect } from "expo-router";
 import { useCallback, useRef } from "react";
 
-import { createKeyedNavigationLock, KeyedNavigationLock } from "../services/navigationGuard";
+import { createKeyedNavigationLock, KeyedNavigationLock } from "@utils/navigationGuard";
 
 // Wraps a KeyedNavigationLock in React's lifecycle so that:
 //

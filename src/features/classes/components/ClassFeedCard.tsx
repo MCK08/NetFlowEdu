@@ -10,7 +10,7 @@ import { SaveButton, useSavedQuestion } from "@features/questions";
 import { LikeButton, useLike } from "@features/social/likes";
 import { Question } from "@/types/question";
 
-import { useNavigationGuard } from "../hooks/useNavigationGuard";
+import { useNavigationGuard } from "@hooks/useNavigationGuard";
 
 interface ClassFeedCardProps {
   question: Question;

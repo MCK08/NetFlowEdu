@@ -1,7 +1,7 @@
 import {
   createKeyedNavigationLock,
   DEFAULT_MAX_HOLD_MS,
-} from "@features/classes/services/navigationGuard";
+} from "@utils/navigationGuard";
 
 // Real-device bug (verified on iPhone): double-tapping the comment button in
 // the class feed pushed the question-detail screen TWICE. A first fix used a

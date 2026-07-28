@@ -271,6 +271,33 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Collection-group scope for the SAME member documents.
+    //
+    // Production bug: a student joined with a valid code (joinClassByCode
+    // returned HTTP 200, membership really was created) but "Sınıflarım"
+    // stayed empty and no error was shown. getStudentClasses reads the class
+    // list with a COLLECTION GROUP query:
+    //     query(collectionGroup(db, "members"), where("uid", "==", uid))
+    // A path-scoped rule like the one directly above does NOT apply to
+    // collection group queries — Firestore matches them only against
+    // recursive-wildcard rules — so the query matched nothing and fell
+    // through to the default deny at the bottom of this file (reproduced in
+    // the emulator: "false for 'list'" against the catch-all).
+    //
+    // Checks the `uid` FIELD rather than the {memberUid} document id
+    // deliberately: the query filters on exactly that field, which is what
+    // makes this statically provable for a `list` operation. The practical
+    // effect is that a caller can only ever list membership rows that are
+    // their own — strictly narrower than the path-scoped rule above (no
+    // teacher branch here), so this grants no access that rule didn't
+    // already imply for the caller's own documents.
+    //
+    // Writes stay denied everywhere; membership is Cloud-Function-only.
+    match /{path=**}/members/{memberUid} {
+      allow read: if isSignedIn() && resource.data.uid == uid();
+      allow write: if false;
+    }
+
     // ---- friendships/{friendshipId} -------------------------------------
 
     match /friendships/{friendshipId} {

@@ -9,7 +9,7 @@ import { Question } from "@/types/question";
 import { useClassQuestions } from "../hooks/useClassQuestions";
 import { useLeaveClass } from "../hooks/useLeaveClass";
 import { useStudentClassInfo } from "../hooks/useStudentClassInfo";
-import { useNavigationGuard } from "../hooks/useNavigationGuard";
+import { useNavigationGuard } from "@hooks/useNavigationGuard";
 
 interface StudentClassDetailScreenProps {
   classId: string;

@@ -18,6 +18,7 @@ import { ImageViewer } from "@components/ImageViewer";
 import { AnswerList, useQuestionAnswers } from "@features/answers";
 import { useAuth } from "@features/authentication";
 import { CommentComposer, CommentList, useQuestionComments } from "@features/social/comments";
+import { useNavigationGuard } from "@hooks/useNavigationGuard";
 
 import { QuestionDetailCard } from "../components/QuestionDetailCard";
 import { QuestionHeader } from "../components/QuestionHeader";
@@ -36,11 +37,20 @@ export function QuestionDetailScreen({ questionId }: QuestionDetailScreenProps) 
   const [previewUri, setPreviewUri] = useState<string | null>(null);
   const comments = useQuestionComments({ questionId, uid: firebaseUser?.uid });
 
+  // Real-device bug: double-tapping "Cevapla" pushed AnswerScreen twice, so
+  // the student had to press back twice to return. expo-router's push() does
+  // not deduplicate. The lock is held until this screen is focused again
+  // (i.e. the user actually came back), not for a fixed cooldown — a slow
+  // push would outlive any timer. Same guard the class feed uses.
+  const guardedNavigate = useNavigationGuard();
+
   function handleAnswer() {
     if (!question) return;
-    router.push({
-      pathname: "/(student)/answer/[questionId]",
-      params: { questionId, visibility: question.visibility },
+    guardedNavigate("answer", () => {
+      router.push({
+        pathname: "/(student)/answer/[questionId]",
+        params: { questionId, visibility: question.visibility },
+      });
     });
   }
 
