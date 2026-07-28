@@ -13,6 +13,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useAuth } from "@features/authentication";
 import { QuestionGridItem } from "@features/profile/components/QuestionGridItem";
+import { useNavigationGuard } from "@hooks/useNavigationGuard";
 import { Question } from "@/types/question";
 
 import { ClassMemberRow } from "../components/ClassMemberRow";
@@ -38,6 +39,15 @@ export function TeacherClassDetailScreen({ classId }: TeacherClassDetailScreenPr
     classId,
     onUploaded: prepend,
   });
+  // Prevents a double-tap from pushing the chat screen twice — same guard
+  // already used by the student class detail screen's feed button.
+  const guardedNavigate = useNavigationGuard();
+
+  function openChat() {
+    guardedNavigate("chat", () => {
+      router.push({ pathname: "/(teacher)/class/[classId]/chat", params: { classId } });
+    });
+  }
 
   if (isLoading || !classRoom) {
     return (
@@ -55,7 +65,9 @@ export function TeacherClassDetailScreen({ classId }: TeacherClassDetailScreenPr
         data={questions}
         keyExtractor={(item: Question) => item.id}
         numColumns={GRID_COLUMNS}
-        renderItem={({ item }) => <QuestionGridItem question={item} size={itemSize} />}
+        renderItem={({ item }) => (
+          <QuestionGridItem question={item} size={itemSize} showPosterRoleBadge />
+        )}
         onEndReachedThreshold={0.5}
         onEndReached={() => {
           if (hasMore) loadMore();
@@ -90,6 +102,16 @@ export function TeacherClassDetailScreen({ classId }: TeacherClassDetailScreenPr
             </View>
 
             {errorMessage ? <Text style={styles.error}>{errorMessage}</Text> : null}
+
+            <Pressable
+              onPress={openChat}
+              style={styles.chatButton}
+              accessibilityRole="button"
+              accessibilityLabel="Sınıf sohbetini aç"
+            >
+              <Ionicons name="chatbubble-outline" size={18} color="white" />
+              <Text style={styles.chatButtonText}>Sınıf Sohbeti</Text>
+            </Pressable>
 
             <Pressable
               onPress={capture}
@@ -195,6 +217,20 @@ const styles = StyleSheet.create({
   error: {
     color: "#D92D20",
     fontSize: 13,
+  },
+  chatButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    minHeight: 48,
+    borderRadius: 10,
+    backgroundColor: "#3358D9",
+  },
+  chatButtonText: {
+    color: "white",
+    fontSize: 15,
+    fontWeight: "600",
   },
   uploadButton: {
     flexDirection: "row",

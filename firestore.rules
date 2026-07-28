@@ -83,6 +83,28 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/classes/$(classId)).data;
     }
 
+    // Used by classes/{classId}/messages' create rule to verify the
+    // caller's OWN membership role, rather than trusting a client-submitted
+    // senderRole field at face value — the same "never trust a client role
+    // claim" invariant this ruleset applies everywhere else (see role()/
+    // organizationId() above).
+    function classMemberData(classId, memberUid) {
+      return get(/databases/$(database)/documents/classes/$(classId)/members/$(memberUid)).data;
+    }
+
+    // Whether the caller is allowed to send another class message right
+    // now — true if they've never sent one (no rate-limit doc yet) or if
+    // at least 1 second has passed since classes/{classId}/messageRateLimits/
+    // {uid}'s recorded lastMessageAt. That document is written in the SAME
+    // client-side Firestore transaction as the message itself
+    // (sendClassMessage), so this is real, server-enforced rate limiting —
+    // a modified client can't bypass it by simply not writing the
+    // rate-limit doc, because the message create rule below requires it.
+    function isWithinClassMessageRateLimit(classId) {
+      return !exists(/databases/$(database)/documents/classes/$(classId)/messageRateLimits/$(uid()))
+          || request.time > get(/databases/$(database)/documents/classes/$(classId)/messageRateLimits/$(uid())).data.lastMessageAt + duration.value(1, 's');
+    }
+
     // ---- users/{userId} -----------------------------------------------
     //
     // Server-managed fields — role, organizationId, totalPoints,
@@ -187,41 +209,85 @@ service cloud.firestore {
       // guaranteed at the query level, only for single-document get()s.
       allow read: if isSignedIn() && (isOwner(resource.data.ownerId) || canReadQuestionData(resource.data));
 
-      // private/public: any signed-in user, no classId. 'class': only the
-      // class's own teacher may post into it — checked against the class
-      // doc itself (teacherId + organizationId), not just the caller's own
-      // claims, so a teacher can never post into a class they don't own
-      // even if organizationId happens to match.
+      // private/public: any signed-in user, no classId, organizationId must
+      // be the caller's own claim. 'class' (Phase 9.1): either the class's
+      // own teacher, OR a genuine member of that class whose OWN
+      // membership record (classMemberData — never a client-submitted
+      // claim) says role == 'student'. posterRole is verified against that
+      // same authoritative source in both branches, exactly the "never
+      // trust a client role claim" pattern this ruleset already applies to
+      // chat's senderRole (see classes/{classId}/messages below).
+      //
+      // organizationId is checked against the CLASS's own organizationId
+      // (classData(...).organizationId), not the caller's claim
+      // (organizationId()), for the class branch — a student NEVER has an
+      // organizationId claim (only teachers get one minted, via
+      // completeOnboarding). Requiring == organizationId() here would make
+      // it impossible for ANY student to ever post a class question — the
+      // exact bug already found and fixed for joinClassByCode (see that
+      // file's own doc comment: "every student's claim is literally null").
+      // For the teacher branch this is equivalent to the caller's own claim
+      // anyway (a class's organizationId is its owning teacher's), so
+      // nothing changes for teachers.
       allow create: if isSignedIn()
                     && request.resource.data.ownerId == uid()
-                    && request.resource.data.organizationId == organizationId()
                     && request.resource.data.likeCount == 0
                     && request.resource.data.commentCount == 0
                     && request.resource.data.answerCount == 0
+                    && request.resource.data.subject is string
+                    && request.resource.data.subject.size() <= 40
+                    && (request.resource.data.description == null
+                        || (request.resource.data.description is string
+                            && request.resource.data.description.size() <= 300))
                     && (
                          request.resource.data.visibility in ['private', 'public']
                          && request.resource.data.classId == null
+                         && request.resource.data.organizationId == organizationId()
                          ||
                          request.resource.data.visibility == 'class'
-                         && isTeacher()
                          && request.resource.data.classId is string
-                         && classData(request.resource.data.classId).teacherId == uid()
-                         && classData(request.resource.data.classId).organizationId == organizationId()
+                         && request.resource.data.organizationId
+                            == classData(request.resource.data.classId).organizationId
+                         && (
+                              isTeacher()
+                              && classData(request.resource.data.classId).teacherId == uid()
+                              && request.resource.data.posterRole == 'teacher'
+                              ||
+                              isClassMember(request.resource.data.classId)
+                              && classMemberData(request.resource.data.classId, uid()).role == 'student'
+                              && request.resource.data.posterRole == 'student'
+                            )
                        );
 
       // answerCount/likeCount/commentCount are maintained only by trusted
       // Cloud Functions (Admin SDK bypasses these rules) — don't trust the
-      // client to increment any of them. visibility is immutable once
-      // created (no "constrained transition" matrix needed if it just
-      // never changes).
+      // client to increment any of them. visibility/classId/posterRole are
+      // immutable once created (no "constrained transition" matrix needed
+      // if they just never change) — posterRole/classId were added to this
+      // freeze list in Phase 9.1 alongside the fields themselves, so an
+      // owner's own edit (e.g. correcting subject/description) can never
+      // also smuggle in a posterRole change.
       allow update: if isOwner(resource.data.ownerId)
                     && request.resource.data.ownerId == resource.data.ownerId
                     && request.resource.data.visibility == resource.data.visibility
+                    && request.resource.data.classId == resource.data.classId
+                    && request.resource.data.posterRole == resource.data.posterRole
                     && request.resource.data.answerCount == resource.data.answerCount
                     && request.resource.data.likeCount == resource.data.likeCount
                     && request.resource.data.commentCount == resource.data.commentCount;
 
-      allow delete: if isOwner(resource.data.ownerId) || isTeacher() || isOrgAdmin();
+      // Owner can always delete their own (student or teacher). Org admin,
+      // as before, can delete anything in their org. A teacher can delete
+      // any question WITHIN THEIR OWN CLASS (Phase 9.1 — narrower than the
+      // pre-Phase-9.1 rule, which let ANY teacher delete ANY class's
+      // question; that was never intentionally granted, just never scoped).
+      // For non-class (private/public) visibility, behavior is byte-for-byte
+      // unchanged: any teacher may still delete, exactly as before.
+      allow delete: if isOwner(resource.data.ownerId)
+                    || isOrgAdmin()
+                    || (resource.data.visibility == 'class'
+                        && classData(resource.data.classId).teacherId == uid())
+                    || (resource.data.visibility != 'class' && isTeacher());
     }
 
     // ---- organizations/{organizationId} ---------------------------------
@@ -296,6 +362,76 @@ service cloud.firestore {
     match /{path=**}/members/{memberUid} {
       allow read: if isSignedIn() && resource.data.uid == uid();
       allow write: if false;
+    }
+
+    // ---- classes/{classId}/messages/{messageId} --------------------------
+    // Class chat (Phase 9). Readable/writable only by a current member of
+    // the class — the teacher included, since createClass adds them as a
+    // member with role 'teacher' (see functions/src/classes/createClass.ts),
+    // so no separate teacher-only branch is needed here the way
+    // classes/{classId} itself needs one.
+    //
+    // No `where` clause is needed for the list query that reads this
+    // collection (classId/{classId}/messages, ordered by createdAt) — the
+    // path itself scopes to one class's subcollection, so this needs no
+    // composite index, same reasoning as savedQuestions' single-field
+    // orderBy.
+    //
+    // senderRole is verified against the caller's OWN membership record
+    // (classMemberData) rather than trusted from the client — a student can
+    // never post a message claiming senderRole == 'teacher'.
+    //
+    // Immutable after creation, same shape as questionComments minus the
+    // owner-delete allowance: editedAt/deleted exist on the model for a
+    // future edit/delete feature, but this phase only ever writes them as
+    // null/false and never changes them, so update/delete are fully denied
+    // for now rather than partially/inconsistently allowed.
+    //
+    // Rate-limited to 1 message/second per sender — see
+    // isWithinClassMessageRateLimit and classes/{classId}/messageRateLimits/
+    // {uid} below. clientMessageId is a non-empty client-generated
+    // correlation id (optimistic-UI reconciliation only — carries no
+    // authorization meaning, just required to be present).
+    match /classes/{classId}/messages/{messageId} {
+      allow read: if isSignedIn() && isClassMember(classId);
+
+      allow create: if isSignedIn()
+                    && isClassMember(classId)
+                    && isWithinClassMessageRateLimit(classId)
+                    && request.resource.data.classId == classId
+                    && request.resource.data.senderId == uid()
+                    && request.resource.data.senderRole == classMemberData(classId, uid()).role
+                    && request.resource.data.senderName is string
+                    && (request.resource.data.senderPhoto == null || request.resource.data.senderPhoto is string)
+                    && request.resource.data.clientMessageId is string
+                    && request.resource.data.clientMessageId.size() > 0
+                    && request.resource.data.text is string
+                    && request.resource.data.text.size() > 0
+                    && request.resource.data.text.size() <= 1000
+                    && request.resource.data.createdAt == request.time
+                    && request.resource.data.editedAt == null
+                    && request.resource.data.deleted == false;
+
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    // ---- classes/{classId}/messageRateLimits/{uid} -----------------------
+    // One document per (class, member) recording the sender's own last
+    // message timestamp — written by the CLIENT in the same Firestore
+    // transaction as the message itself (sendClassMessage), and read by the
+    // messages/{messageId} create rule above to enforce a real 1
+    // message/second limit. A caller may only ever write their OWN
+    // document (isOwner(uid)), and the value must be exactly request.time
+    // (the server's clock) — never a client-supplied timestamp, so a
+    // modified client can't backdate it to defeat the check.
+    match /classes/{classId}/messageRateLimits/{memberUid} {
+      allow read: if isOwner(memberUid);
+      allow create, update: if isSignedIn()
+                            && isOwner(memberUid)
+                            && isClassMember(classId)
+                            && request.resource.data.lastMessageAt == request.time;
+      allow delete: if false;
     }
 
     // ---- friendships/{friendshipId} -------------------------------------

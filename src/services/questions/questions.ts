@@ -17,7 +17,7 @@ import {
 } from "firebase/firestore";
 
 import { db } from "@services/firebase/config";
-import { Question, QuestionVisibility } from "@/types/question";
+import { Question, QuestionPosterRole, QuestionVisibility } from "@/types/question";
 
 export interface CreateQuestionInput {
   ownerId: string;
@@ -28,13 +28,24 @@ export interface CreateQuestionInput {
   // firestore.rules' questions/{questionId} create rule, which checks this
   // against the target class's own teacherId/organizationId.
   classId?: string | null;
+  // Who's actually posting — required so every caller states it explicitly
+  // rather than a silent default. firestore.rules verifies this against the
+  // caller's own classes/{classId}/members/{uid} role for class questions;
+  // for private/public questions it's whatever the caller's own claims say
+  // (never independently checked, same trust level as ownerId==uid()).
+  posterRole: QuestionPosterRole;
+  // Both optional, only ever meaningful for class questions today — see
+  // Question's own doc comment.
+  subject?: string;
+  description?: string | null;
 }
 
 // Matches firestore.rules `allow create` exactly: ownerId must be the
 // caller's uid, organizationId must equal the caller's own claim (null for
 // students without an organization — the rule compares with ==, so a
 // literal null here is required, not omission). For visibility 'class',
-// classId must be set and the caller must be that class's own teacher — see
+// classId must be set, and the caller must be either that class's own
+// teacher OR a genuine member with a matching posterRole — see
 // firestore.rules' comment on the create rule. Returns the new doc id so
 // the caller can optimistically prepend it to the feed.
 export async function createQuestion(input: CreateQuestionInput): Promise<string> {
@@ -44,6 +55,9 @@ export async function createQuestion(input: CreateQuestionInput): Promise<string
     visibility: input.visibility,
     imageUrl: input.imageUrl,
     classId: input.visibility === "class" ? (input.classId ?? null) : null,
+    subject: input.subject ?? "",
+    description: input.description ?? null,
+    posterRole: input.posterRole,
     likeCount: 0,
     commentCount: 0,
     answerCount: 0,
@@ -60,6 +74,11 @@ function toQuestion(id: string, data: DocumentData): Question {
     visibility: data.visibility ?? "private",
     imageUrl: data.imageUrl ?? "",
     classId: data.classId ?? null,
+    subject: data.subject ?? "",
+    description: data.description ?? null,
+    // Missing on any question created before Phase 9.1 — always "teacher"
+    // for those, since a student could never create one until now.
+    posterRole: data.posterRole === "student" ? "student" : "teacher",
     likeCount: data.likeCount ?? 0,
     commentCount: data.commentCount ?? 0,
     answerCount: data.answerCount ?? 0,

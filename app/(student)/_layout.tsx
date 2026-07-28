@@ -15,6 +15,7 @@ export default function StudentLayout() {
         gesture so leaving is always possible even with the header overlaid.
       */}
       <Stack.Screen name="class/[classId]/feed" options={{ animation: "slide_from_bottom" }} />
+      <Stack.Screen name="class/[classId]/chat" />
       {/*
         Full-screen card, not a modal sheet: the drawing canvas needs sole
         ownership of vertical pan gestures, and iOS's modal presentation

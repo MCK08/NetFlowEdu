@@ -3,12 +3,16 @@ import { router } from "expo-router";
 import { Alert, ActivityIndicator, FlatList, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { useAuth } from "@features/authentication";
 import { QuestionGridItem } from "@features/profile/components/QuestionGridItem";
 import { Question } from "@/types/question";
 
+import { ImageSourcePicker } from "../components/ImageSourcePicker";
+import { StudentQuestionDetailsModal } from "../components/StudentQuestionDetailsModal";
 import { useClassQuestions } from "../hooks/useClassQuestions";
 import { useLeaveClass } from "../hooks/useLeaveClass";
 import { useStudentClassInfo } from "../hooks/useStudentClassInfo";
+import { useStudentQuestionUpload } from "../hooks/useStudentQuestionUpload";
 import { useNavigationGuard } from "@hooks/useNavigationGuard";
 
 interface StudentClassDetailScreenProps {
@@ -19,9 +23,26 @@ const GRID_COLUMNS = 3;
 
 export function StudentClassDetailScreen({ classId }: StudentClassDetailScreenProps) {
   const { width } = useWindowDimensions();
+  const { firebaseUser } = useAuth();
   const { classRoom, isLoading } = useStudentClassInfo(classId);
-  const { questions, isLoadingMore, hasMore, loadMore } = useClassQuestions(classId);
+  const { questions, isLoadingMore, hasMore, loadMore, prepend } = useClassQuestions(classId);
   const { isLeaving, leave } = useLeaveClass();
+  const {
+    isSourcePickerOpen,
+    pickedImageUri,
+    isUploading,
+    errorMessage: uploadErrorMessage,
+    openComposer,
+    cancelSourcePicker,
+    selectImageSource,
+    cancelDetails,
+    submitDetails,
+  } = useStudentQuestionUpload({
+    uid: firebaseUser?.uid,
+    organizationId: classRoom?.organizationId ?? null,
+    classId,
+    onUploaded: prepend,
+  });
   // Prevents a double-tap from pushing the feed screen twice. Held until
   // this screen is focused again, not for a fixed cooldown.
   const guardedNavigate = useNavigationGuard();
@@ -29,6 +50,12 @@ export function StudentClassDetailScreen({ classId }: StudentClassDetailScreenPr
   function openFeed() {
     guardedNavigate("feed", () => {
       router.push({ pathname: "/(student)/class/[classId]/feed", params: { classId } });
+    });
+  }
+
+  function openChat() {
+    guardedNavigate("chat", () => {
+      router.push({ pathname: "/(student)/class/[classId]/chat", params: { classId } });
     });
   }
 
@@ -62,7 +89,9 @@ export function StudentClassDetailScreen({ classId }: StudentClassDetailScreenPr
         data={questions}
         keyExtractor={(item: Question) => item.id}
         numColumns={GRID_COLUMNS}
-        renderItem={({ item }) => <QuestionGridItem question={item} size={itemSize} />}
+        renderItem={({ item }) => (
+          <QuestionGridItem question={item} size={itemSize} showPosterRoleBadge />
+        )}
         onEndReachedThreshold={0.5}
         onEndReached={() => {
           if (hasMore) loadMore();
@@ -83,6 +112,16 @@ export function StudentClassDetailScreen({ classId }: StudentClassDetailScreenPr
             <Text style={styles.memberCount}>{classRoom.memberCount} üye</Text>
 
             <Pressable
+              onPress={openChat}
+              style={styles.chatButton}
+              accessibilityRole="button"
+              accessibilityLabel="Sınıf sohbetini aç"
+            >
+              <Ionicons name="chatbubble-outline" size={18} color="white" />
+              <Text style={styles.chatButtonText}>Sınıf Sohbeti</Text>
+            </Pressable>
+
+            <Pressable
               onPress={confirmLeave}
               disabled={isLeaving}
               style={styles.leaveButton}
@@ -90,6 +129,23 @@ export function StudentClassDetailScreen({ classId }: StudentClassDetailScreenPr
               accessibilityLabel="Sınıftan ayrıl"
             >
               <Text style={styles.leaveButtonText}>{isLeaving ? "Ayrılıyor..." : "Sınıftan Ayrıl"}</Text>
+            </Pressable>
+
+            <Pressable
+              onPress={openComposer}
+              disabled={isUploading}
+              style={[styles.shareButton, isUploading ? styles.shareButtonDisabled : null]}
+              accessibilityRole="button"
+              accessibilityLabel="Soru paylaş"
+            >
+              {isUploading ? (
+                <ActivityIndicator color="white" />
+              ) : (
+                <>
+                  <Ionicons name="camera" size={18} color="white" />
+                  <Text style={styles.shareButtonText}>Soru Paylaş</Text>
+                </>
+              )}
             </Pressable>
 
             <Text style={styles.sectionTitle}>Sınıf Soruları</Text>
@@ -115,6 +171,21 @@ export function StudentClassDetailScreen({ classId }: StudentClassDetailScreenPr
             </View>
           ) : null
         }
+      />
+
+      <ImageSourcePicker
+        visible={isSourcePickerOpen}
+        onSelect={selectImageSource}
+        onCancel={cancelSourcePicker}
+      />
+
+      <StudentQuestionDetailsModal
+        visible={pickedImageUri !== null}
+        imageUri={pickedImageUri}
+        isUploading={isUploading}
+        errorMessage={uploadErrorMessage}
+        onSubmit={submitDetails}
+        onCancel={cancelDetails}
       />
     </SafeAreaView>
   );
@@ -153,6 +224,21 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "#5B5F66",
   },
+  chatButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    minHeight: 48,
+    borderRadius: 10,
+    backgroundColor: "#3358D9",
+    marginTop: 8,
+  },
+  chatButtonText: {
+    color: "white",
+    fontSize: 15,
+    fontWeight: "600",
+  },
   leaveButton: {
     minHeight: 44,
     borderRadius: 10,
@@ -165,6 +251,24 @@ const styles = StyleSheet.create({
   leaveButtonText: {
     color: "#D92D20",
     fontSize: 14,
+    fontWeight: "600",
+  },
+  shareButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    minHeight: 48,
+    borderRadius: 10,
+    backgroundColor: "#3358D9",
+    marginTop: 8,
+  },
+  shareButtonDisabled: {
+    opacity: 0.6,
+  },
+  shareButtonText: {
+    color: "white",
+    fontSize: 15,
     fontWeight: "600",
   },
   sectionTitle: {

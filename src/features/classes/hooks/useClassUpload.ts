@@ -24,7 +24,12 @@ export function useClassUpload({ uid, organizationId, classId, onUploaded }: Use
     if (!uid || !organizationId || isUploading) return;
     setIsUploading(true);
     try {
-      const question = await captureAndUploadClassQuestion({ uid, organizationId, classId });
+      const question = await captureAndUploadClassQuestion({
+        uid,
+        organizationId,
+        classId,
+        posterRole: "teacher",
+      });
       if (question) {
         onUploaded(question);
       }

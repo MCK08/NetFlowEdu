@@ -60,8 +60,9 @@ function ClassFeedCardComponent({
   // see useNavigationGuard for why a timer was the wrong primitive. Keyed,
   // so tapping "Cevapla" never blocks a legitimate tap on comments.
   const guardedNavigate = useNavigationGuard();
+  const isTeacherPost = question.posterRole === "teacher";
 
-  function openTeacherProfile() {
+  function openOwnerProfile() {
     if (!question.ownerId) return;
     guardedNavigate("profile", () => {
       router.push({ pathname: "/(student)/user/[userId]", params: { userId: question.ownerId } });
@@ -132,10 +133,10 @@ function ClassFeedCardComponent({
 
       <View style={[styles.bottomBar, { paddingBottom: bottomInset + 16 }]}>
         <Pressable
-          style={styles.teacherRow}
-          onPress={openTeacherProfile}
+          style={styles.posterRow}
+          onPress={openOwnerProfile}
           accessibilityRole="button"
-          accessibilityLabel="Öğretmen profilini görüntüle"
+          accessibilityLabel="Profili görüntüle"
         >
           {photoURL ? (
             <Image source={{ uri: photoURL }} style={styles.avatar} contentFit="cover" />
@@ -145,9 +146,18 @@ function ClassFeedCardComponent({
             </View>
           )}
           <View style={styles.nameColumn}>
-            <Text style={styles.teacherName} numberOfLines={1}>
-              {primaryName}
-            </Text>
+            <View style={styles.nameRow}>
+              <Text style={styles.posterName} numberOfLines={1}>
+                {primaryName}
+              </Text>
+              {/* Who actually posted this — teacher and student questions
+                  now share the same class feed, so this is no longer
+                  implicit the way it was when only teachers could post.
+                  Same pill pattern as ChatMessageBubble's "Öğretmen" badge. */}
+              <View style={[styles.roleBadge, isTeacherPost ? styles.roleBadgeTeacher : styles.roleBadgeStudent]}>
+                <Text style={styles.roleBadgeText}>{isTeacherPost ? "Öğretmen" : "Öğrenci"}</Text>
+              </View>
+            </View>
             {usernameHandle ? (
               <Text style={styles.handle} numberOfLines={1}>
                 {usernameHandle}
@@ -226,7 +236,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     gap: 12,
   },
-  teacherRow: {
+  posterRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
@@ -249,10 +259,32 @@ const styles = StyleSheet.create({
   nameColumn: {
     flexShrink: 1,
   },
-  teacherName: {
+  nameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  posterName: {
     color: "white",
     fontSize: 15,
     fontWeight: "700",
+    flexShrink: 1,
+  },
+  roleBadge: {
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+  },
+  roleBadgeTeacher: {
+    backgroundColor: "#3358D9",
+  },
+  roleBadgeStudent: {
+    backgroundColor: "rgba(255,255,255,0.22)",
+  },
+  roleBadgeText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "white",
   },
   handle: {
     color: "white",

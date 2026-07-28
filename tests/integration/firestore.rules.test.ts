@@ -15,6 +15,7 @@ import {
   onSnapshot,
   orderBy,
   query,
+  runTransaction,
   serverTimestamp,
   setDoc,
   updateDoc,
@@ -357,6 +358,9 @@ function privateQuestionDoc(overrides: Partial<Record<string, unknown>> = {}) {
     visibility: "private",
     imageUrl: "https://example.com/question.jpg",
     classId: null,
+    subject: "",
+    description: null,
+    posterRole: "student",
     likeCount: 0,
     commentCount: 0,
     answerCount: 0,
@@ -369,8 +373,13 @@ function publicQuestionDoc(overrides: Partial<Record<string, unknown>> = {}) {
   return privateQuestionDoc({ visibility: "public", ...overrides });
 }
 
+// posterRole defaults to "teacher" here (not privateQuestionDoc's "student")
+// because every EXISTING class-question test in this suite creates the
+// question as the class's own teacher — callers that need a
+// student-authored class question override posterRole explicitly (see the
+// Phase 9.1 describe block below).
 function classQuestionDoc(overrides: Partial<Record<string, unknown>> = {}) {
-  return privateQuestionDoc({ visibility: "class", ...overrides });
+  return privateQuestionDoc({ visibility: "class", posterRole: "teacher", ...overrides });
 }
 
 function answerDoc(overrides: Partial<Record<string, unknown>> = {}) {
@@ -1781,5 +1790,728 @@ describe("firestore.rules — organizations/{organizationId}", () => {
     await assertFails(
       updateDoc(doc(teacher.firestore(), "organizations", "org-1"), { name: "Hacked" }),
     );
+  });
+});
+
+// Phase 9 — class chat. classMemberDoc()/classDoc() are the module-level
+// helpers defined above (shared with the "classes/{classId} and members"
+// describe block). The teacher is seeded as a member with role "teacher"
+// (createClass adds the teacher as a member — see
+// functions/src/classes/createClass.ts), matching production exactly.
+describe("firestore.rules — classes/{classId}/messages/{messageId}", () => {
+  let testEnv: RulesTestEnvironment;
+
+  beforeAll(async () => {
+    testEnv = await initializeTestEnvironment({
+      projectId: PROJECT_ID,
+      firestore: { rules: fs.readFileSync("firestore.rules", "utf8"), host: "127.0.0.1", port: 8080 },
+    });
+  });
+
+  afterAll(async () => testEnv.cleanup());
+  afterEach(async () => testEnv.clearFirestore());
+
+  function teacherContext(uid: string, organizationId: string | null = "org-1") {
+    return testEnv.authenticatedContext(uid, { role: "teacher", organizationId });
+  }
+
+  function studentContext(uid: string, organizationId: string | null = "org-1") {
+    return testEnv.authenticatedContext(uid, { role: "student", organizationId });
+  }
+
+  async function seedClass(classId: string, data: Record<string, unknown> = classDoc()) {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "classes", classId), data);
+    });
+  }
+
+  async function seedMember(classId: string, memberUid: string, data: Record<string, unknown>) {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "classes", classId, "members", memberUid), data);
+    });
+  }
+
+  function messageDoc(overrides: Partial<Record<string, unknown>> = {}) {
+    return {
+      classId: "class-1",
+      senderId: "student-1",
+      senderName: "Student One",
+      senderPhoto: null,
+      senderRole: "student",
+      clientMessageId: "client-msg-1",
+      text: "Merhaba sınıf!",
+      createdAt: serverTimestamp(),
+      editedAt: null,
+      deleted: false,
+      ...overrides,
+    };
+  }
+
+  async function seedClassWithMembers() {
+    await seedClass("class-1", classDoc());
+    await seedMember("class-1", "teacher-1", classMemberDoc({ uid: "teacher-1", role: "teacher" }));
+    await seedMember("class-1", "student-1", classMemberDoc({ uid: "student-1", role: "student" }));
+  }
+
+  // Production incident (2026-07-29): a real send from classes/
+  // oVwgiqxVmSx2W0yGi8TS failed with permission-denied. Root cause proven
+  // via the Firebase Rules API: the LIVE deployed ruleset at the time had no
+  // classes/{classId}/messages or classes/{classId}/messageRateLimits match
+  // block at all (they existed only locally, never deployed), so both
+  // writes fell through to the ruleset's final `match /{document=**} {
+  // allow read, write: if false; }` catch-all. This test reproduces the
+  // EXACT two-document transaction sendClassMessage performs — a `set` on
+  // the message doc plus a `set` with a serverTimestamp() field transform on
+  // the rate-limit doc — using the real production classId/uids, against
+  // whatever ruleset the test is run with. It passes here (against this
+  // repo's current firestore.rules) and is mutation-proven below to fail
+  // against the ruleset shape that was actually live in production.
+  it("reproduces the exact production sendClassMessage transaction (real classId/uids) and succeeds against the current rules", async () => {
+    const classId = "oVwgiqxVmSx2W0yGi8TS";
+    const teacherUid = "Sso7DQ2DhcUL7YoFKpAWUCzSl7I2";
+    const studentUid = "s93LaE0VSyXgHIYG3VD8KYObu8w2";
+
+    await seedClass(classId, classDoc({ teacherId: teacherUid, organizationId: teacherUid, name: "Sistem" }));
+    await seedMember(classId, teacherUid, classMemberDoc({ uid: teacherUid, role: "teacher", displayName: "Erayhoca" }));
+    await seedMember(classId, studentUid, classMemberDoc({ uid: studentUid, role: "student", displayName: "Toygar ateş" }));
+
+    const student = studentContext(studentUid);
+    const messageRef = doc(collection(student.firestore(), "classes", classId, "messages"));
+    const rateLimitRef = doc(student.firestore(), "classes", classId, "messageRateLimits", studentUid);
+
+    await assertSucceeds(
+      runTransaction(student.firestore(), async (tx) => {
+        tx.set(messageRef, {
+          classId,
+          senderId: studentUid,
+          senderName: "Toygar ateş",
+          senderPhoto: null,
+          senderRole: "student",
+          clientMessageId: "prod-repro-client-msg-1",
+          text: "Merhaba!",
+          createdAt: serverTimestamp(),
+          editedAt: null,
+          deleted: false,
+        });
+        tx.set(rateLimitRef, { lastMessageAt: serverTimestamp() });
+      }),
+    );
+  });
+
+  // ---- teacher send / student send ---------------------------------------
+
+  it("lets the teacher (also a class member) send a message with senderRole 'teacher'", async () => {
+    await seedClassWithMembers();
+    const teacher = teacherContext("teacher-1");
+    await assertSucceeds(
+      addDoc(
+        collection(teacher.firestore(), "classes", "class-1", "messages"),
+        messageDoc({ senderId: "teacher-1", senderName: "Teacher One", senderRole: "teacher" }),
+      ),
+    );
+  });
+
+  it("lets a student member send a message with senderRole 'student'", async () => {
+    await seedClassWithMembers();
+    const student = studentContext("student-1");
+    await assertSucceeds(
+      addDoc(collection(student.firestore(), "classes", "class-1", "messages"), messageDoc()),
+    );
+  });
+
+  // ---- member only / permissions -----------------------------------------
+
+  it("denies a non-member from sending a message", async () => {
+    await seedClassWithMembers();
+    const outsider = studentContext("student-2");
+    await assertFails(
+      addDoc(
+        collection(outsider.firestore(), "classes", "class-1", "messages"),
+        messageDoc({ senderId: "student-2" }),
+      ),
+    );
+  });
+
+  it("denies a non-member from reading class messages", async () => {
+    await seedClassWithMembers();
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await addDoc(collection(context.firestore(), "classes", "class-1", "messages"), messageDoc());
+    });
+    const outsider = studentContext("student-2");
+    await assertFails(getDocs(collection(outsider.firestore(), "classes", "class-1", "messages")));
+  });
+
+  it("lets a class member read class messages", async () => {
+    await seedClassWithMembers();
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await addDoc(collection(context.firestore(), "classes", "class-1", "messages"), messageDoc());
+    });
+    const student = studentContext("student-1");
+    await assertSucceeds(getDocs(collection(student.firestore(), "classes", "class-1", "messages")));
+  });
+
+  it("denies a student sending a message that claims senderRole 'teacher' (verified against their own membership record, not trusted from the client)", async () => {
+    await seedClassWithMembers();
+    const student = studentContext("student-1");
+    await assertFails(
+      addDoc(
+        collection(student.firestore(), "classes", "class-1", "messages"),
+        messageDoc({ senderRole: "teacher" }),
+      ),
+    );
+  });
+
+  it("denies a member sending a message with someone else's senderId", async () => {
+    await seedClassWithMembers();
+    const student = studentContext("student-1");
+    await assertFails(
+      addDoc(
+        collection(student.firestore(), "classes", "class-1", "messages"),
+        messageDoc({ senderId: "teacher-1" }),
+      ),
+    );
+  });
+
+  // ---- validation ----------------------------------------------------------
+
+  it("denies an empty message", async () => {
+    await seedClassWithMembers();
+    const student = studentContext("student-1");
+    await assertFails(
+      addDoc(collection(student.firestore(), "classes", "class-1", "messages"), messageDoc({ text: "" })),
+    );
+  });
+
+  it("denies a message over 1000 characters (long message)", async () => {
+    await seedClassWithMembers();
+    const student = studentContext("student-1");
+    await assertFails(
+      addDoc(
+        collection(student.firestore(), "classes", "class-1", "messages"),
+        messageDoc({ text: "a".repeat(1001) }),
+      ),
+    );
+  });
+
+  it("accepts a message at exactly the 1000 character limit", async () => {
+    await seedClassWithMembers();
+    const student = studentContext("student-1");
+    await assertSucceeds(
+      addDoc(
+        collection(student.firestore(), "classes", "class-1", "messages"),
+        messageDoc({ text: "a".repeat(1000) }),
+      ),
+    );
+  });
+
+  // ---- immutability ---------------------------------------------------------
+
+  it("denies updating a message (no edit feature this phase)", async () => {
+    await seedClassWithMembers();
+    let messageId = "";
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      const ref = await addDoc(collection(context.firestore(), "classes", "class-1", "messages"), messageDoc());
+      messageId = ref.id;
+    });
+    const student = studentContext("student-1");
+    await assertFails(
+      updateDoc(doc(student.firestore(), "classes", "class-1", "messages", messageId), { text: "Hacked" }),
+    );
+  });
+
+  it("denies deleting a message", async () => {
+    await seedClassWithMembers();
+    let messageId = "";
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      const ref = await addDoc(collection(context.firestore(), "classes", "class-1", "messages"), messageDoc());
+      messageId = ref.id;
+    });
+    const student = studentContext("student-1");
+    await assertFails(deleteDoc(doc(student.firestore(), "classes", "class-1", "messages", messageId)));
+  });
+
+  // ---- ordering ---------------------------------------------------------
+
+  it("lists messages oldest-first via orderBy(createdAt) — no composite index required", async () => {
+    await seedClassWithMembers();
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "classes", "class-1", "messages", "m1"), {
+        ...messageDoc({ text: "İlk mesaj" }),
+        createdAt: new Date(2026, 0, 1),
+      });
+      await setDoc(doc(context.firestore(), "classes", "class-1", "messages", "m2"), {
+        ...messageDoc({ text: "İkinci mesaj" }),
+        createdAt: new Date(2026, 0, 2),
+      });
+    });
+    const student = studentContext("student-1");
+    const q = query(collection(student.firestore(), "classes", "class-1", "messages"), orderBy("createdAt", "asc"));
+    const snapshot = await assertSucceeds(getDocs(q));
+    expect(snapshot.docs.map((d) => d.data().text)).toEqual(["İlk mesaj", "İkinci mesaj"]);
+  });
+
+  // ---- realtime -----------------------------------------------------------
+
+  it("delivers a new message to an active onSnapshot listener without polling", async () => {
+    await seedClassWithMembers();
+    const student = studentContext("student-1");
+    const teacher = teacherContext("teacher-1");
+
+    const q = query(
+      collection(student.firestore(), "classes", "class-1", "messages"),
+      orderBy("createdAt", "asc"),
+    );
+
+    const received: string[] = [];
+    const delivered = new Promise<void>((resolve) => {
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        received.push(...snapshot.docChanges().map((change) => change.doc.data().text));
+        if (received.includes("Canlı mesaj")) {
+          unsubscribe();
+          resolve();
+        }
+      });
+    });
+
+    await addDoc(
+      collection(teacher.firestore(), "classes", "class-1", "messages"),
+      messageDoc({ senderId: "teacher-1", senderRole: "teacher", text: "Canlı mesaj" }),
+    );
+
+    await delivered;
+    expect(received).toContain("Canlı mesaj");
+  });
+
+  // ---- duplicate protection (mirrors the client's runGuardedOnce usage) ---
+
+  it("proves the client-side guard is necessary: two concurrent unguarded sends both reach Firestore as two separate messages", async () => {
+    await seedClassWithMembers();
+    const student = studentContext("student-1");
+    const col = collection(student.firestore(), "classes", "class-1", "messages");
+
+    await Promise.all([
+      addDoc(col, messageDoc({ text: "Tek mesaj" })),
+      addDoc(col, messageDoc({ text: "Tek mesaj" })),
+    ]);
+
+    const snapshot = await getDocs(col);
+    expect(snapshot.size).toBe(2);
+  });
+
+  it("wrapping the send in runGuardedOnce (the exact hook behavior) collapses a rapid double-tap into exactly one message", async () => {
+    await seedClassWithMembers();
+    const student = studentContext("student-1");
+    const col = collection(student.firestore(), "classes", "class-1", "messages");
+    const guardRef = { current: false };
+
+    async function guardedSend() {
+      if (guardRef.current) return;
+      guardRef.current = true;
+      try {
+        await addDoc(col, messageDoc({ text: "Tek mesaj" }));
+      } finally {
+        guardRef.current = false;
+      }
+    }
+
+    // Two "taps" fired in the same tick, exactly as a rapid double-tap would.
+    await Promise.all([guardedSend(), guardedSend()]);
+
+    const snapshot = await getDocs(col);
+    expect(snapshot.size).toBe(1);
+  });
+
+  // ---- clientMessageId (required for optimistic-UI reconciliation) -------
+
+  it("denies a message with no clientMessageId", async () => {
+    await seedClassWithMembers();
+    const student = studentContext("student-1");
+    const fullDoc = messageDoc();
+    const withoutClientMessageId: Partial<typeof fullDoc> = { ...fullDoc };
+    delete withoutClientMessageId.clientMessageId;
+    await assertFails(
+      addDoc(collection(student.firestore(), "classes", "class-1", "messages"), withoutClientMessageId),
+    );
+  });
+
+  it("denies a message with an empty clientMessageId", async () => {
+    await seedClassWithMembers();
+    const student = studentContext("student-1");
+    await assertFails(
+      addDoc(
+        collection(student.firestore(), "classes", "class-1", "messages"),
+        messageDoc({ clientMessageId: "" }),
+      ),
+    );
+  });
+
+  // ---- messageRateLimits/{uid} — 1 message/second enforcement -------------
+  //
+  // These tests write directly to messageRateLimits (mirroring what
+  // sendClassMessage does inside its transaction) rather than relying on
+  // addDoc-to-messages alone, since the rate limit only engages once that
+  // document actually exists — the other tests in this suite (which only
+  // ever write to `messages`) never create it, so they're deliberately
+  // unaffected by this rule, matching how a real client's atomic transaction
+  // is the only path that can trigger it.
+  describe("rate limiting", () => {
+    async function seedRateLimit(uid: string, lastMessageAt: unknown) {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await setDoc(doc(context.firestore(), "classes", "class-1", "messageRateLimits", uid), {
+          lastMessageAt,
+        });
+      });
+    }
+
+    it("lets a member write their own rate-limit doc with the server timestamp", async () => {
+      await seedClassWithMembers();
+      const student = studentContext("student-1");
+      await assertSucceeds(
+        setDoc(doc(student.firestore(), "classes", "class-1", "messageRateLimits", "student-1"), {
+          lastMessageAt: serverTimestamp(),
+        }),
+      );
+    });
+
+    it("denies a member writing someone else's rate-limit doc", async () => {
+      await seedClassWithMembers();
+      const student = studentContext("student-1");
+      await assertFails(
+        setDoc(doc(student.firestore(), "classes", "class-1", "messageRateLimits", "teacher-1"), {
+          lastMessageAt: serverTimestamp(),
+        }),
+      );
+    });
+
+    it("denies backdating lastMessageAt to a client-supplied (non-server) timestamp", async () => {
+      await seedClassWithMembers();
+      const student = studentContext("student-1");
+      await assertFails(
+        setDoc(doc(student.firestore(), "classes", "class-1", "messageRateLimits", "student-1"), {
+          lastMessageAt: new Date(2020, 0, 1),
+        }),
+      );
+    });
+
+    it("denies a message sent less than 1 second after the caller's own last recorded send", async () => {
+      await seedClassWithMembers();
+      await seedRateLimit("student-1", serverTimestamp()); // just now
+      const student = studentContext("student-1");
+      await assertFails(
+        addDoc(collection(student.firestore(), "classes", "class-1", "messages"), messageDoc()),
+      );
+    });
+
+    it("allows a message sent more than 1 second after the caller's own last recorded send", async () => {
+      await seedClassWithMembers();
+      // Firestore's `withSecurityRulesDisabled` writes still record a real
+      // server timestamp for `serverTimestamp()`, but we need a value
+      // provably >1s in the past — a plain past Date, allowed only because
+      // rules are disabled for this seed write.
+      await seedRateLimit("student-1", new Date(Date.now() - 5000));
+      const student = studentContext("student-1");
+      await assertSucceeds(
+        addDoc(collection(student.firestore(), "classes", "class-1", "messages"), messageDoc()),
+      );
+    });
+
+    it("does not rate-limit a different member of the same class", async () => {
+      await seedClassWithMembers();
+      await seedRateLimit("student-1", serverTimestamp()); // student-1 just sent
+      const teacher = teacherContext("teacher-1"); // unrelated sender
+      await assertSucceeds(
+        addDoc(
+          collection(teacher.firestore(), "classes", "class-1", "messages"),
+          messageDoc({ senderId: "teacher-1", senderName: "Teacher One", senderRole: "teacher" }),
+        ),
+      );
+    });
+  });
+});
+
+// Phase 9.1 — students can publish class questions. classDoc()/
+// classMemberDoc()/classQuestionDoc() are the module-level helpers defined
+// above (shared with the earlier "classes/{classId} and members" and
+// questions describe blocks).
+describe("firestore.rules — questions/{questionId} student publishing (Phase 9.1)", () => {
+  let testEnv: RulesTestEnvironment;
+
+  beforeAll(async () => {
+    testEnv = await initializeTestEnvironment({
+      projectId: PROJECT_ID,
+      firestore: { rules: fs.readFileSync("firestore.rules", "utf8"), host: "127.0.0.1", port: 8080 },
+    });
+  });
+
+  afterAll(async () => testEnv.cleanup());
+  afterEach(async () => testEnv.clearFirestore());
+
+  function teacherContext(uid: string, organizationId: string | null = "org-1") {
+    return testEnv.authenticatedContext(uid, { role: "teacher", organizationId });
+  }
+
+  // A student's real custom claims NEVER carry an organizationId — see
+  // functions/src/classes/joinClassByCode.ts's own doc comment on the
+  // production incident this reproduces. Deliberately not accepting an
+  // organizationId parameter here, so a test can't accidentally give a
+  // student claims they'd never actually have.
+  function studentContext(uid: string) {
+    return testEnv.authenticatedContext(uid, { role: "student", organizationId: null });
+  }
+
+  async function seedClass(classId: string, data: Record<string, unknown> = classDoc()) {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "classes", classId), data);
+    });
+  }
+
+  async function seedMember(classId: string, memberUid: string, data: Record<string, unknown>) {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "classes", classId, "members", memberUid), data);
+    });
+  }
+
+  async function seedClassWithMembers() {
+    await seedClass("class-1", classDoc({ teacherId: "teacher-1", organizationId: "org-1" }));
+    await seedMember("class-1", "teacher-1", classMemberDoc({ uid: "teacher-1", role: "teacher" }));
+    await seedMember("class-1", "student-1", classMemberDoc({ uid: "student-1", role: "student" }));
+  }
+
+  function studentClassQuestionDoc(overrides: Partial<Record<string, unknown>> = {}) {
+    return classQuestionDoc({
+      ownerId: "student-1",
+      organizationId: "org-1",
+      classId: "class-1",
+      posterRole: "student",
+      subject: "Matematik",
+      description: "İkinci dereceden denklem",
+      ...overrides,
+    });
+  }
+
+  // ---- create: student member can publish -------------------------------
+
+  it("lets a genuine class member (student) create a class question", async () => {
+    await seedClassWithMembers();
+    const student = studentContext("student-1");
+    await assertSucceeds(
+      addDoc(collection(student.firestore(), "questions"), {
+        ...studentClassQuestionDoc(),
+        createdAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it("denies a non-member from creating a class question, even with a valid classId", async () => {
+    await seedClassWithMembers();
+    const outsider = studentContext("student-2");
+    await assertFails(
+      addDoc(collection(outsider.firestore(), "questions"), {
+        ...studentClassQuestionDoc({ ownerId: "student-2" }),
+        createdAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it("denies a student claiming posterRole 'teacher' (verified against their own membership record, not trusted from the client)", async () => {
+    await seedClassWithMembers();
+    const student = studentContext("student-1");
+    await assertFails(
+      addDoc(collection(student.firestore(), "questions"), {
+        ...studentClassQuestionDoc({ posterRole: "teacher" }),
+        createdAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it("denies a student posting with someone else's ownerId", async () => {
+    await seedClassWithMembers();
+    const student = studentContext("student-1");
+    await assertFails(
+      addDoc(collection(student.firestore(), "questions"), {
+        ...studentClassQuestionDoc({ ownerId: "teacher-1" }),
+        createdAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  // The exact production incident this reproduces: a student's claims NEVER
+  // carry an organizationId, only the class's own organizationId is
+  // meaningful here. This proves the rule checks classData(classId).
+  // organizationId, not organizationId() (the caller's claim, always null
+  // for a student) — a rule that checked the latter would make this
+  // ALWAYS fail, for every student, permanently.
+  it("succeeds even though the student's own organizationId claim is null, using the class's organizationId instead", async () => {
+    await seedClassWithMembers();
+    const student = studentContext("student-1");
+    await assertSucceeds(
+      addDoc(collection(student.firestore(), "questions"), {
+        ...studentClassQuestionDoc(),
+        createdAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it("denies a class question whose organizationId doesn't match the class's own organizationId", async () => {
+    await seedClassWithMembers();
+    const student = studentContext("student-1");
+    await assertFails(
+      addDoc(collection(student.firestore(), "questions"), {
+        ...studentClassQuestionDoc({ organizationId: "some-other-org" }),
+        createdAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  // ---- create: subject/description validation ----------------------------
+
+  it("denies a subject over 40 characters", async () => {
+    await seedClassWithMembers();
+    const student = studentContext("student-1");
+    await assertFails(
+      addDoc(collection(student.firestore(), "questions"), {
+        ...studentClassQuestionDoc({ subject: "a".repeat(41) }),
+        createdAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it("accepts a subject at exactly 40 characters", async () => {
+    await seedClassWithMembers();
+    const student = studentContext("student-1");
+    await assertSucceeds(
+      addDoc(collection(student.firestore(), "questions"), {
+        ...studentClassQuestionDoc({ subject: "a".repeat(40) }),
+        createdAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it("denies a description over 300 characters", async () => {
+    await seedClassWithMembers();
+    const student = studentContext("student-1");
+    await assertFails(
+      addDoc(collection(student.firestore(), "questions"), {
+        ...studentClassQuestionDoc({ description: "a".repeat(301) }),
+        createdAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it("accepts a null description (optional field, omitted)", async () => {
+    await seedClassWithMembers();
+    const student = studentContext("student-1");
+    await assertSucceeds(
+      addDoc(collection(student.firestore(), "questions"), {
+        ...studentClassQuestionDoc({ description: null }),
+        createdAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it("denies a missing subject field entirely", async () => {
+    await seedClassWithMembers();
+    const student = studentContext("student-1");
+    const fullDoc = studentClassQuestionDoc();
+    const withoutSubject: Partial<typeof fullDoc> = { ...fullDoc };
+    delete withoutSubject.subject;
+    await assertFails(
+      addDoc(collection(student.firestore(), "questions"), {
+        ...withoutSubject,
+        createdAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  // ---- update: own question only, posterRole/classId frozen --------------
+
+  async function seedQuestion(id: string, data: Record<string, unknown>) {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "questions", id), data);
+    });
+  }
+
+  it("lets a student edit their own class question's subject/description", async () => {
+    await seedClassWithMembers();
+    await seedQuestion("q1", studentClassQuestionDoc());
+    const student = studentContext("student-1");
+    await assertSucceeds(
+      updateDoc(doc(student.firestore(), "questions", "q1"), { subject: "Fizik" }),
+    );
+  });
+
+  it("denies a student editing someone else's question", async () => {
+    await seedClassWithMembers();
+    await seedQuestion("q1", studentClassQuestionDoc());
+    const otherStudent = studentContext("student-2");
+    await assertFails(
+      updateDoc(doc(otherStudent.firestore(), "questions", "q1"), { subject: "Fizik" }),
+    );
+  });
+
+  it("denies a student changing their own question's posterRole via update (frozen field)", async () => {
+    await seedClassWithMembers();
+    await seedQuestion("q1", studentClassQuestionDoc());
+    const student = studentContext("student-1");
+    await assertFails(
+      updateDoc(doc(student.firestore(), "questions", "q1"), { posterRole: "teacher" }),
+    );
+  });
+
+  // ---- delete: own question, or own class's teacher, or org admin --------
+
+  it("lets a student delete their own class question", async () => {
+    await seedClassWithMembers();
+    await seedQuestion("q1", studentClassQuestionDoc());
+    const student = studentContext("student-1");
+    await assertSucceeds(deleteDoc(doc(student.firestore(), "questions", "q1")));
+  });
+
+  it("denies a student deleting another student's question", async () => {
+    await seedClassWithMembers();
+    await seedMember("class-1", "student-2", classMemberDoc({ uid: "student-2", role: "student" }));
+    await seedQuestion("q1", studentClassQuestionDoc());
+    const otherStudent = studentContext("student-2");
+    await assertFails(deleteDoc(doc(otherStudent.firestore(), "questions", "q1")));
+  });
+
+  it("lets the class's OWN teacher delete a student's question in that class", async () => {
+    await seedClassWithMembers();
+    await seedQuestion("q1", studentClassQuestionDoc());
+    const teacher = teacherContext("teacher-1");
+    await assertSucceeds(deleteDoc(doc(teacher.firestore(), "questions", "q1")));
+  });
+
+  // Regression test for the scope-tightening this phase makes: before
+  // Phase 9.1, `isTeacher()` alone let ANY teacher anywhere delete ANY
+  // class's question — never intentionally granted, just never scoped.
+  it("denies a DIFFERENT teacher (not this class's own) from deleting a student's question", async () => {
+    await seedClassWithMembers();
+    await seedQuestion("q1", studentClassQuestionDoc());
+    const otherTeacher = teacherContext("teacher-2", "org-2");
+    await assertFails(deleteDoc(doc(otherTeacher.firestore(), "questions", "q1")));
+  });
+
+  // ---- backward compatibility: pre-Phase-9.1 class questions still read --
+
+  it("still reads a pre-existing class question that has no subject/description/posterRole fields at all", async () => {
+    await seedClassWithMembers();
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      // Deliberately the OLD shape — exactly what every class question
+      // looked like before this phase (no subject/description/posterRole).
+      await setDoc(doc(context.firestore(), "questions", "legacy-q1"), {
+        ownerId: "teacher-1",
+        organizationId: "org-1",
+        visibility: "class",
+        imageUrl: "https://example.com/legacy.jpg",
+        classId: "class-1",
+        likeCount: 0,
+        commentCount: 0,
+        answerCount: 0,
+        createdAt: new Date(),
+      });
+    });
+    const student = studentContext("student-1");
+    await assertSucceeds(getDoc(doc(student.firestore(), "questions", "legacy-q1")));
   });
 });
