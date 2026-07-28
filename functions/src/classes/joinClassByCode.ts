@@ -60,11 +60,39 @@ export const joinClassByCode = onCall<JoinClassByCodeRequest>(
       }
       const classData = classSnap.data() ?? {};
 
-      // Cross-organization join is rejected even with a technically valid
-      // code — a code should never let a student cross an org boundary.
-      if ((classData.organizationId ?? null) !== (caller.token.organizationId ?? null)) {
-        throw new HttpsError("permission-denied", "Bu sınıfa katılamazsınız.");
-      }
+      // NOTE (production incident, verified against live data): there used
+      // to be a cross-organization equality check here —
+      //   classData.organizationId !== caller.token.organizationId -> deny
+      // It rejected EVERY valid join code for EVERY student, because the two
+      // sides can never be equal in this product's data model:
+      //
+      //   * a class always carries its teacher's organizationId
+      //     (createClass copies it from the teacher's claims), e.g.
+      //     class "Sistem" -> organizationId "Sso7DQ2Dhc…"
+      //   * a student NEVER has an organizationId. onUserCreate/
+      //     completeOnboarding only ever mint an organization for a
+      //     teacher, so every student's claim is literally null (confirmed
+      //     for all five student accounts in production).
+      //
+      // So the check was not "reject cross-org joins", it was "reject all
+      // joins" — the reported bug (valid code 28YPQ5 -> permission-denied).
+      //
+      // Removing it does not widen access, because organizationId was never
+      // the authority for class content in the first place. firestore.rules
+      // gates every class resource on MEMBERSHIP, not organization:
+      //   * questions:      visibility == 'class' && isClassMember(classId)
+      //   * classes/{id}:   teacherId == uid() || isClassMember(classId)
+      // `sameOrg()` is used only for solutions/leaderboards, which are
+      // unrelated to classes. The join code itself is the capability: it is
+      // random, Cloud-Function-generated, and only the teacher can hand it
+      // out. Membership remains the single source of truth, which is also
+      // what allows one student to belong to several teachers' classes —
+      // impossible under an org-equality model, since a user has exactly one
+      // organizationId.
+      //
+      // The remaining guards are the real ones: caller must be a student
+      // (checked above), the code must resolve to a real class, and that
+      // class must still be active (checked above).
 
       // Idempotent: re-submitting a code you already used (double-tap,
       // retry after a flaky network response) is a no-op success, not an

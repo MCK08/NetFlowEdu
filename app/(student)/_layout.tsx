@@ -6,7 +6,15 @@ export default function StudentLayout() {
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="question/[questionId]" />
       <Stack.Screen name="user/[userId]" />
-      <Stack.Screen name="class/[classId]" />
+      <Stack.Screen name="class/[classId]/index" />
+      {/*
+        The immersive class feed is a stack screen, NOT a tab screen, so no
+        bottom tab bar can ever sit over its controls — the correct
+        architecture rather than padding the feed to dodge a tab bar. Slides
+        up to read as "entering" the feed, and keeps the edge-swipe-back
+        gesture so leaving is always possible even with the header overlaid.
+      */}
+      <Stack.Screen name="class/[classId]/feed" options={{ animation: "slide_from_bottom" }} />
       {/*
         Full-screen card, not a modal sheet: the drawing canvas needs sole
         ownership of vertical pan gestures, and iOS's modal presentation

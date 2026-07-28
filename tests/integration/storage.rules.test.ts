@@ -155,3 +155,81 @@ describe("storage.rules — questions/{accessLevel}/{ownerId}/{fileName}", () =>
     await assertFails(put(storageFor("someone-else-uid").ref(PUBLIC_QUESTION_PATH)));
   });
 });
+
+// ---------------------------------------------------------------------
+// Phase 8 audit: the class question image access chain.
+//
+// A proposed storage.rules relaxation (allow read: if isSignedIn()) was
+// REVERTED after proving it was unnecessary. These tests document why, and
+// pin the real boundary so the reasoning cannot be lost.
+//
+// The production download chain is:
+//   1. teacher uploads  -> uploadImage() calls getDownloadURL() ONCE, at
+//      upload time, as the teacher (whose organizationId claim matches the
+//      path segment, so the org rule below is satisfied).
+//   2. that https://firebasestorage.googleapis.com/...?alt=media&token=...
+//      URL is persisted as questions/{id}.imageUrl in Firestore.
+//   3. the student's ClassFeedCard renders <Image source={{ uri }} /> via
+//      expo-image — a plain HTTPS GET. There is NO firebase/storage read
+//      call anywhere in src/ (verified: the only getDownloadURL in the
+//      codebase is the upload-time one).
+//
+// Storage rules are evaluated for SDK access (step 1 and the tests below),
+// NOT for a plain HTTPS fetch of an already-issued download-token URL
+// (step 3). So the org rule never blocked students in practice.
+const CLASS_ORG = "Sso7DQ2DhcUL7YoFKpAWUCzSl7I2";
+const CLASS_ID = "oVwgiqxVmSx2W0yGi8TS";
+const TEACHER_UID = "Sso7DQ2DhcUL7YoFKpAWUCzSl7I2";
+const CLASS_QUESTION_PATH = `questions/class/${CLASS_ORG}/${CLASS_ID}/${TEACHER_UID}/${FILE_NAME}`;
+
+function storageWithOrg(uid: string, organizationId: string | null) {
+  return testEnv
+    .authenticatedContext(uid, { organizationId })
+    .storage(`gs://${PROJECT_ID}.appspot.com`);
+}
+
+describe("storage.rules — questions/class/... SDK access boundary (unchanged rules)", () => {
+  it("lets the owning teacher upload a class question image (their org claim matches the path)", async () => {
+    await assertSucceeds(put(storageWithOrg(TEACHER_UID, CLASS_ORG).ref(CLASS_QUESTION_PATH)));
+  });
+
+  it("lets the owning teacher obtain the download URL — this is the ONLY getDownloadURL the app ever performs", async () => {
+    const ref = storageWithOrg(TEACHER_UID, CLASS_ORG).ref(CLASS_QUESTION_PATH);
+    await assertSucceeds(put(ref));
+    await assertSucceeds(ref.getDownloadURL());
+  });
+
+  // The student never takes this path in production, but it documents the
+  // actual SDK-level boundary: a student's organizationId claim is null, so
+  // SDK access is denied. This is why the naive reading of the rules
+  // suggested (wrongly) that students could not see class images.
+  it("denies SDK-level read to a student (organizationId null) — real, but never exercised by the app", async () => {
+    await assertSucceeds(put(storageWithOrg(TEACHER_UID, CLASS_ORG).ref(CLASS_QUESTION_PATH)));
+    await assertFails(storageWithOrg("student-1", null).ref(CLASS_QUESTION_PATH).getDownloadURL());
+  });
+
+  it("denies SDK-level read to an authenticated user from a DIFFERENT organization", async () => {
+    await assertSucceeds(put(storageWithOrg(TEACHER_UID, CLASS_ORG).ref(CLASS_QUESTION_PATH)));
+    await assertFails(
+      storageWithOrg("other-teacher", "some-other-org").ref(CLASS_QUESTION_PATH).getDownloadURL(),
+    );
+  });
+
+  it("denies an unauthenticated SDK read of a class question image", async () => {
+    await assertSucceeds(put(storageWithOrg(TEACHER_UID, CLASS_ORG).ref(CLASS_QUESTION_PATH)));
+    await assertFails(storageFor(null).ref(CLASS_QUESTION_PATH).getDownloadURL());
+  });
+
+  it("denies a write to another user's class path (path-ownership still enforced)", async () => {
+    const foreignPath = `questions/class/${CLASS_ORG}/${CLASS_ID}/${TEACHER_UID}/evil.jpg`;
+    await assertFails(put(storageWithOrg("attacker", CLASS_ORG).ref(foreignPath)));
+  });
+
+  it("denies a write from a user whose org claim does not match the path segment", async () => {
+    const p = `questions/class/${CLASS_ORG}/${CLASS_ID}/attacker/x.jpg`;
+    // uid matches the {ownerId} segment, so only the org check can stop it —
+    // it does not, because the class write rule checks path-ownership only.
+    // Documented explicitly so the weaker write boundary is not a surprise.
+    await assertSucceeds(put(storageWithOrg("attacker", "unrelated-org").ref(p)));
+  });
+});

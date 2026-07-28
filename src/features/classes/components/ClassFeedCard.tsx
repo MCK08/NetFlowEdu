@@ -1,0 +1,293 @@
+import { Ionicons } from "@expo/vector-icons";
+import { Image } from "expo-image";
+import { router } from "expo-router";
+import { memo } from "react";
+import { Pressable, StyleSheet, Text, View } from "react-native";
+
+import { useAuth } from "@features/authentication";
+import { useProfileHandle } from "@features/profiles";
+import { SaveButton, useSavedQuestion } from "@features/questions";
+import { LikeButton, useLike } from "@features/social/likes";
+import { Question } from "@/types/question";
+
+import { useNavigationGuard } from "../hooks/useNavigationGuard";
+
+interface ClassFeedCardProps {
+  question: Question;
+  className: string;
+  height: number;
+  topInset: number;
+  bottomInset: number;
+}
+
+function formatCount(value: number): string {
+  // Large counts must not blow out the fixed-width action rail.
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}B`;
+  return String(value);
+}
+
+// One full-screen question in the class feed.
+//
+// Every social action here is the SAME production implementation the public
+// feed and question detail use (useLike, useSavedQuestion, useProfileHandle,
+// LikeButton, SaveButton) — this phase adds no parallel like/save/comment
+// system. Comments and answering intentionally navigate to the existing
+// screens rather than re-implementing those flows inline.
+//
+// memo'd on the props that actually change: without it, every like/save
+// count update in the list would re-render all mounted cards.
+function ClassFeedCardComponent({
+  question,
+  className,
+  height,
+  topInset,
+  bottomInset,
+}: ClassFeedCardProps) {
+  const { firebaseUser } = useAuth();
+  const { primaryName, usernameHandle, photoURL } = useProfileHandle(question.ownerId);
+  const { liked, likeCount, toggle } = useLike({
+    targetType: "question",
+    targetId: question.id,
+    initialLikeCount: question.likeCount,
+    uid: firebaseUser?.uid,
+  });
+  const { saved, toggle: toggleSaved } = useSavedQuestion(question, firebaseUser?.uid);
+
+  // expo-router's push() does not deduplicate, so an unguarded double-tap
+  // stacks the same screen twice. The lock is held until this screen is
+  // focused again (the user came back) rather than for a fixed cooldown —
+  // see useNavigationGuard for why a timer was the wrong primitive. Keyed,
+  // so tapping "Cevapla" never blocks a legitimate tap on comments.
+  const guardedNavigate = useNavigationGuard();
+
+  function openTeacherProfile() {
+    if (!question.ownerId) return;
+    guardedNavigate("profile", () => {
+      router.push({ pathname: "/(student)/user/[userId]", params: { userId: question.ownerId } });
+    });
+  }
+
+  // Comments live on the question detail screen — reused, not duplicated.
+  function openComments() {
+    guardedNavigate("comments", () => {
+      router.push({
+        pathname: "/(student)/question/[questionId]",
+        params: { questionId: question.id },
+      });
+    });
+  }
+
+  // The existing answer-upload flow, unchanged.
+  function openAnswer() {
+    guardedNavigate("answer", () => {
+      router.push({
+        pathname: "/(student)/answer/[questionId]",
+        params: { questionId: question.id },
+      });
+    });
+  }
+
+  return (
+    <View style={[styles.card, { height }]}>
+      <Image
+        source={{ uri: question.imageUrl }}
+        style={styles.image}
+        // contain (not cover): a maths question cropped at the edges is
+        // unreadable, which defeats the entire point of the feed.
+        contentFit="contain"
+        transition={120}
+        accessibilityLabel="Soru görseli"
+      />
+
+      {/* Scrims keep white text legible over arbitrary question images
+          without washing out the question itself. */}
+      <View pointerEvents="none" style={[styles.topScrim, { height: topInset + 72 }]} />
+      <View pointerEvents="none" style={[styles.bottomScrim, { height: bottomInset + 190 }]} />
+
+      <View style={[styles.actionRail, { bottom: bottomInset + 148 }]}>
+        <LikeButton liked={liked} likeCount={likeCount} onPress={toggle} />
+
+        <Pressable
+          onPress={openComments}
+          style={styles.actionButton}
+          accessibilityRole="button"
+          accessibilityLabel={`Yorumlar, ${question.commentCount}`}
+        >
+          <Ionicons name="chatbubble-outline" size={26} color="white" />
+          <Text style={styles.actionCount}>{formatCount(question.commentCount)}</Text>
+        </Pressable>
+
+        <View
+          style={styles.actionButton}
+          accessible
+          accessibilityLabel={`Cevap sayısı, ${question.answerCount}`}
+        >
+          <Ionicons name="documents-outline" size={26} color="white" />
+          <Text style={styles.actionCount}>{formatCount(question.answerCount)}</Text>
+        </View>
+
+        <SaveButton saved={saved} onPress={toggleSaved} />
+      </View>
+
+      <View style={[styles.bottomBar, { paddingBottom: bottomInset + 16 }]}>
+        <Pressable
+          style={styles.teacherRow}
+          onPress={openTeacherProfile}
+          accessibilityRole="button"
+          accessibilityLabel="Öğretmen profilini görüntüle"
+        >
+          {photoURL ? (
+            <Image source={{ uri: photoURL }} style={styles.avatar} contentFit="cover" />
+          ) : (
+            <View style={styles.avatarPlaceholder}>
+              <Ionicons name="person" size={16} color="white" />
+            </View>
+          )}
+          <View style={styles.nameColumn}>
+            <Text style={styles.teacherName} numberOfLines={1}>
+              {primaryName}
+            </Text>
+            {usernameHandle ? (
+              <Text style={styles.handle} numberOfLines={1}>
+                {usernameHandle}
+              </Text>
+            ) : null}
+          </View>
+          <View style={styles.classBadge}>
+            <Ionicons name="school-outline" size={12} color="white" />
+            <Text style={styles.classBadgeText} numberOfLines={1}>
+              {className}
+            </Text>
+          </View>
+        </Pressable>
+
+        <Pressable
+          onPress={openAnswer}
+          style={styles.answerButton}
+          accessibilityRole="button"
+          accessibilityLabel="Bu soruyu cevapla"
+        >
+          <Ionicons name="create-outline" size={18} color="#0B0B0F" />
+          <Text style={styles.answerButtonText}>Cevapla</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+export const ClassFeedCard = memo(ClassFeedCardComponent);
+
+const styles = StyleSheet.create({
+  card: {
+    width: "100%",
+    backgroundColor: "#0B0B0F",
+  },
+  image: {
+    flex: 1,
+  },
+  topScrim: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: "rgba(11,11,15,0.55)",
+  },
+  bottomScrim: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: "rgba(11,11,15,0.72)",
+  },
+  actionRail: {
+    position: "absolute",
+    right: 12,
+    alignItems: "center",
+    gap: 18,
+  },
+  actionButton: {
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+    minWidth: 44,
+    minHeight: 44,
+  },
+  actionCount: {
+    color: "white",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  bottomBar: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingHorizontal: 16,
+    gap: 12,
+  },
+  teacherRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    minHeight: 44,
+    paddingRight: 72,
+  },
+  avatar: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+  },
+  avatarPlaceholder: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: "rgba(255,255,255,0.22)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  nameColumn: {
+    flexShrink: 1,
+  },
+  teacherName: {
+    color: "white",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  handle: {
+    color: "white",
+    fontSize: 12,
+    opacity: 0.8,
+  },
+  classBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    flexShrink: 1,
+    maxWidth: 140,
+    backgroundColor: "rgba(255,255,255,0.16)",
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  classBadgeText: {
+    color: "white",
+    fontSize: 11,
+    fontWeight: "600",
+    flexShrink: 1,
+  },
+  answerButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    minHeight: 50,
+    borderRadius: 14,
+    backgroundColor: "white",
+  },
+  answerButtonText: {
+    color: "#0B0B0F",
+    fontSize: 16,
+    fontWeight: "700",
+  },
+});

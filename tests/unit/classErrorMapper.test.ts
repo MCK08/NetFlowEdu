@@ -1,7 +1,69 @@
 import {
   mapClassErrorToMessage,
+  mapJoinClassErrorToMessage,
   requiresSessionRefresh,
 } from "@features/classes/services/classErrorMapper";
+
+// Production incident: every joinClassByCode failure was collapsed into
+// "Geçersiz kod veya katılım başarısız. Lütfen tekrar deneyin." A student
+// entering a genuinely VALID code (rejected by the org-equality bug with
+// permission-denied) was told the code was invalid — which both misled the
+// user and pointed the investigation at the wrong layer.
+describe("mapJoinClassErrorToMessage", () => {
+  const GENERIC = "Sınıfa katılınamadı. Lütfen tekrar deneyin.";
+
+  it("does not call a valid-but-rejected code 'invalid' — permission-denied is about the account type", () => {
+    const msg = mapJoinClassErrorToMessage("functions/permission-denied");
+    expect(msg).toContain("hesap");
+    expect(msg).not.toContain("kod geçerli değil");
+  });
+
+  it("says clearly when the code itself does not exist", () => {
+    const msg = mapJoinClassErrorToMessage("functions/not-found");
+    expect(msg).toContain("kod");
+    expect(msg).not.toBe(GENERIC);
+  });
+
+  it("says clearly when the student is already in the class", () => {
+    expect(mapJoinClassErrorToMessage("functions/already-exists")).toContain("zaten");
+  });
+
+  it("suggests retrying only for genuinely transient failures", () => {
+    for (const code of [
+      "functions/unavailable",
+      "functions/internal",
+      "functions/deadline-exceeded",
+      "network-request-failed",
+    ]) {
+      expect(mapJoinClassErrorToMessage(code)).toMatch(/tekrar deneyin/);
+    }
+  });
+
+  it("gives each distinct failure its own message — no single catch-all", () => {
+    const messages = [
+      "functions/not-found",
+      "functions/already-exists",
+      "functions/permission-denied",
+      "functions/unauthenticated",
+      "functions/invalid-argument",
+    ].map(mapJoinClassErrorToMessage);
+
+    expect(new Set(messages).size).toBe(messages.length);
+    for (const m of messages) expect(m).not.toBe(GENERIC);
+  });
+
+  it("never leaks a raw error code to the user", () => {
+    for (const code of ["functions/not-found", "functions/permission-denied", "weird-code"]) {
+      expect(mapJoinClassErrorToMessage(code)).not.toContain("functions/");
+      expect(mapJoinClassErrorToMessage(code)).not.toContain(code);
+    }
+  });
+
+  it("falls back safely for an unknown code and for undefined", () => {
+    expect(mapJoinClassErrorToMessage("brand-new-code")).toBe(GENERIC);
+    expect(mapJoinClassErrorToMessage(undefined)).toBe(GENERIC);
+  });
+});
 
 // Regression coverage for the "Sınıf oluşturulamadı. Lütfen tekrar deneyin."
 // dead end: useTeacherClasses.createClass used to swallow the callable's

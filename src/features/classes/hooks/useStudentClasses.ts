@@ -1,8 +1,11 @@
+import { FirebaseError } from "firebase/app";
 import { useCallback, useEffect, useState } from "react";
 
 import { getStudentClasses } from "@services/firebase/classes";
 import { joinClassByCode } from "@services/firebase/functions";
 import { ClassRoom } from "@/types/class";
+
+import { mapJoinClassErrorToMessage } from "../services/classErrorMapper";
 
 export function useStudentClasses(uid: string | undefined) {
   const [classes, setClasses] = useState<ClassRoom[]>([]);
@@ -42,8 +45,15 @@ export function useStudentClasses(uid: string | undefined) {
       await joinClassByCode(code);
       await load();
       return true;
-    } catch {
-      setErrorMessage("Geçersiz kod veya katılım başarısız. Lütfen tekrar deneyin.");
+    } catch (error) {
+      // Never collapse every failure into one message: a valid code that
+      // fails for a backend reason must not be reported as "invalid code"
+      // (that is exactly what hid the joinClassByCode org-equality bug).
+      const errorCode = error instanceof FirebaseError ? error.code : "unknown";
+      if (typeof __DEV__ !== "undefined" && __DEV__) {
+        console.warn("[joinClass] failed", { op: "joinClassByCode", code: errorCode });
+      }
+      setErrorMessage(mapJoinClassErrorToMessage(errorCode));
       return false;
     } finally {
       setIsJoining(false);

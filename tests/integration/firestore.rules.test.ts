@@ -1607,6 +1607,73 @@ describe("firestore.rules — classes/{classId} and members", () => {
       expect(snap.docs.map((d) => d.id)).toEqual(["q1"]);
     });
 
+    // ---- Phase 8 leakage guarantees ------------------------------------
+    // The student class feed must show EXACTLY the current class's
+    // questions — never a public one, never a private one, and its own
+    // questions must never surface in the public feed. The cross-class case
+    // is covered above; these cover the cross-VISIBILITY cases.
+
+    it("never returns a public question from the class feed query, even one carrying this classId", async () => {
+      await seedClass("class-1", classDoc());
+      await seedMember("class-1", "student-1", classMemberDoc());
+      await seedClassQuestion("q1");
+      // A public question that also carries classId — the visibility filter
+      // is what must exclude it, not luck.
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await setDoc(
+          doc(context.firestore(), "questions", "pub-leak"),
+          publicQuestionDoc({ ownerId: "teacher-1", classId: "class-1" }),
+        );
+      });
+
+      const student = studentContext("student-1");
+      const snap = await assertSucceeds(
+        getDocs(classQuestionListQuery(student.firestore(), "class-1")),
+      );
+      expect(snap.docs.map((d) => d.id)).toEqual(["q1"]);
+    });
+
+    it("never returns a private question from the class feed query, even one carrying this classId", async () => {
+      await seedClass("class-1", classDoc());
+      await seedMember("class-1", "student-1", classMemberDoc());
+      await seedClassQuestion("q1");
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await setDoc(
+          doc(context.firestore(), "questions", "priv-leak"),
+          privateQuestionDoc({ ownerId: "teacher-1", classId: "class-1" }),
+        );
+      });
+
+      const student = studentContext("student-1");
+      const snap = await assertSucceeds(
+        getDocs(classQuestionListQuery(student.firestore(), "class-1")),
+      );
+      expect(snap.docs.map((d) => d.id)).toEqual(["q1"]);
+    });
+
+    it("never leaks a class question into the PUBLIC feed query", async () => {
+      await seedClass("class-1", classDoc());
+      await seedMember("class-1", "student-1", classMemberDoc());
+      await seedClassQuestion("q1");
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await setDoc(
+          doc(context.firestore(), "questions", "pub-1"),
+          publicQuestionDoc({ ownerId: "student-2" }),
+        );
+      });
+
+      // Even for a member of that class, the public feed shows only public
+      // questions — class content stays inside the class.
+      const student = studentContext("student-1");
+      const publicFeed = query(
+        collection(student.firestore(), "questions"),
+        where("visibility", "==", "public"),
+        orderBy("createdAt", "desc"),
+      );
+      const snap = await assertSucceeds(getDocs(publicFeed));
+      expect(snap.docs.map((d) => d.id)).toEqual(["pub-1"]);
+    });
+
     // Confirms the fix is additive, not a change to sibling query shapes —
     // both pre-existing list queries still behave exactly as before.
     it("leaves getOwnQuestionsPage's query behavior unchanged", async () => {

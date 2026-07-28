@@ -9,6 +9,7 @@ import { Question } from "@/types/question";
 import { useClassQuestions } from "../hooks/useClassQuestions";
 import { useLeaveClass } from "../hooks/useLeaveClass";
 import { useStudentClassInfo } from "../hooks/useStudentClassInfo";
+import { useNavigationGuard } from "../hooks/useNavigationGuard";
 
 interface StudentClassDetailScreenProps {
   classId: string;
@@ -21,6 +22,15 @@ export function StudentClassDetailScreen({ classId }: StudentClassDetailScreenPr
   const { classRoom, isLoading } = useStudentClassInfo(classId);
   const { questions, isLoadingMore, hasMore, loadMore } = useClassQuestions(classId);
   const { isLeaving, leave } = useLeaveClass();
+  // Prevents a double-tap from pushing the feed screen twice. Held until
+  // this screen is focused again, not for a fixed cooldown.
+  const guardedNavigate = useNavigationGuard();
+
+  function openFeed() {
+    guardedNavigate("feed", () => {
+      router.push({ pathname: "/(student)/class/[classId]/feed", params: { classId } });
+    });
+  }
 
   function confirmLeave() {
     Alert.alert("Sınıftan ayrıl", "Bu sınıftan ayrılmak istediğinize emin misiniz?", [
@@ -85,7 +95,17 @@ export function StudentClassDetailScreen({ classId }: StudentClassDetailScreenPr
             <Text style={styles.sectionTitle}>Sınıf Soruları</Text>
             {questions.length === 0 ? (
               <Text style={styles.emptyText}>Bu sınıfta henüz soru yok.</Text>
-            ) : null}
+            ) : (
+              <Pressable
+                onPress={openFeed}
+                style={styles.feedButton}
+                accessibilityRole="button"
+                accessibilityLabel="Soru akışına gir"
+              >
+                <Ionicons name="play-circle" size={20} color="white" />
+                <Text style={styles.feedButtonText}>Soru Akışına Gir</Text>
+              </Pressable>
+            )}
           </View>
         }
         ListFooterComponent={
@@ -158,6 +178,22 @@ const styles = StyleSheet.create({
     color: "#8A8F98",
     marginTop: 8,
     marginBottom: 12,
+  },
+  feedButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    minHeight: 50,
+    borderRadius: 12,
+    backgroundColor: "#0B0B0F",
+    marginTop: 8,
+    marginBottom: 12,
+  },
+  feedButtonText: {
+    color: "white",
+    fontSize: 15,
+    fontWeight: "700",
   },
   loadingMore: {
     paddingVertical: 24,

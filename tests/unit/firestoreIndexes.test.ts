@@ -49,3 +49,49 @@ describe("firestore.indexes.json — classes composite index", () => {
     expect(match).toBeDefined();
   });
 });
+
+// Phase 8 (student class feed): the immersive feed pages through
+// getClassQuestionsPage, whose query is
+//   where("classId","==",id) + where("visibility","==","class")
+//   + orderBy("createdAt","desc")
+// Two equality filters plus a range/order on a third field is a composite
+// query — Firestore refuses it with FAILED_PRECONDITION unless this exact
+// index exists, and the failure would only appear in production (the rules
+// emulator does not enforce index requirements, so the emulator-backed
+// LIST-authorization tests in tests/integration/firestore.rules.test.ts pass
+// either way). Same reasoning as the classes index above: encode the
+// requirement here so removing or reordering the fields fails immediately.
+//
+// Field ORDER matters: Firestore matches equality fields in the order
+// declared, then the ordered field last.
+describe("firestore.indexes.json — class questions composite index", () => {
+  it("has an index for questions on classId (==) + visibility (==) + createdAt (desc) — required by getClassQuestionsPage", () => {
+    const match = indexes.find((index) => {
+      if (index.collectionGroup !== "questions" || index.fields.length !== 3) return false;
+      const [first, second, third] = index.fields;
+      return (
+        first?.fieldPath === "classId" &&
+        first?.order === "ASCENDING" &&
+        second?.fieldPath === "visibility" &&
+        second?.order === "ASCENDING" &&
+        third?.fieldPath === "createdAt" &&
+        third?.order === "DESCENDING"
+      );
+    });
+    expect(match).toBeDefined();
+  });
+
+  it("still has the public feed index (visibility + createdAt) — the class feed must not have replaced it", () => {
+    const match = indexes.find((index) => {
+      if (index.collectionGroup !== "questions" || index.fields.length !== 2) return false;
+      const [first, second] = index.fields;
+      return (
+        first?.fieldPath === "visibility" &&
+        first?.order === "ASCENDING" &&
+        second?.fieldPath === "createdAt" &&
+        second?.order === "DESCENDING"
+      );
+    });
+    expect(match).toBeDefined();
+  });
+});
