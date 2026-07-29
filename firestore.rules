@@ -434,14 +434,6 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // ---- friendships/{friendshipId} -------------------------------------
-
-    match /friendships/{friendshipId} {
-      allow read: if isSignedIn() && uid() in resource.data.participantIds;
-      allow create: if isSignedIn() && uid() in request.resource.data.participantIds;
-      allow update, delete: if isSignedIn() && uid() in resource.data.participantIds;
-    }
-
     // ---- solutions/{solutionId} ------------------------------------------
 
     match /solutions/{solutionId} {
@@ -546,6 +538,45 @@ service cloud.firestore {
 
       allow update: if false;
       allow delete: if isOwner(resource.data.ownerId);
+    }
+
+    // ---- friendships/{pairId} --------------------------------------------
+    // Phase 10. Doc id is deterministic — sorted([uidA,uidB]).join("_"), see
+    // functions/src/friends/pairId.ts — so there can only ever be one
+    // relationship per pair of users, by construction (no query needed to
+    // discover "do we already have a doc"). Every mutation goes through a
+    // callable (Admin SDK, bypasses these rules) — see functions/src/friends/
+    // — never a direct client write, same trust model as classes/{classId}
+    // and classJoinCodes. Read is scoped to the two participants only: a
+    // student's or teacher's friendships are never a public/roster-like
+    // surface (spec explicitly forbids a public friend list).
+    // Three OR branches, each provable from a DIFFERENT single pinned field
+    // — the three real query shapes this app runs (friends list pins
+    // participantIds via array-contains; incoming/outgoing pin recipientId/
+    // requesterId via equality) each only ever need ONE of these branches,
+    // never a field the query itself leaves unconstrained. participantIds
+    // is always exactly [requesterId, recipientId] sorted, so all three
+    // branches are equivalent in meaning — kept separate only so each
+    // query shape has its own directly provable path (same "pin the field
+    // the rule needs" discipline as questions/{questionId}'s own read rule).
+    match /friendships/{pairId} {
+      allow read: if isSignedIn() && (
+        uid() in resource.data.participantIds ||
+        resource.data.requesterId == uid() ||
+        resource.data.recipientId == uid()
+      );
+      allow write: if false;
+    }
+
+    // ---- users/{uid}/socialMeta/{docId} -----------------------------------
+    // Exact, server-controlled counters (friendCount/incomingRequestCount/
+    // outgoingRequestCount) — see functions/src/friends/socialMeta.ts, the
+    // only writer (transactional, alongside every friendship mutation).
+    // Owner-only read, same boundary as users/{uid} itself; never
+    // client-writable.
+    match /users/{uid}/socialMeta/{docId} {
+      allow read: if isOwner(uid);
+      allow write: if false;
     }
 
     // ---- usernames/{username} ------------------------------------------

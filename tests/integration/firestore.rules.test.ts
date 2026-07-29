@@ -2515,3 +2515,208 @@ describe("firestore.rules — questions/{questionId} student publishing (Phase 9
     await assertSucceeds(getDoc(doc(student.firestore(), "questions", "legacy-q1")));
   });
 });
+
+// Phase 10 — friendships/{pairId} and users/{uid}/socialMeta/{docId}. All
+// mutations go through friends/* callables (Admin SDK, bypasses these
+// rules) — client access here is read-only, and only for a document's own
+// participant/owner. Real getDocs() query shapes are used throughout
+// (never a bare single-document get standing in for a list query), per
+// this session's established "query provability" discipline.
+describe("firestore.rules — friendships/{pairId} and socialMeta", () => {
+  let testEnv: RulesTestEnvironment;
+
+  beforeAll(async () => {
+    testEnv = await initializeTestEnvironment({
+      projectId: PROJECT_ID,
+      firestore: { rules: fs.readFileSync("firestore.rules", "utf8"), host: "127.0.0.1", port: 8080 },
+    });
+  });
+
+  afterAll(async () => testEnv.cleanup());
+  afterEach(async () => testEnv.clearFirestore());
+
+  function studentCtx(uid: string) {
+    return testEnv.authenticatedContext(uid, { role: "student", organizationId: null });
+  }
+
+  function pairId(a: string, b: string): string {
+    return [a, b].sort().join("_");
+  }
+
+  async function seedFriendship(
+    uidA: string,
+    uidB: string,
+    overrides: Partial<Record<string, unknown>> = {},
+  ) {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "friendships", pairId(uidA, uidB)), {
+        participantIds: [uidA, uidB].sort(),
+        requesterId: uidA,
+        recipientId: uidB,
+        status: "pending",
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        acceptedAt: null,
+        schemaVersion: 1,
+        ...overrides,
+      });
+    });
+  }
+
+  async function seedSocialMeta(uid: string, data: Record<string, unknown>) {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "users", uid, "socialMeta", "summary"), data);
+    });
+  }
+
+  // ---- read: own relationship only ----------------------------------
+
+  it("lets a participant read their own friendship document", async () => {
+    await seedFriendship("student-1", "student-2");
+    const student1 = studentCtx("student-1");
+    await assertSucceeds(getDoc(doc(student1.firestore(), "friendships", pairId("student-1", "student-2"))));
+  });
+
+  it("denies reading a friendship between two OTHER users", async () => {
+    await seedFriendship("student-1", "student-2");
+    const outsider = studentCtx("student-3");
+    await assertFails(getDoc(doc(outsider.firestore(), "friendships", pairId("student-1", "student-2"))));
+  });
+
+  it("denies an unauthenticated read", async () => {
+    const unauthed = testEnv.unauthenticatedContext();
+    await seedFriendship("student-1", "student-2");
+    await assertFails(getDoc(doc(unauthed.firestore(), "friendships", pairId("student-1", "student-2"))));
+  });
+
+  // ---- real getDocs() query shapes — never a bare get() standing in ---
+
+  it("runs the caller's own accepted-friends query (participantIds array-contains + status)", async () => {
+    await seedFriendship("student-1", "student-2", { status: "accepted" });
+    await seedFriendship("student-1", "student-3", { status: "accepted" });
+    // Unrelated pair — must never appear in student-1's results.
+    await seedFriendship("student-4", "student-5", { status: "accepted" });
+
+    const student1 = studentCtx("student-1");
+    const q = query(
+      collection(student1.firestore(), "friendships"),
+      where("participantIds", "array-contains", "student-1"),
+      where("status", "==", "accepted"),
+    );
+    const snapshot = await assertSucceeds(getDocs(q));
+    expect(snapshot.docs.map((d) => d.id).sort()).toEqual(
+      [pairId("student-1", "student-2"), pairId("student-1", "student-3")].sort(),
+    );
+  });
+
+  it("runs the caller's own incoming-pending query (recipientId + status) with no cross-user leakage", async () => {
+    await seedFriendship("student-2", "student-1", { status: "pending" }); // student-1 is recipient
+    await seedFriendship("student-3", "student-4", { status: "pending" }); // unrelated
+
+    const student1 = studentCtx("student-1");
+    const q = query(
+      collection(student1.firestore(), "friendships"),
+      where("recipientId", "==", "student-1"),
+      where("status", "==", "pending"),
+    );
+    const snapshot = await assertSucceeds(getDocs(q));
+    expect(snapshot.docs.map((d) => d.id)).toEqual([pairId("student-1", "student-2")]);
+  });
+
+  it("runs the caller's own outgoing-pending query (requesterId + status) with no cross-user leakage", async () => {
+    await seedFriendship("student-1", "student-2", { status: "pending" }); // student-1 is requester
+    await seedFriendship("student-3", "student-4", { status: "pending" }); // unrelated
+
+    const student1 = studentCtx("student-1");
+    const q = query(
+      collection(student1.firestore(), "friendships"),
+      where("requesterId", "==", "student-1"),
+      where("status", "==", "pending"),
+    );
+    const snapshot = await assertSucceeds(getDocs(q));
+    expect(snapshot.docs.map((d) => d.id)).toEqual([pairId("student-1", "student-2")]);
+  });
+
+  // ---- write: always denied — every mutation goes through a callable --
+
+  it("denies a client creating a friendship document directly", async () => {
+    const student1 = studentCtx("student-1");
+    await assertFails(
+      setDoc(doc(student1.firestore(), "friendships", pairId("student-1", "student-2")), {
+        participantIds: ["student-1", "student-2"],
+        requesterId: "student-1",
+        recipientId: "student-2",
+        status: "pending",
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        acceptedAt: null,
+        schemaVersion: 1,
+      }),
+    );
+  });
+
+  it("denies a client changing a friendship's status directly", async () => {
+    await seedFriendship("student-1", "student-2");
+    const student1 = studentCtx("student-1");
+    await assertFails(
+      updateDoc(doc(student1.firestore(), "friendships", pairId("student-1", "student-2")), {
+        status: "accepted",
+      }),
+    );
+  });
+
+  it("denies a client deleting a friendship document directly", async () => {
+    await seedFriendship("student-1", "student-2");
+    const student1 = studentCtx("student-1");
+    await assertFails(
+      deleteDoc(doc(student1.firestore(), "friendships", pairId("student-1", "student-2"))),
+    );
+  });
+
+  // ---- users/{uid}/socialMeta/summary ---------------------------------
+
+  it("lets the owner read their own socialMeta summary", async () => {
+    await seedSocialMeta("student-1", {
+      friendCount: 2,
+      incomingRequestCount: 1,
+      outgoingRequestCount: 0,
+      updatedAt: serverTimestamp(),
+    });
+    const student1 = studentCtx("student-1");
+    await assertSucceeds(getDoc(doc(student1.firestore(), "users", "student-1", "socialMeta", "summary")));
+  });
+
+  it("denies reading another user's socialMeta summary", async () => {
+    await seedSocialMeta("student-1", {
+      friendCount: 2,
+      incomingRequestCount: 1,
+      outgoingRequestCount: 0,
+      updatedAt: serverTimestamp(),
+    });
+    const outsider = studentCtx("student-2");
+    await assertFails(getDoc(doc(outsider.firestore(), "users", "student-1", "socialMeta", "summary")));
+  });
+
+  it("denies a client writing their own socialMeta summary directly", async () => {
+    const student1 = studentCtx("student-1");
+    await assertFails(
+      setDoc(doc(student1.firestore(), "users", "student-1", "socialMeta", "summary"), {
+        friendCount: 999,
+        incomingRequestCount: 0,
+        outgoingRequestCount: 0,
+        updatedAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it("denies an unauthenticated read of socialMeta", async () => {
+    await seedSocialMeta("student-1", {
+      friendCount: 0,
+      incomingRequestCount: 0,
+      outgoingRequestCount: 0,
+      updatedAt: serverTimestamp(),
+    });
+    const unauthed = testEnv.unauthenticatedContext();
+    await assertFails(getDoc(doc(unauthed.firestore(), "users", "student-1", "socialMeta", "summary")));
+  });
+});

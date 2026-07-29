@@ -27,5 +27,11 @@ export {
   removeClassMember,
   regenerateClassJoinCode,
 } from "./classes";
+export {
+  sendFriendRequest,
+  respondToFriendRequest,
+  cancelFriendRequest,
+  removeFriend,
+} from "./friends";
 
-// Later phases will export from ./questions, ./review, and ./friends.
+// Later phases will export from ./questions and ./review.

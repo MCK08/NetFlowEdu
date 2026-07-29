@@ -16,6 +16,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { PrimaryButton } from "@components/ui/PrimaryButton";
 import { useAuth } from "@features/authentication";
+import { formatRequestBadge, useSocialMeta } from "@features/friends";
 import { ROUTES } from "@constants/routes";
 import { resolvePublicIdentity } from "@utils/publicIdentity";
 
@@ -64,6 +65,19 @@ export function ProfileScreen() {
     firebaseUser?.uid,
     mode,
   );
+  const socialMeta = useSocialMeta(firebaseUser?.uid);
+  const incomingBadge = formatRequestBadge(socialMeta.incomingRequestCount);
+  // Friends is a full tab for teachers ((teacher)/(tabs)/friends) but a
+  // plain stack screen for students (no student tab-bar restructure per
+  // spec section 2's "mevcut route'ları bozmadan") — Find Friends is a
+  // stack screen for both, matching ROUTES' existing per-role path style.
+  const isTeacher = profile?.role === "teacher";
+  const friendsHref = isTeacher ? "/(teacher)/(tabs)/friends" : "/(student)/friends";
+  const findFriendsHref = isTeacher ? "/(teacher)/find-friends" : "/(student)/find-friends";
+  // ROUTES.editProfile is student-only ("/(student)/edit-profile") — a
+  // teacher needs the sibling route under (teacher), same shared
+  // EditProfileScreen, different group wrapper (spec section 3).
+  const editProfileHref = isTeacher ? "/(teacher)/edit-profile" : ROUTES.editProfile;
 
   async function handleLogout() {
     await signOut();
@@ -120,11 +134,46 @@ export function ProfileScreen() {
               <InfoRow label="Katılım Tarihi" value={formatDate(profile.createdAt)} />
             </View>
 
+            <View style={styles.friendStatsRow}>
+              <View style={styles.friendStat}>
+                <Text style={styles.friendStatValue}>{socialMeta.friendCount}</Text>
+                <Text style={styles.friendStatLabel}>Arkadaş</Text>
+              </View>
+              <View style={styles.friendStat}>
+                <View style={styles.friendStatValueRow}>
+                  <Text style={styles.friendStatValue}>{socialMeta.incomingRequestCount}</Text>
+                  {incomingBadge ? (
+                    <View style={styles.requestBadge}>
+                      <Text style={styles.requestBadgeText}>{incomingBadge}</Text>
+                    </View>
+                  ) : null}
+                </View>
+                <Text style={styles.friendStatLabel}>Gelen İstek</Text>
+              </View>
+            </View>
+
+            <View style={styles.buttonRow}>
+              <View style={styles.buttonFlex}>
+                <PrimaryButton
+                  label="Arkadaşlarım"
+                  onPress={() => router.push(friendsHref as never)}
+                  variant="secondary"
+                />
+              </View>
+              <View style={styles.buttonFlex}>
+                <PrimaryButton
+                  label="Arkadaş Bul"
+                  onPress={() => router.push(findFriendsHref as never)}
+                  variant="secondary"
+                />
+              </View>
+            </View>
+
             <View style={styles.buttonRow}>
               <View style={styles.buttonFlex}>
                 <PrimaryButton
                   label="Profili Düzenle"
-                  onPress={() => router.push(ROUTES.editProfile)}
+                  onPress={() => router.push(editProfileHref as never)}
                   variant="secondary"
                 />
               </View>
@@ -233,6 +282,43 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     color: "black",
+  },
+  friendStatsRow: {
+    flexDirection: "row",
+    width: "100%",
+    justifyContent: "space-around",
+  },
+  friendStat: {
+    alignItems: "center",
+    gap: 2,
+  },
+  friendStatValueRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  friendStatValue: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "black",
+  },
+  friendStatLabel: {
+    fontSize: 12,
+    color: "#8A8F98",
+  },
+  requestBadge: {
+    backgroundColor: "#D92D20",
+    borderRadius: 999,
+    minWidth: 18,
+    height: 18,
+    paddingHorizontal: 4,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  requestBadgeText: {
+    color: "white",
+    fontSize: 10,
+    fontWeight: "700",
   },
   buttonRow: {
     flexDirection: "row",

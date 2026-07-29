@@ -6,6 +6,8 @@ export default function StudentLayout() {
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="question/[questionId]" />
       <Stack.Screen name="user/[userId]" />
+      <Stack.Screen name="friends" />
+      <Stack.Screen name="find-friends" />
       <Stack.Screen name="class/[classId]/index" />
       {/*
         The immersive class feed is a stack screen, NOT a tab screen, so no

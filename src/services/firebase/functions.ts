@@ -141,3 +141,57 @@ export async function regenerateClassJoinCode(classId: string): Promise<{ joinCo
   const result = await callable({ classId });
   return result.data;
 }
+
+interface SendFriendRequestResult {
+  status: "pending" | "accepted";
+  created: boolean;
+}
+
+// See functions/src/friends/sendFriendRequest.ts — the only path a
+// friendship document can ever be created (or a reverse pending request
+// auto-accepted) through.
+export async function sendFriendRequest(otherUid: string): Promise<SendFriendRequestResult> {
+  const callable = httpsCallable<{ otherUid: string }, SendFriendRequestResult>(
+    functions,
+    "sendFriendRequest",
+  );
+  const result = await callable({ otherUid });
+  return result.data;
+}
+
+interface RespondToFriendRequestResult {
+  status: "accepted" | "declined";
+}
+
+// See functions/src/friends/respondToFriendRequest.ts — recipient-only.
+export async function respondToFriendRequest(
+  otherUid: string,
+  action: "accept" | "decline",
+): Promise<RespondToFriendRequestResult> {
+  const callable = httpsCallable<
+    { otherUid: string; action: "accept" | "decline" },
+    RespondToFriendRequestResult
+  >(functions, "respondToFriendRequest");
+  const result = await callable({ otherUid, action });
+  return result.data;
+}
+
+// See functions/src/friends/cancelFriendRequest.ts — requester-only.
+export async function cancelFriendRequest(otherUid: string): Promise<{ cancelled: boolean }> {
+  const callable = httpsCallable<{ otherUid: string }, { cancelled: boolean }>(
+    functions,
+    "cancelFriendRequest",
+  );
+  const result = await callable({ otherUid });
+  return result.data;
+}
+
+// See functions/src/friends/removeFriend.ts — either participant may call.
+export async function removeFriend(otherUid: string): Promise<{ removed: boolean }> {
+  const callable = httpsCallable<{ otherUid: string }, { removed: boolean }>(
+    functions,
+    "removeFriend",
+  );
+  const result = await callable({ otherUid });
+  return result.data;
+}

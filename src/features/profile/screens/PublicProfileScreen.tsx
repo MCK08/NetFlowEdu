@@ -6,6 +6,8 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { ImageViewer } from "@components/ImageViewer";
+import { useAuth } from "@features/authentication";
+import { FriendshipButton } from "@features/friends";
 import { resolvePublicIdentity } from "@utils/publicIdentity";
 
 import { usePublicProfile } from "../hooks/usePublicProfile";
@@ -35,6 +37,8 @@ export function PublicProfileScreen({ userId }: PublicProfileScreenProps) {
   const { profile, isLoading, errorMessage } = usePublicProfile(userId);
   const { questions, isLoading: questionsLoading } = usePublicUserQuestions(userId);
   const [previewUri, setPreviewUri] = useState<string | null>(null);
+  const { firebaseUser } = useAuth();
+  const isOwnProfile = Boolean(firebaseUser) && firebaseUser?.uid === userId;
 
   if (isLoading) {
     return (
@@ -82,6 +86,8 @@ export function PublicProfileScreen({ userId }: PublicProfileScreenProps) {
         <View style={styles.badge}>
           <Text style={styles.badgeText}>{ROLE_LABELS[profile.role] ?? profile.role}</Text>
         </View>
+
+        {!isOwnProfile ? <FriendshipButton ownUid={firebaseUser?.uid} otherUid={userId} /> : null}
 
         <View style={styles.statsRow}>
           <Stat label="Puan" value={String(profile.totalPoints)} />

@@ -8,7 +8,9 @@ function toMillis(value: Timestamp | number | null | undefined): number {
   return typeof value === "number" ? value : 0;
 }
 
-function toPublicProfile(uid: string, data: DocumentData): PublicProfile {
+// Exported so userSearch.ts can map a batch query's docs with the exact
+// same logic as this file's own single-doc get — never duplicated.
+export function toPublicProfile(uid: string, data: DocumentData): PublicProfile {
   return {
     uid,
     username: data.username ?? null,

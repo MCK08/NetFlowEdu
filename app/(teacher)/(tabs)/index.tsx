@@ -1,5 +1,5 @@
 import { TeacherClassesScreen } from "@features/classes";
 
-export default function TeacherHome() {
+export default function TeacherClassesTab() {
   return <TeacherClassesScreen />;
 }

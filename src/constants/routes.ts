@@ -5,6 +5,6 @@ export const ROUTES = {
   verifyEmail: "/(auth)/verify-email",
   student: "/(student)/(tabs)",
   editProfile: "/(student)/edit-profile",
-  teacher: "/(teacher)",
+  teacher: "/(teacher)/(tabs)",
   admin: "/(admin)",
 } as const;
