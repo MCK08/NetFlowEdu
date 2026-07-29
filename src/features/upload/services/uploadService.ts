@@ -165,6 +165,8 @@ export async function uploadClassQuestionImage(
     organizationId: input.organizationId,
     classId: input.classId,
   });
+
+  if (__DEV__) console.log("[QUESTION_UPLOAD] firestore create started");
   const id = await createQuestion({
     ownerId: input.uid,
     organizationId: input.organizationId,
@@ -175,6 +177,7 @@ export async function uploadClassQuestionImage(
     subject: input.subject,
     description: input.description,
   });
+  if (__DEV__) console.log("[QUESTION_UPLOAD] firestore create succeeded");
 
   return {
     id,

@@ -62,9 +62,20 @@ export async function uploadImage(
   const fileUri = isDataUri(localUri) ? await dataUriToTempFileUri(localUri) : localUri;
 
   const storageRef = ref(storage, path);
+  // Logs only the URI scheme (file://, content://, data: ...), never the
+  // full URI — a full local file path/content URI is not secret, but there
+  // is no reason to log more than what's needed to diagnose a bad scheme.
+  if (__DEV__) console.log("[QUESTION_UPLOAD] image conversion started", { uriScheme: fileUri.split(":")[0] });
   const response = await fetch(fileUri);
   const blob = await response.blob();
-  await uploadBytes(storageRef, blob, { contentType });
+  if (__DEV__) console.log("[QUESTION_UPLOAD] image conversion succeeded", { blobSize: blob.size });
 
-  return getDownloadURL(storageRef);
+  if (__DEV__) console.log("[QUESTION_UPLOAD] storage upload started");
+  await uploadBytes(storageRef, blob, { contentType });
+  if (__DEV__) console.log("[QUESTION_UPLOAD] storage upload succeeded");
+
+  if (__DEV__) console.log("[QUESTION_UPLOAD] download URL started");
+  const url = await getDownloadURL(storageRef);
+  if (__DEV__) console.log("[QUESTION_UPLOAD] download URL succeeded");
+  return url;
 }

@@ -86,8 +86,22 @@ service firebase.storage {
     // questions/{questionId}, checked immediately after this upload by
     // createQuestion. An orphaned blob with no matching Firestore doc is
     // never linked or discoverable.
+    // Phase 9.1: `|| uid() == ownerId` — the uploader may read back the file
+    // they just wrote. uploadImage() performs uploadBytes() AND THEN
+    // getDownloadURL(); the second call is a READ. Students can now publish
+    // class questions, and a student's organizationId claim is always null
+    // while this path carries the TEACHER's org, so the org branch alone
+    // could never be satisfied by the very user who had just written the
+    // bytes — the write succeeded and the next line failed with
+    // storage/unauthorized ("Soru yüklenemedi").
+    //
+    // This grants nothing beyond "read the file you own": {ownerId} is a
+    // path segment the writer can only ever have written under their own
+    // uid (the write rule enforces uid() == ownerId), so no one gains
+    // access to anyone else's image. Same shape as the sibling
+    // questions/private/{ownerId} rule.
     match /questions/class/{organizationId}/{classId}/{ownerId}/{fileName} {
-      allow read: if isSignedIn() && organizationId() == organizationId;
+      allow read: if isSignedIn() && (organizationId() == organizationId || uid() == ownerId);
       allow write: if isSignedIn() && uid() == ownerId
                    && isImageOrPdf() && isUnder10MB();
     }

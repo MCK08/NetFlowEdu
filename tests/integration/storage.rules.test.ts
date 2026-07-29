@@ -203,7 +203,11 @@ describe("storage.rules — questions/class/... SDK access boundary (unchanged r
   // actual SDK-level boundary: a student's organizationId claim is null, so
   // SDK access is denied. This is why the naive reading of the rules
   // suggested (wrongly) that students could not see class images.
-  it("denies SDK-level read to a student (organizationId null) — real, but never exercised by the app", async () => {
+  // Phase 9.1 note: a student CAN read back a file under their OWN
+  // {ownerId} segment (see the upload-sequence block at the bottom). This
+  // case is a file owned by the TEACHER, so the org branch is the only one
+  // that could apply and it correctly denies.
+  it("denies SDK-level read to a student (organizationId null) for a file owned by someone else", async () => {
     await assertSucceeds(put(storageWithOrg(TEACHER_UID, CLASS_ORG).ref(CLASS_QUESTION_PATH)));
     await assertFails(storageWithOrg("student-1", null).ref(CLASS_QUESTION_PATH).getDownloadURL());
   });
@@ -231,5 +235,44 @@ describe("storage.rules — questions/class/... SDK access boundary (unchanged r
     // it does not, because the class write rule checks path-ownership only.
     // Documented explicitly so the weaker write boundary is not a surprise.
     await assertSucceeds(put(storageWithOrg("attacker", "unrelated-org").ref(p)));
+  });
+});
+
+// ---------------------------------------------------------------------
+// Phase 9.1 regression: students can now publish class questions too
+// (StudentClassDetailScreen's "Soru Paylaş" -> useStudentQuestionUpload ->
+// uploadClassQuestionImage -> uploadQuestionImage -> uploadImage).
+//
+// uploadImage() does TWO storage operations, not one:
+//     await uploadBytes(storageRef, blob, ...)   // write
+//     return getDownloadURL(storageRef);         // READ
+//
+// The write is gated on uid() == ownerId, which a student satisfies. The
+// read was gated ONLY on organizationId() == organizationId, and a
+// student's organizationId claim is always null while the path segment
+// carries the TEACHER's org — so the student uploaded the bytes fine and
+// then got storage/unauthorized on the very next line, surfacing as
+// "Soru yüklenemedi".
+describe("storage.rules — student publishing a class question (full upload sequence)", () => {
+  it("[reproduces the bug] student write succeeds but getDownloadURL is the failing step", async () => {
+    const studentPath = `questions/class/${CLASS_ORG}/${CLASS_ID}/student-1/${FILE_NAME}`;
+    const student = storageWithOrg("student-1", null);
+
+    // Step 1 — uploadBytes: allowed, uid() == ownerId.
+    await assertSucceeds(put(student.ref(studentPath)));
+
+    // Step 2 — getDownloadURL: this is what actually broke the feature.
+    await assertSucceeds(student.ref(studentPath).getDownloadURL());
+  });
+
+  it("a student still cannot read a file uploaded by someone else in the same class", async () => {
+    const teacherPath = `questions/class/${CLASS_ORG}/${CLASS_ID}/${TEACHER_UID}/${FILE_NAME}`;
+    await assertSucceeds(put(storageWithOrg(TEACHER_UID, CLASS_ORG).ref(teacherPath)));
+    await assertFails(storageWithOrg("student-1", null).ref(teacherPath).getDownloadURL());
+  });
+
+  it("a student still cannot write into another user's owner segment", async () => {
+    const foreignPath = `questions/class/${CLASS_ORG}/${CLASS_ID}/${TEACHER_UID}/evil.jpg`;
+    await assertFails(put(storageWithOrg("student-1", null).ref(foreignPath)));
   });
 });

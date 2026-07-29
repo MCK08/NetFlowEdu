@@ -8,6 +8,7 @@ import {
   QuestionImageSource,
   uploadClassQuestionImage,
 } from "@features/upload/services/uploadService";
+import { mapQuestionUploadErrorToMessage } from "@features/upload/services/questionUploadErrorMapper";
 import { Question } from "@/types/question";
 
 import { StudentQuestionDetails } from "../components/StudentQuestionDetailsModal";
@@ -82,6 +83,13 @@ export function useStudentQuestionUpload({
     if (!uid || !organizationId || !pickedImageUri || isUploading) return;
     setErrorMessage(null);
     setIsUploading(true);
+    if (__DEV__) {
+      console.log("[QUESTION_UPLOAD] details submit started", {
+        classId,
+        uid6: uid.slice(0, 6),
+        uriScheme: pickedImageUri.split(":")[0],
+      });
+    }
     try {
       const question = await uploadClassQuestionImage({
         uid,
@@ -92,10 +100,21 @@ export function useStudentQuestionUpload({
         subject: details.subject,
         description: details.description,
       });
+      if (__DEV__) console.log("[QUESTION_UPLOAD] details submit succeeded", { classId, uid6: uid.slice(0, 6) });
       onUploaded(question);
       setPickedImageUri(null);
-    } catch {
-      setErrorMessage("Soru yüklenemedi. Lütfen tekrar deneyin.");
+    } catch (error) {
+      if (__DEV__) {
+        const err = error as { name?: unknown; code?: unknown; message?: unknown };
+        console.log("[QUESTION_UPLOAD] details submit failed", {
+          classId,
+          uid6: uid.slice(0, 6),
+          errorName: err?.name,
+          errorCode: err?.code,
+          errorMessage: err?.message,
+        });
+      }
+      setErrorMessage(mapQuestionUploadErrorToMessage(error));
     } finally {
       setIsUploading(false);
     }
