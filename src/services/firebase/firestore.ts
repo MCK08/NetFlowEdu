@@ -32,6 +32,7 @@ function toUserProfile(uid: string, data: DocumentData): UserProfile {
     accountStatus: data.accountStatus ?? "active",
     emailVerified: data.emailVerified ?? false,
     onboardingStatus: resolveOnboardingStatus(data.onboardingStatus),
+    requestedRole: data.requestedRole ?? null,
     createdAt: toMillis(data.createdAt),
     updatedAt: toMillis(data.updatedAt),
   };

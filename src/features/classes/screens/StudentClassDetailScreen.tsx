@@ -3,8 +3,14 @@ import { router } from "expo-router";
 import { Alert, ActivityIndicator, FlatList, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { AnimatedPressable } from "@components/ui/AnimatedPressable";
+import { EmptyState } from "@components/ui/EmptyState";
 import { useAuth } from "@features/authentication";
 import { QuestionGridItem } from "@features/profile/components/QuestionGridItem";
+import { colors, darkColors } from "@theme/colors";
+import { radius } from "@theme/radius";
+import { spacing } from "@theme/spacing";
+import { typography } from "@theme/typography";
 import { Question } from "@/types/question";
 
 import { ImageSourcePicker } from "../components/ImageSourcePicker";
@@ -76,7 +82,7 @@ export function StudentClassDetailScreen({ classId }: StudentClassDetailScreenPr
   if (isLoading || !classRoom) {
     return (
       <SafeAreaView style={styles.centered}>
-        <ActivityIndicator color="black" />
+        <ActivityIndicator color={colors.textPrimary} />
       </SafeAreaView>
     );
   }
@@ -105,23 +111,23 @@ export function StudentClassDetailScreen({ classId }: StudentClassDetailScreenPr
               accessibilityRole="button"
               accessibilityLabel="Geri"
             >
-              <Ionicons name="chevron-back" size={24} color="black" />
+              <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
             </Pressable>
 
             <Text style={styles.title}>{classRoom.name}</Text>
             <Text style={styles.memberCount}>{classRoom.memberCount} üye</Text>
 
-            <Pressable
+            <AnimatedPressable
               onPress={openChat}
               style={styles.chatButton}
               accessibilityRole="button"
               accessibilityLabel="Sınıf sohbetini aç"
             >
-              <Ionicons name="chatbubble-outline" size={18} color="white" />
+              <Ionicons name="chatbubble-outline" size={18} color={colors.textInverse} />
               <Text style={styles.chatButtonText}>Sınıf Sohbeti</Text>
-            </Pressable>
+            </AnimatedPressable>
 
-            <Pressable
+            <AnimatedPressable
               onPress={confirmLeave}
               disabled={isLeaving}
               style={styles.leaveButton}
@@ -129,9 +135,9 @@ export function StudentClassDetailScreen({ classId }: StudentClassDetailScreenPr
               accessibilityLabel="Sınıftan ayrıl"
             >
               <Text style={styles.leaveButtonText}>{isLeaving ? "Ayrılıyor..." : "Sınıftan Ayrıl"}</Text>
-            </Pressable>
+            </AnimatedPressable>
 
-            <Pressable
+            <AnimatedPressable
               onPress={openComposer}
               disabled={isUploading}
               style={[styles.shareButton, isUploading ? styles.shareButtonDisabled : null]}
@@ -139,35 +145,35 @@ export function StudentClassDetailScreen({ classId }: StudentClassDetailScreenPr
               accessibilityLabel="Soru paylaş"
             >
               {isUploading ? (
-                <ActivityIndicator color="white" />
+                <ActivityIndicator color={colors.textInverse} />
               ) : (
                 <>
-                  <Ionicons name="camera" size={18} color="white" />
+                  <Ionicons name="camera" size={18} color={colors.textInverse} />
                   <Text style={styles.shareButtonText}>Soru Paylaş</Text>
                 </>
               )}
-            </Pressable>
+            </AnimatedPressable>
 
             <Text style={styles.sectionTitle}>Sınıf Soruları</Text>
             {questions.length === 0 ? (
-              <Text style={styles.emptyText}>Bu sınıfta henüz soru yok.</Text>
+              <EmptyState icon="help-circle-outline" title="Bu sınıfta henüz soru yok" />
             ) : (
-              <Pressable
+              <AnimatedPressable
                 onPress={openFeed}
                 style={styles.feedButton}
                 accessibilityRole="button"
                 accessibilityLabel="Soru akışına gir"
               >
-                <Ionicons name="play-circle" size={20} color="white" />
+                <Ionicons name="play-circle" size={20} color={colors.textInverse} />
                 <Text style={styles.feedButtonText}>Soru Akışına Gir</Text>
-              </Pressable>
+              </AnimatedPressable>
             )}
           </View>
         }
         ListFooterComponent={
           isLoadingMore ? (
             <View style={styles.loadingMore}>
-              <ActivityIndicator color="black" />
+              <ActivityIndicator color={colors.textPrimary} />
             </View>
           ) : null
         }
@@ -194,20 +200,20 @@ export function StudentClassDetailScreen({ classId }: StudentClassDetailScreenPr
 const styles = StyleSheet.create({
   flex: {
     flex: 1,
-    backgroundColor: "white",
+    backgroundColor: colors.background,
   },
   centered: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "white",
+    backgroundColor: colors.background,
   },
   listContent: {
-    paddingBottom: 24,
+    paddingBottom: spacing.xl,
   },
   header: {
-    paddingHorizontal: 20,
-    gap: 8,
+    paddingHorizontal: spacing.lg,
+    gap: spacing.xs,
   },
   backButton: {
     minWidth: 44,
@@ -216,40 +222,40 @@ const styles = StyleSheet.create({
     marginLeft: -12,
   },
   title: {
+    ...typography.displayLg,
     fontSize: 22,
-    fontWeight: "700",
-    color: "black",
+    color: colors.textPrimary,
   },
   memberCount: {
-    fontSize: 13,
-    color: "#5B5F66",
+    ...typography.caption,
+    color: colors.textSecondary,
   },
   chatButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
+    gap: spacing.xs,
     minHeight: 48,
-    borderRadius: 10,
-    backgroundColor: "#3358D9",
-    marginTop: 8,
+    borderRadius: radius.md,
+    backgroundColor: colors.primary,
+    marginTop: spacing.xs,
   },
   chatButtonText: {
-    color: "white",
+    color: colors.textInverse,
     fontSize: 15,
     fontWeight: "600",
   },
   leaveButton: {
     minHeight: 44,
-    borderRadius: 10,
+    borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: "#D92D20",
+    borderColor: colors.danger,
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 8,
+    marginTop: spacing.xs,
   },
   leaveButtonText: {
-    color: "#D92D20",
+    color: colors.danger,
     fontSize: 14,
     fontWeight: "600",
   },
@@ -257,49 +263,42 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
+    gap: spacing.xs,
     minHeight: 48,
-    borderRadius: 10,
-    backgroundColor: "#3358D9",
-    marginTop: 8,
+    borderRadius: radius.md,
+    backgroundColor: colors.primary,
+    marginTop: spacing.xs,
   },
   shareButtonDisabled: {
     opacity: 0.6,
   },
   shareButtonText: {
-    color: "white",
+    color: colors.textInverse,
     fontSize: 15,
     fontWeight: "600",
   },
   sectionTitle: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: "black",
-    marginTop: 16,
-  },
-  emptyText: {
-    fontSize: 14,
-    color: "#8A8F98",
-    marginTop: 8,
-    marginBottom: 12,
+    ...typography.subtitle,
+    color: colors.textPrimary,
+    marginTop: spacing.md,
   },
   feedButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
+    gap: spacing.xs,
     minHeight: 50,
-    borderRadius: 12,
-    backgroundColor: "#0B0B0F",
-    marginTop: 8,
-    marginBottom: 12,
+    borderRadius: radius.lg,
+    backgroundColor: darkColors.background,
+    marginTop: spacing.xs,
+    marginBottom: spacing.sm,
   },
   feedButtonText: {
-    color: "white",
+    color: colors.textInverse,
     fontSize: 15,
     fontWeight: "700",
   },
   loadingMore: {
-    paddingVertical: 24,
+    paddingVertical: spacing.xl,
   },
 });

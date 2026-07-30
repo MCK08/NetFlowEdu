@@ -3,6 +3,7 @@ export const ROUTES = {
   register: "/(auth)/register",
   forgotPassword: "/(auth)/forgot-password",
   verifyEmail: "/(auth)/verify-email",
+  googleOnboarding: "/(auth)/google-onboarding",
   student: "/(student)/(tabs)",
   editProfile: "/(student)/edit-profile",
   teacher: "/(teacher)/(tabs)",

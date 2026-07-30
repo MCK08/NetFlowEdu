@@ -1,7 +1,6 @@
 import { router } from "expo-router";
 import { useState } from "react";
 import {
-  ActivityIndicator,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
@@ -14,11 +13,17 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { PrimaryButton } from "@components/ui/PrimaryButton";
+import { Divider } from "@components/ui/Divider";
+import { LoadingSkeleton } from "@components/ui/LoadingSkeleton";
 import { ImageViewer } from "@components/ImageViewer";
 import { AnswerList, useQuestionAnswers } from "@features/answers";
 import { useAuth } from "@features/authentication";
 import { CommentComposer, CommentList, useQuestionComments } from "@features/social/comments";
 import { useNavigationGuard } from "@hooks/useNavigationGuard";
+import { colors } from "@theme/colors";
+import { radius } from "@theme/radius";
+import { spacing } from "@theme/spacing";
+import { typography } from "@theme/typography";
 
 import { QuestionDetailCard } from "../components/QuestionDetailCard";
 import { QuestionHeader } from "../components/QuestionHeader";
@@ -58,8 +63,10 @@ export function QuestionDetailScreen({ questionId }: QuestionDetailScreenProps) 
     return (
       <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
         <QuestionHeader />
-        <View style={styles.centered}>
-          <ActivityIndicator size="large" color="black" />
+        <View style={styles.content}>
+          <LoadingSkeleton height={340} borderRadius={radius.xl} />
+          <LoadingSkeleton width="60%" height={18} />
+          <LoadingSkeleton width="40%" height={14} />
         </View>
       </SafeAreaView>
     );
@@ -98,6 +105,8 @@ export function QuestionDetailScreen({ questionId }: QuestionDetailScreenProps) 
 
             <PrimaryButton label="Cevapla" onPress={handleAnswer} />
 
+            <Divider />
+
             <View style={styles.answersSection}>
               <Text style={styles.answersTitle}>Cevaplar</Text>
               <AnswerList
@@ -107,6 +116,8 @@ export function QuestionDetailScreen({ questionId }: QuestionDetailScreenProps) 
                 onPressImage={setPreviewUri}
               />
             </View>
+
+            <Divider />
 
             <CommentList
               comments={comments.comments}
@@ -134,30 +145,30 @@ export function QuestionDetailScreen({ questionId }: QuestionDetailScreenProps) 
 const styles = StyleSheet.create({
   flex: {
     flex: 1,
-    backgroundColor: "white",
+    backgroundColor: colors.background,
   },
   centered: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 24,
+    paddingHorizontal: spacing.xl,
   },
   errorText: {
-    fontSize: 15,
-    color: "#5B5F66",
+    ...typography.subtitle,
+    color: colors.textSecondary,
     textAlign: "center",
   },
   content: {
-    padding: 24,
-    gap: 16,
+    padding: spacing.xl,
+    gap: spacing.md,
   },
   answersSection: {
-    gap: 12,
-    marginTop: 8,
+    gap: spacing.sm,
+    marginTop: spacing.xs,
   },
   answersTitle: {
     fontSize: 17,
     fontWeight: "700",
-    color: "black",
+    color: colors.textPrimary,
   },
 });

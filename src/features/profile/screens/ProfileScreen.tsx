@@ -1,6 +1,4 @@
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
-import { Ionicons } from "@expo/vector-icons";
-import { Image } from "expo-image";
 import { router } from "expo-router";
 import { useState } from "react";
 import {
@@ -14,22 +12,26 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { Avatar } from "@components/ui/Avatar";
+import { Card } from "@components/ui/Card";
+import { EmptyState } from "@components/ui/EmptyState";
+import { LoadingSkeleton } from "@components/ui/LoadingSkeleton";
 import { PrimaryButton } from "@components/ui/PrimaryButton";
+import { RoleBadge } from "@components/ui/RoleBadge";
+import { StatTile } from "@components/ui/StatTile";
 import { useAuth } from "@features/authentication";
+import { GoogleSignInButton } from "@features/authentication/components/GoogleSignInButton";
 import { formatRequestBadge, useSocialMeta } from "@features/friends";
 import { ROUTES } from "@constants/routes";
+import { colors } from "@theme/colors";
+import { radius } from "@theme/radius";
+import { spacing } from "@theme/spacing";
+import { typography } from "@theme/typography";
 import { resolvePublicIdentity } from "@utils/publicIdentity";
 
 import { QuestionGridItem } from "../components/QuestionGridItem";
 import { ArchiveMode, useQuestionArchive } from "../hooks/useQuestionArchive";
 import { Question } from "@/types/question";
-
-const ROLE_LABELS: Record<string, string> = {
-  student: "Öğrenci",
-  teacher: "Öğretmen",
-  organization_admin: "Kurum Yöneticisi",
-  platform_admin: "Platform Yöneticisi",
-};
 
 const STATUS_LABELS: Record<string, string> = {
   active: "Aktif",
@@ -57,10 +59,15 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 }
 
 export function ProfileScreen() {
-  const { profile, firebaseUser, signOut } = useAuth();
+  const { profile, firebaseUser, signOut, knownAccounts, openAccountSwitcher, linkGoogleAccount } =
+    useAuth();
   const { width } = useWindowDimensions();
   const tabBarHeight = useBottomTabBarHeight();
   const [mode, setMode] = useState<ArchiveMode>("own");
+  const [linkError, setLinkError] = useState<string | null>(null);
+  const providerIds = firebaseUser?.providerData.map((p) => p.providerId) ?? [];
+  const isGoogleLinked = providerIds.includes("google.com");
+  const isEmailLinked = providerIds.includes("password");
   const { questions, isLoading, isLoadingMore, hasMore, loadMore } = useQuestionArchive(
     firebaseUser?.uid,
     mode,
@@ -107,22 +114,16 @@ export function ProfileScreen() {
         ListHeaderComponent={
           <View style={styles.content}>
             <View style={styles.avatarWrapper}>
-              {profile.photoURL ? (
-                <Image source={{ uri: profile.photoURL }} style={styles.avatar} contentFit="cover" />
-              ) : (
-                <View style={styles.avatarPlaceholder}>
-                  <Ionicons name="person" size={40} color="#8A8F98" />
-                </View>
-              )}
+              <Avatar photoURL={profile.photoURL} displayName={identity.primaryName} size="xl" />
             </View>
 
             <Text style={styles.username}>{identity.primaryName}</Text>
             {identity.usernameHandle ? (
               <Text style={styles.displayName}>{identity.usernameHandle}</Text>
             ) : null}
+            <RoleBadge role={profile.role} />
 
-            <View style={styles.card}>
-              <InfoRow label="Rol" value={ROLE_LABELS[profile.role] ?? profile.role} />
+            <Card style={styles.card}>
               <InfoRow label="E-posta" value={profile.email} />
               <InfoRow label="Puan" value={String(profile.totalPoints)} />
               <InfoRow label="Haftalık Puan" value={String(profile.weeklyPoints)} />
@@ -132,13 +133,39 @@ export function ProfileScreen() {
                 value={STATUS_LABELS[profile.accountStatus] ?? profile.accountStatus}
               />
               <InfoRow label="Katılım Tarihi" value={formatDate(profile.createdAt)} />
-            </View>
+            </Card>
+
+            <Card style={styles.card}>
+              <Text style={styles.sectionTitle}>Hesaplar</Text>
+              <InfoRow label="Kayıtlı Hesap Sayısı" value={String(knownAccounts.length)} />
+              <InfoRow label="Google Bağlı" value={isGoogleLinked ? "Evet" : "Hayır"} />
+              <InfoRow label="E-posta Bağlı" value={isEmailLinked ? "Evet" : "Hayır"} />
+              <PrimaryButton
+                label="Hesap Değiştir"
+                onPress={openAccountSwitcher}
+                variant="secondary"
+              />
+              {!isGoogleLinked ? (
+                <GoogleSignInButton
+                  onIdToken={async (idToken) => {
+                    setLinkError(null);
+                    try {
+                      await linkGoogleAccount(idToken);
+                    } catch (error) {
+                      setLinkError(
+                        error instanceof Error ? error.message : "Google hesabı bağlanamadı.",
+                      );
+                    }
+                  }}
+                  onError={setLinkError}
+                  label="Google Hesabını Bağla"
+                />
+              ) : null}
+              {linkError ? <Text style={styles.errorText}>{linkError}</Text> : null}
+            </Card>
 
             <View style={styles.friendStatsRow}>
-              <View style={styles.friendStat}>
-                <Text style={styles.friendStatValue}>{socialMeta.friendCount}</Text>
-                <Text style={styles.friendStatLabel}>Arkadaş</Text>
-              </View>
+              <StatTile value={socialMeta.friendCount} label="Arkadaş" />
               <View style={styles.friendStat}>
                 <View style={styles.friendStatValueRow}>
                   <Text style={styles.friendStatValue}>{socialMeta.incomingRequestCount}</Text>
@@ -205,18 +232,25 @@ export function ProfileScreen() {
               </Pressable>
             </View>
 
-            {isLoading ? <ActivityIndicator color="black" style={styles.loading} /> : null}
+            {isLoading ? (
+              <View style={styles.gridSkeletonRow}>
+                {[0, 1, 2].map((key) => (
+                  <LoadingSkeleton key={key} width={itemSize - spacing.xs} height={itemSize - spacing.xs} borderRadius={radius.sm} />
+                ))}
+              </View>
+            ) : null}
             {!isLoading && questions.length === 0 ? (
-              <Text style={styles.emptyText}>
-                {mode === "own" ? "Henüz soru paylaşmadın." : "Henüz hiç soru kaydetmedin."}
-              </Text>
+              <EmptyState
+                icon="images-outline"
+                title={mode === "own" ? "Henüz soru paylaşmadın" : "Henüz hiç soru kaydetmedin"}
+              />
             ) : null}
           </View>
         }
         ListFooterComponent={
           isLoadingMore ? (
             <View style={styles.loadingMore}>
-              <ActivityIndicator color="black" />
+              <ActivityIndicator color={colors.textPrimary} />
             </View>
           ) : null
         }
@@ -228,60 +262,49 @@ export function ProfileScreen() {
 const styles = StyleSheet.create({
   flex: {
     flex: 1,
-    backgroundColor: "white",
+    backgroundColor: colors.background,
   },
   content: {
-    paddingHorizontal: 24,
-    paddingTop: 24,
-    gap: 16,
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.xl,
+    gap: spacing.md,
     alignItems: "center",
   },
   avatarWrapper: {
-    marginTop: 8,
-  },
-  avatar: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    backgroundColor: "#F2F2F2",
-  },
-  avatarPlaceholder: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    backgroundColor: "#F2F2F2",
-    alignItems: "center",
-    justifyContent: "center",
+    marginTop: spacing.xs,
   },
   username: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "black",
+    ...typography.title,
+    color: colors.textPrimary,
   },
   displayName: {
-    fontSize: 14,
-    color: "#5B5F66",
-    marginTop: -8,
+    ...typography.body,
+    color: colors.textSecondary,
+    marginTop: -spacing.xs,
   },
   card: {
     width: "100%",
-    backgroundColor: "#F7F7F8",
-    borderRadius: 16,
-    padding: 16,
-    gap: 12,
+  },
+  sectionTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: colors.textPrimary,
+  },
+  errorText: {
+    fontSize: 13,
+    color: colors.danger,
   },
   infoRow: {
     flexDirection: "row",
     justifyContent: "space-between",
   },
   infoLabel: {
-    fontSize: 14,
-    color: "#5B5F66",
+    ...typography.body,
+    color: colors.textSecondary,
   },
   infoValue: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "black",
+    ...typography.bodyStrong,
+    color: colors.textPrimary,
   },
   friendStatsRow: {
     flexDirection: "row",
@@ -295,20 +318,19 @@ const styles = StyleSheet.create({
   friendStatValueRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
+    gap: spacing.xxs,
   },
   friendStatValue: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "black",
+    ...typography.title,
+    color: colors.textPrimary,
   },
   friendStatLabel: {
     fontSize: 12,
-    color: "#8A8F98",
+    color: colors.textTertiary,
   },
   requestBadge: {
-    backgroundColor: "#D92D20",
-    borderRadius: 999,
+    backgroundColor: colors.danger,
+    borderRadius: radius.pill,
     minWidth: 18,
     height: 18,
     paddingHorizontal: 4,
@@ -316,14 +338,14 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   requestBadgeText: {
-    color: "white",
+    color: colors.textInverse,
     fontSize: 10,
     fontWeight: "700",
   },
   buttonRow: {
     flexDirection: "row",
     width: "100%",
-    gap: 12,
+    gap: spacing.sm,
   },
   buttonFlex: {
     flex: 1,
@@ -332,37 +354,32 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     width: "100%",
     borderBottomWidth: 1,
-    borderBottomColor: "#EDEEF0",
-    marginTop: 8,
+    borderBottomColor: colors.divider,
+    marginTop: spacing.xs,
   },
   tab: {
     flex: 1,
-    paddingVertical: 12,
+    paddingVertical: spacing.sm,
     alignItems: "center",
     borderBottomWidth: 2,
     borderBottomColor: "transparent",
   },
   tabActive: {
-    borderBottomColor: "black",
+    borderBottomColor: colors.textPrimary,
   },
   tabText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#8A8F98",
+    ...typography.bodyStrong,
+    color: colors.textTertiary,
   },
   tabTextActive: {
-    color: "black",
+    color: colors.textPrimary,
   },
-  loading: {
-    marginVertical: 24,
-  },
-  emptyText: {
-    fontSize: 14,
-    color: "#8A8F98",
-    textAlign: "center",
-    marginVertical: 24,
+  gridSkeletonRow: {
+    flexDirection: "row",
+    gap: spacing.xs,
+    marginTop: spacing.xs,
   },
   loadingMore: {
-    paddingVertical: 24,
+    paddingVertical: spacing.xl,
   },
 });

@@ -5,6 +5,21 @@ import { UserProfile, UserRole } from "@/types/user";
 import { auth } from "@services/firebase/config";
 import { subscribeToUserProfile } from "@services/firebase/firestore";
 import { refreshIdToken, signOutCurrentUser } from "@services/firebase/auth";
+import {
+  KnownAccount,
+  listKnownAccounts,
+  removeKnownAccount,
+  touchKnownAccount,
+  upsertKnownAccount,
+} from "@services/firebase/accountRegistry";
+import {
+  forgetStoredAccount,
+  runOnStagingAuthAndActivate,
+  switchToStoredAccount,
+  syncAccountAuth,
+} from "@services/firebase/multiAccountAuth";
+import { initializeOnboarding, setUsername } from "@services/firebase/functions";
+import { GoogleAuthProvider, getAdditionalUserInfo, linkWithCredential } from "firebase/auth";
 
 import { ForgotPasswordInput, LoginInput, RegisterInput } from "../types";
 import {
@@ -14,6 +29,7 @@ import {
   requestPasswordReset,
   resendVerificationEmail,
 } from "../services/authService";
+import { signInWithGoogleIdToken } from "../services/googleAuth";
 import {
   NO_CURRENT_USER_CODE,
   OnboardingCompletionResult,
@@ -62,6 +78,48 @@ export interface AuthContextValue {
   sendPasswordReset: (input: ForgotPasswordInput) => Promise<void>;
   resendVerification: () => Promise<void>;
   refreshSession: () => Promise<OnboardingCompletionResult>;
+  // Phase 11 — device account switcher / Google Sign-In. All built on top
+  // of the SAME Firebase Auth instance/session model above (see
+  // multiAccountAuth.ts for exactly how "switch without a password" works),
+  // not a second auth system.
+  knownAccounts: KnownAccount[];
+  // Instantly activates a previously-added account with no credential
+  // prompt. Returns false if that account's local session has expired —
+  // the caller should fall back to a normal sign-in for it in that case
+  // (and may want to call removeAccount to stop offering a dead switch).
+  switchAccount: (uid: string) => Promise<boolean>;
+  // Removes an account from the device entirely — clears its remembered
+  // display metadata AND revokes its local persisted session.
+  removeAccount: (uid: string) => Promise<void>;
+  // Signs into a DIFFERENT account via email/password without disturbing
+  // whichever account is currently active until the credential check
+  // actually succeeds — "+ Başka Hesap Ekle".
+  addAccountWithPassword: (input: LoginInput) => Promise<void>;
+  // Same, via a Google ID token (see googleAuth.ts for how the token
+  // itself is obtained). Returns whether this is a brand-new account, so
+  // the caller can route to first-time username/role selection.
+  addAccountWithGoogle: (idToken: string) => Promise<{ isNewUser: boolean }>;
+  // Finishes onboarding for a brand-new Google sign-up — reuses the exact
+  // same initializeOnboarding/setUsername Cloud Functions email/password
+  // registration already goes through (see authService.registerStudent),
+  // just without a password step.
+  completeGoogleOnboarding: (input: {
+    displayName: string;
+    username: string;
+    intendedRole: RegisterInput["intendedRole"];
+  }) => Promise<void>;
+  // Links a Google credential onto the CURRENTLY signed-in account (no
+  // staging instance involved — this modifies the same user in place, via
+  // Firebase Auth's own account-linking API).
+  linkGoogleAccount: (idToken: string) => Promise<void>;
+  // Visibility for the lazy-loaded Account Switcher bottom sheet, mounted
+  // once at the root layout (app/_layout.tsx) and opened from a long-press
+  // on the Profile tab button in either role's tab layout — kept here
+  // rather than a second context/store so there is exactly one place that
+  // owns "is the switcher open" for the whole app.
+  isAccountSwitcherOpen: boolean;
+  openAccountSwitcher: () => void;
+  closeAccountSwitcher: () => void;
 }
 
 export const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -157,6 +215,116 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [profile?.onboardingStatus]);
 
+  const [knownAccounts, setKnownAccounts] = useState<KnownAccount[]>([]);
+
+  const refreshKnownAccounts = useCallback(async () => {
+    setKnownAccounts(await listKnownAccounts());
+  }, []);
+
+  useEffect(() => {
+    refreshKnownAccounts();
+  }, [refreshKnownAccounts]);
+
+  // Keeps the on-device account registry in sync with whichever account is
+  // ACTUALLY active, no matter which path got it there (normal sign-in,
+  // register, switch, or Google) — a single generic effect instead of
+  // repeating an upsert call at every one of those call sites. Only runs
+  // once the real Firestore profile is available, so the remembered
+  // display metadata (username/role/photo) is accurate, not a placeholder.
+  useEffect(() => {
+    if (!firebaseUser || !profile) return;
+    // Bug fix: normal signIn/register never populate this account's own
+    // per-uid Auth instance (only the staging-based add-account/Google
+    // paths did) — without this, switchToStoredAccount would find that
+    // instance empty and report the account's session as expired the
+    // first time anyone tried to switch back to it. See syncAccountAuth's
+    // doc comment in multiAccountAuth.ts.
+    syncAccountAuth(firebaseUser);
+    upsertKnownAccount({
+      uid: firebaseUser.uid,
+      email: profile.email,
+      displayName: profile.displayName,
+      username: profile.username,
+      photoURL: profile.photoURL,
+      role: profile.role,
+    }).then(refreshKnownAccounts);
+  }, [firebaseUser, profile, refreshKnownAccounts]);
+
+  const switchAccount = useCallback(
+    async (uid: string): Promise<boolean> => {
+      const user = await switchToStoredAccount(uid);
+      if (!user) return false;
+      await touchKnownAccount(uid);
+      await refreshKnownAccounts();
+      return true;
+    },
+    [refreshKnownAccounts],
+  );
+
+  const removeAccount = useCallback(
+    async (uid: string): Promise<void> => {
+      await forgetStoredAccount(uid);
+      await removeKnownAccount(uid);
+      await refreshKnownAccounts();
+    },
+    [refreshKnownAccounts],
+  );
+
+  // Signs into a DIFFERENT account on a throwaway staging Auth instance —
+  // never the shared default one — so whichever account is currently
+  // active stays untouched unless/until the credential check actually
+  // succeeds. See multiAccountAuth.ts's own doc comment for the full
+  // mechanism.
+  const addAccountWithPassword = useCallback(async (input: LoginInput): Promise<void> => {
+    await runOnStagingAuthAndActivate(async (stagingAuth) => ({
+      user: await loginWithPassword(input, stagingAuth),
+    }));
+  }, []);
+
+  const addAccountWithGoogle = useCallback(
+    async (idToken: string): Promise<{ isNewUser: boolean }> => {
+      const result = await runOnStagingAuthAndActivate((stagingAuth) =>
+        signInWithGoogleIdToken(idToken, stagingAuth),
+      );
+      return { isNewUser: getAdditionalUserInfo(result)?.isNewUser ?? false };
+    },
+    [],
+  );
+
+  // Stage 1 (initializeOnboarding) for a brand-new Google sign-up — the
+  // EXACT same Cloud Function email/password registration calls (see
+  // authService.registerStudent), just reached without a password step.
+  // Stage 2 (completeOnboarding, granting the role/claims) still only ever
+  // runs from refreshSession/signIn once email_verified is true — a Google
+  // sign-in's email is already verified by Google itself, so this resolves
+  // on the very next refreshSession call, same as any other account.
+  const completeGoogleOnboarding = useCallback(
+    async (input: {
+      displayName: string;
+      username: string;
+      intendedRole: RegisterInput["intendedRole"];
+    }): Promise<void> => {
+      if (!firebaseUser) throw new NoCurrentUserError();
+      await initializeOnboarding(input.intendedRole, input.displayName.trim());
+      await setUsername(input.username.trim());
+    },
+    [firebaseUser],
+  );
+
+  // Links a Google credential onto the user that's CURRENTLY active on the
+  // shared default Auth instance — a real in-place account-linking
+  // operation (Firebase Auth's own linkWithCredential), never a session
+  // switch, so it never touches the staging/per-account instances at all.
+  const linkGoogleAccount = useCallback(async (idToken: string): Promise<void> => {
+    if (!firebaseUser) throw new NoCurrentUserError();
+    const credential = GoogleAuthProvider.credential(idToken);
+    await linkWithCredential(firebaseUser, credential);
+  }, [firebaseUser]);
+
+  const [isAccountSwitcherOpen, setIsAccountSwitcherOpen] = useState(false);
+  const openAccountSwitcher = useCallback(() => setIsAccountSwitcherOpen(true), []);
+  const closeAccountSwitcher = useCallback(() => setIsAccountSwitcherOpen(false), []);
+
   const signIn = useCallback(async (input: LoginInput) => {
     const user = await loginWithPassword(input);
     const signedInProfile = await waitForProfileDocument(user.uid, 5000);
@@ -244,6 +412,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       sendPasswordReset,
       resendVerification,
       refreshSession,
+      knownAccounts,
+      switchAccount,
+      removeAccount,
+      addAccountWithPassword,
+      addAccountWithGoogle,
+      completeGoogleOnboarding,
+      linkGoogleAccount,
+      isAccountSwitcherOpen,
+      openAccountSwitcher,
+      closeAccountSwitcher,
     }),
     [
       firebaseUser,
@@ -259,6 +437,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       sendPasswordReset,
       resendVerification,
       refreshSession,
+      knownAccounts,
+      switchAccount,
+      removeAccount,
+      addAccountWithPassword,
+      addAccountWithGoogle,
+      completeGoogleOnboarding,
+      linkGoogleAccount,
+      isAccountSwitcherOpen,
+      openAccountSwitcher,
+      closeAccountSwitcher,
     ],
   );
 

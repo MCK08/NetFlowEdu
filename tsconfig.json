@@ -14,7 +14,8 @@
       "@hooks/*": ["src/hooks/*"],
       "@types/*": ["src/types/*"],
       "@utils/*": ["src/utils/*"],
-      "@constants/*": ["src/constants/*"]
+      "@constants/*": ["src/constants/*"],
+      "@theme/*": ["src/theme/*"]
     }
   },
   "include": [

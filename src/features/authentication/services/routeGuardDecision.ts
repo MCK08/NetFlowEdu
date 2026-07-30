@@ -19,6 +19,7 @@ export interface RouteGuardAuthState {
   role: UserRole | null;
   onboardingStatus?: OnboardingStatus | null;
   claimsSynced?: boolean;
+  hasRequestedRole?: boolean;
 }
 
 // The single decision RouteGuard's effect makes each time it runs: either
@@ -48,6 +49,7 @@ export function decideRouteGuardTarget(
     role: state.role,
     onboardingStatus: state.onboardingStatus,
     claimsSynced: state.claimsSynced,
+    hasRequestedRole: state.hasRequestedRole,
   });
 
   // resolveRouteForState always resolves "unauthenticated" to the single

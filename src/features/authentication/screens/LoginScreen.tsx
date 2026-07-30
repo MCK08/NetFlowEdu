@@ -1,4 +1,5 @@
 import { Link, router } from "expo-router";
+import { useState } from "react";
 import { StyleSheet, Text } from "react-native";
 
 import { FormError } from "@components/ui/FormError";
@@ -7,11 +8,18 @@ import { PasswordField } from "@components/ui/PasswordField";
 import { PrimaryButton } from "@components/ui/PrimaryButton";
 import { TextField } from "@components/ui/TextField";
 import { ROUTES } from "@constants/routes";
+import { KnownAccount } from "@services/firebase/accountRegistry";
 
+import { GoogleSignInButton } from "../components/GoogleSignInButton";
+import { RecentAccountsList } from "../components/RecentAccountsList";
+import { useAuth } from "../hooks/useAuth";
 import { useLoginForm } from "../hooks/useLoginForm";
 
 export function LoginScreen() {
   const { input, setField, fieldErrors, formError, isSubmitting, submit } = useLoginForm();
+  const { knownAccounts, switchAccount, addAccountWithGoogle } = useAuth();
+  const [showRecentAccounts, setShowRecentAccounts] = useState(true);
+  const [googleError, setGoogleError] = useState<string | null>(null);
 
   async function handleSubmit() {
     const success = await submit();
@@ -20,12 +28,34 @@ export function LoginScreen() {
     }
   }
 
+  async function handleContinueWithAccount(account: KnownAccount): Promise<boolean> {
+    const success = await switchAccount(account.uid);
+    if (success) {
+      router.replace("/");
+    }
+    return success;
+  }
+
+  async function handleGoogleIdToken(idToken: string) {
+    setGoogleError(null);
+    const { isNewUser } = await addAccountWithGoogle(idToken);
+    router.replace(isNewUser ? ROUTES.googleOnboarding : "/");
+  }
+
   return (
     <KeyboardSafeScreen>
       <Text style={styles.title}>NetFlow Edu</Text>
       <Text style={styles.subtitle}>Hesabınıza giriş yapın</Text>
 
-      <FormError message={formError} />
+      {showRecentAccounts ? (
+        <RecentAccountsList
+          accounts={knownAccounts}
+          onContinue={handleContinueWithAccount}
+          onUseAnotherAccount={() => setShowRecentAccounts(false)}
+        />
+      ) : null}
+
+      <FormError message={formError ?? googleError} />
 
       <TextField
         label="E-posta"
@@ -52,6 +82,8 @@ export function LoginScreen() {
       </Link>
 
       <PrimaryButton label="Giriş Yap" onPress={handleSubmit} isLoading={isSubmitting} />
+
+      <GoogleSignInButton onIdToken={handleGoogleIdToken} onError={setGoogleError} />
 
       <Link href={ROUTES.register} style={styles.linkCenter}>
         Hesabınız yok mu? Kayıt olun

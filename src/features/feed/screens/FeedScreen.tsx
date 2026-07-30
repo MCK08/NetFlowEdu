@@ -8,10 +8,12 @@ import {
   useWindowDimensions,
 } from "react-native";
 
+import { LoadingSkeleton } from "@components/ui/LoadingSkeleton";
 import { useAuth } from "@features/authentication";
 import { CameraButton } from "@features/upload/components/CameraButton";
 import { VisibilityPicker } from "@features/upload/components/VisibilityPicker";
 import { useUpload } from "@features/upload/hooks/useUpload";
+import { colors } from "@theme/colors";
 
 import { EmptyState } from "../components/EmptyState";
 import { FeedCard } from "../components/FeedCard";
@@ -41,7 +43,7 @@ export function FeedScreen() {
   if (isLoading) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color="black" />
+        <LoadingSkeleton width="86%" height={height * 0.6} borderRadius={24} />
       </View>
     );
   }
@@ -66,7 +68,7 @@ export function FeedScreen() {
         ListFooterComponent={
           isLoadingMore ? (
             <View style={styles.loadingMore}>
-              <ActivityIndicator color="black" />
+              <ActivityIndicator color={colors.textPrimary} />
             </View>
           ) : null
         }
@@ -86,13 +88,13 @@ export function FeedScreen() {
 const styles = StyleSheet.create({
   flex: {
     flex: 1,
-    backgroundColor: "white",
+    backgroundColor: colors.background,
   },
   centered: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "white",
+    backgroundColor: colors.background,
   },
   loadingMore: {
     paddingVertical: 24,

@@ -16,6 +16,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { EmptyState } from "@components/ui/EmptyState";
 import { useAuth } from "@features/authentication";
 
 import { ChatComposer } from "../components/ChatComposer";
@@ -161,7 +162,13 @@ export function ClassChatScreen({ classId }: ClassChatScreenProps) {
                   ) : null
                 }
                 ListEmptyComponent={
-                  <Text style={styles.emptyText}>Henüz mesaj yok. İlk mesajı sen gönder.</Text>
+                  <View style={styles.emptyStateWrapper}>
+                    <EmptyState
+                      icon="chatbubble-ellipses-outline"
+                      title="Henüz mesaj yok"
+                      description="İlk mesajı sen gönder."
+                    />
+                  </View>
                 }
               />
             </Pressable>
@@ -232,15 +239,11 @@ const styles = StyleSheet.create({
   loadingOlder: {
     paddingVertical: 16,
   },
-  emptyText: {
-    fontSize: 14,
-    color: "#8A8F98",
-    textAlign: "center",
+  emptyStateWrapper: {
     marginTop: 40,
-    paddingHorizontal: 32,
-    // Cancels the inverted transform so the empty-state text reads
-    // right-side up (ListEmptyComponent is otherwise flipped like every
-    // other child of an inverted FlatList).
+    // Cancels the inverted transform so the empty state reads right-side
+    // up (ListEmptyComponent is otherwise flipped like every other child
+    // of an inverted FlatList).
     transform: [{ scaleY: -1 }],
   },
   newMessagePill: {

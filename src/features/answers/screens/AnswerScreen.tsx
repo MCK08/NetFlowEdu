@@ -4,7 +4,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { AnimatedPressable } from "@components/ui/AnimatedPressable";
 import { useAuth } from "@features/authentication";
+import { colors } from "@theme/colors";
+import { radius } from "@theme/radius";
+import { spacing } from "@theme/spacing";
 import { QuestionVisibility } from "@/types/question";
 
 import { DrawingBoard } from "../components/DrawingBoard";
@@ -85,7 +89,7 @@ export function AnswerScreen({ questionId, questionVisibility }: AnswerScreenPro
           accessibilityLabel="Geri"
           hitSlop={8}
         >
-          <Ionicons name="chevron-back" size={26} color="black" />
+          <Ionicons name="chevron-back" size={26} color={colors.textPrimary} />
         </Pressable>
         <Text style={styles.title}>Cevap Ver</Text>
       </View>
@@ -99,7 +103,7 @@ export function AnswerScreen({ questionId, questionVisibility }: AnswerScreenPro
         ).map((option) => {
           const selected = method === option.value;
           return (
-            <Pressable
+            <AnimatedPressable
               key={option.value}
               onPress={() => setMethod(option.value)}
               style={[styles.methodOption, selected ? styles.methodOptionSelected : null]}
@@ -109,7 +113,7 @@ export function AnswerScreen({ questionId, questionVisibility }: AnswerScreenPro
               <Text style={[styles.methodText, selected ? styles.methodTextSelected : null]}>
                 {option.label}
               </Text>
-            </Pressable>
+            </AnimatedPressable>
           );
         })}
       </View>
@@ -133,14 +137,14 @@ export function AnswerScreen({ questionId, questionVisibility }: AnswerScreenPro
 const styles = StyleSheet.create({
   flex: {
     flex: 1,
-    backgroundColor: "white",
+    backgroundColor: colors.background,
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    paddingHorizontal: 16,
-    paddingTop: 8,
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.xs,
   },
   backButton: {
     minWidth: 44,
@@ -151,36 +155,36 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 22,
     fontWeight: "700",
-    color: "black",
+    color: colors.textPrimary,
   },
   methodRow: {
     flexDirection: "row",
     gap: 10,
-    paddingHorizontal: 24,
-    paddingVertical: 16,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
   },
   methodOption: {
     flex: 1,
     borderWidth: 1.5,
-    borderColor: "#8A8F98",
-    borderRadius: 10,
-    paddingVertical: 12,
+    borderColor: colors.textTertiary,
+    borderRadius: radius.md,
+    paddingVertical: spacing.sm,
     alignItems: "center",
   },
   methodOptionSelected: {
-    backgroundColor: "#3358D9",
-    borderColor: "#3358D9",
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
   methodText: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#1A1A1A",
+    color: colors.textPrimary,
   },
   methodTextSelected: {
-    color: "white",
+    color: colors.textInverse,
   },
   content: {
     flex: 1,
-    paddingHorizontal: 24,
+    paddingHorizontal: spacing.xl,
   },
 });

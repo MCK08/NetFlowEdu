@@ -30,6 +30,14 @@ export interface UserProfile {
   // until Stage 2 promotes it) — see RouteGuard, which treats this as "not
   // done yet, route back to the retry screen" rather than trusting `role`.
   onboardingStatus: OnboardingStatus;
+  // Stage-1 onboarding input (functions/src/onboarding/initializeOnboarding.ts)
+  // — null until that stage has run. Every email/password account gets
+  // this set immediately during registration (before email verification),
+  // so in practice it's only ever null for a brand-new Google sign-up that
+  // hasn't finished GoogleOnboardingScreen yet — see RouteGuard, which
+  // uses exactly that to route such an account there instead of
+  // verify-email.
+  requestedRole: UserRole | null;
   createdAt: number;
   updatedAt: number;
 }

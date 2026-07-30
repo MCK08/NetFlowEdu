@@ -1,5 +1,9 @@
 import { ActivityIndicator, Pressable, StyleSheet, Text } from "react-native";
 
+import { colors } from "@theme/colors";
+import { radius } from "@theme/radius";
+import { spacing } from "@theme/spacing";
+
 interface PrimaryButtonProps {
   label: string;
   onPress: () => void;
@@ -30,7 +34,7 @@ export function PrimaryButton({
       accessibilityState={{ disabled: isDisabled, busy: isLoading }}
     >
       {isLoading ? (
-        <ActivityIndicator color={variant === "primary" ? "white" : "#3358D9"} />
+        <ActivityIndicator color={variant === "primary" ? colors.textInverse : colors.primary} />
       ) : (
         <Text style={variant === "primary" ? styles.primaryText : styles.secondaryText}>
           {label}
@@ -43,29 +47,29 @@ export function PrimaryButton({
 const styles = StyleSheet.create({
   button: {
     minHeight: 48,
-    borderRadius: 10,
+    borderRadius: radius.md,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 16,
+    paddingHorizontal: spacing.md,
   },
   primary: {
-    backgroundColor: "#3358D9",
+    backgroundColor: colors.primary,
   },
   secondary: {
     backgroundColor: "transparent",
     borderWidth: 1,
-    borderColor: "#3358D9",
+    borderColor: colors.primary,
   },
   disabled: {
     opacity: 0.6,
   },
   primaryText: {
-    color: "white",
+    color: colors.textInverse,
     fontSize: 16,
     fontWeight: "600",
   },
   secondaryText: {
-    color: "#3358D9",
+    color: colors.primary,
     fontSize: 16,
     fontWeight: "600",
   },

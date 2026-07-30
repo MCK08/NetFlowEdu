@@ -1,7 +1,12 @@
+import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { StyleSheet, Text, View } from "react-native";
 
 import { PrimaryButton } from "@components/ui/PrimaryButton";
+import { colors } from "@theme/colors";
+import { radius } from "@theme/radius";
+import { spacing } from "@theme/spacing";
+import { iconSize } from "@theme/sizes";
 import { QuestionVisibility } from "@/types/question";
 
 import { usePhotoAnswer } from "../hooks/usePhotoAnswer";
@@ -29,9 +34,10 @@ export function PhotoAnswerForm({
   return (
     <View style={styles.container}>
       {previewUri ? (
-        <Image source={{ uri: previewUri }} style={styles.preview} contentFit="cover" />
+        <Image source={{ uri: previewUri }} style={styles.preview} contentFit="cover" transition={150} />
       ) : (
         <View style={styles.placeholder}>
+          <Ionicons name="image-outline" size={iconSize.xl} color={colors.textTertiary} />
           <Text style={styles.placeholderText}>Fotoğraf seçilmedi</Text>
         </View>
       )}
@@ -57,29 +63,30 @@ export function PhotoAnswerForm({
 
 const styles = StyleSheet.create({
   container: {
-    gap: 16,
+    gap: spacing.md,
   },
   preview: {
     width: "100%",
     aspectRatio: 3 / 4,
-    borderRadius: 16,
-    backgroundColor: "#F2F2F2",
+    borderRadius: radius.xl,
+    backgroundColor: colors.surfaceMuted,
   },
   placeholder: {
     width: "100%",
     aspectRatio: 3 / 4,
-    borderRadius: 16,
-    backgroundColor: "#F2F2F2",
+    borderRadius: radius.xl,
+    backgroundColor: colors.surfaceMuted,
     alignItems: "center",
     justifyContent: "center",
+    gap: spacing.xs,
   },
   placeholderText: {
-    color: "#8A8F98",
+    color: colors.textTertiary,
     fontSize: 14,
   },
   row: {
     flexDirection: "row",
-    gap: 12,
+    gap: spacing.sm,
   },
   flex: {
     flex: 1,

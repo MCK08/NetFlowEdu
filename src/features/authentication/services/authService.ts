@@ -1,4 +1,5 @@
 import { FirebaseError } from "firebase/app";
+import { Auth } from "firebase/auth";
 import {
   createUserAccount,
   reloadCurrentUser,
@@ -72,17 +73,29 @@ function isUsernameAlreadySetForCaller(error: unknown): boolean {
 // requires a verified email, which a brand-new account never has yet. It
 // runs from AuthProvider.refreshSession instead, once verification is
 // confirmed — see that file.
-export async function registerStudent(input: RegisterInput): Promise<RegisterResult> {
+// `authInstance` defaults to the shared default Auth (every existing call
+// site behaves exactly as before). Phase 11's "Başka Hesap Ekle" flow is
+// the only caller that ever passes the transient staging instance instead,
+// so registering a second account can never disturb whichever account is
+// currently active — see multiAccountAuth.ts.
+export async function registerStudent(
+  input: RegisterInput,
+  authInstance?: Auth,
+): Promise<RegisterResult> {
   const email = normalizeEmail(input.email);
   const displayName = input.displayName.trim();
   const username = input.username.trim();
 
   let user: User;
   try {
-    user = await createUserAccount(email, input.password);
+    user = authInstance
+      ? await createUserAccount(email, input.password, authInstance)
+      : await createUserAccount(email, input.password);
   } catch (error) {
     if (!isEmailAlreadyInUse(error)) throw error;
-    user = await signInWithPassword(email, input.password);
+    user = authInstance
+      ? await signInWithPassword(email, input.password, authInstance)
+      : await signInWithPassword(email, input.password);
   }
 
   try {
@@ -165,9 +178,11 @@ export async function registerStudent(input: RegisterInput): Promise<RegisterRes
   return { user, verificationEmailSent };
 }
 
-export async function loginWithPassword(input: LoginInput): Promise<User> {
+export async function loginWithPassword(input: LoginInput, authInstance?: Auth): Promise<User> {
   const email = normalizeEmail(input.email);
-  return signInWithPassword(email, input.password);
+  return authInstance
+    ? signInWithPassword(email, input.password, authInstance)
+    : signInWithPassword(email, input.password);
 }
 
 export async function logout(): Promise<void> {

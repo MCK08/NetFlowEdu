@@ -23,6 +23,14 @@ export interface RouteResolutionState {
   // Function's own (correct) claims check. See AuthProvider's
   // `claimsSynced` state for where this is actually tracked.
   claimsSynced?: boolean;
+  // Optional, defaults to true (every existing call site before this field
+  // existed keeps behaving exactly as before). Only ever explicitly false
+  // for a brand-new Google sign-up whose Stage-1 onboarding
+  // (initializeOnboarding — requestedRole) hasn't run yet, since every
+  // email/password account gets it set during registration itself. Routes
+  // to googleOnboarding instead of verify-email in that one case — see
+  // resolveRouteForState below.
+  hasRequestedRole?: boolean;
 }
 
 // Centralized so every entry point (root guard, deep links, back navigation)
@@ -46,6 +54,12 @@ export function resolveRouteForState(state: RouteResolutionState): ResolvedRoute
   // idempotent "check again" button — is what lets onboarding actually
   // converge instead of getting stuck in "pending" forever.
   if (state.onboardingStatus === "pending" || state.onboardingStatus === "provisioning") {
+    // hasRequestedRole defaults to true when omitted — only an explicit
+    // false (a brand-new Google sign-up, see the field's own doc comment)
+    // diverts here instead of verify-email.
+    if (state.onboardingStatus === "pending" && state.hasRequestedRole === false) {
+      return ROUTES.googleOnboarding;
+    }
     return ROUTES.verifyEmail;
   }
 

@@ -3,10 +3,14 @@ import { Image } from "expo-image";
 import { router } from "expo-router";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
+import { AnimatedPressable } from "@components/ui/AnimatedPressable";
 import { useAuth } from "@features/authentication";
 import { useProfileHandle } from "@features/profiles";
 import { SaveButton, useSavedQuestion } from "@features/questions";
 import { LikeButton, useLike } from "@features/social/likes";
+import { colors } from "@theme/colors";
+import { spacing } from "@theme/spacing";
+import { minTouchTarget } from "@theme/sizes";
 
 import { Question } from "../types";
 
@@ -65,7 +69,7 @@ export function FeedCard({ question, height }: FeedCardProps) {
       <Image source={{ uri: question.imageUrl }} style={styles.image} contentFit="cover" />
 
       <View style={styles.infoOverlay}>
-        <Pressable
+        <AnimatedPressable
           style={styles.ownerRow}
           onPress={openOwnerProfile}
           accessibilityRole="button"
@@ -75,7 +79,7 @@ export function FeedCard({ question, height }: FeedCardProps) {
             <Image source={{ uri: photoURL }} style={styles.avatar} contentFit="cover" />
           ) : (
             <View style={styles.avatarPlaceholder}>
-              <Ionicons name="person" size={16} color="white" />
+              <Ionicons name="person" size={16} color={colors.textInverse} />
             </View>
           )}
           <View style={styles.nameColumn}>
@@ -88,7 +92,7 @@ export function FeedCard({ question, height }: FeedCardProps) {
               </Text>
             ) : null}
           </View>
-        </Pressable>
+        </AnimatedPressable>
         <View style={styles.metaRow}>
           <Text style={styles.date}>{formatDate(question.createdAt)}</Text>
           <Text style={styles.dot}>·</Text>
@@ -101,11 +105,11 @@ export function FeedCard({ question, height }: FeedCardProps) {
       <View style={styles.actionRail}>
         <LikeButton liked={liked} likeCount={likeCount} onPress={toggle} />
         <View style={styles.actionButton}>
-          <Ionicons name="chatbubble-outline" size={26} color="white" />
+          <Ionicons name="chatbubble-outline" size={26} color={colors.textInverse} />
           <Text style={styles.actionCount}>{question.commentCount}</Text>
         </View>
         <View style={styles.actionButton}>
-          <Ionicons name="documents-outline" size={26} color="white" />
+          <Ionicons name="documents-outline" size={26} color={colors.textInverse} />
           <Text style={styles.actionCount}>{question.answerCount}</Text>
         </View>
         <SaveButton saved={saved} onPress={toggleSaved} />
@@ -124,16 +128,16 @@ const styles = StyleSheet.create({
   },
   infoOverlay: {
     position: "absolute",
-    left: 16,
+    left: spacing.md,
     bottom: 32,
     right: 88,
-    gap: 8,
+    gap: spacing.xs,
   },
   ownerRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    minHeight: 44,
+    gap: spacing.xs,
+    minHeight: minTouchTarget,
   },
   avatar: {
     width: 28,
@@ -152,12 +156,12 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   username: {
-    color: "white",
+    color: colors.textInverse,
     fontSize: 15,
     fontWeight: "700",
   },
   handle: {
-    color: "white",
+    color: colors.textInverse,
     fontSize: 12,
     opacity: 0.85,
   },
@@ -167,12 +171,12 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   date: {
-    color: "white",
+    color: colors.textInverse,
     fontSize: 13,
     opacity: 0.85,
   },
   dot: {
-    color: "white",
+    color: colors.textInverse,
     fontSize: 13,
     opacity: 0.6,
   },
@@ -183,26 +187,26 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   visibilityText: {
-    color: "white",
+    color: colors.textInverse,
     fontSize: 12,
     fontWeight: "600",
   },
   actionRail: {
     position: "absolute",
-    right: 16,
+    right: spacing.md,
     bottom: 32,
     alignItems: "center",
     gap: 18,
   },
   actionButton: {
     alignItems: "center",
-    gap: 4,
-    minWidth: 44,
-    minHeight: 44,
+    gap: spacing.xxs,
+    minWidth: minTouchTarget,
+    minHeight: minTouchTarget,
     justifyContent: "center",
   },
   actionCount: {
-    color: "white",
+    color: colors.textInverse,
     fontSize: 12,
     fontWeight: "600",
   },

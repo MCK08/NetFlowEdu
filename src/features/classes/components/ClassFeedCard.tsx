@@ -2,12 +2,17 @@ import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { router } from "expo-router";
 import { memo } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 
+import { AnimatedPressable } from "@components/ui/AnimatedPressable";
 import { useAuth } from "@features/authentication";
 import { useProfileHandle } from "@features/profiles";
 import { SaveButton, useSavedQuestion } from "@features/questions";
 import { LikeButton, useLike } from "@features/social/likes";
+import { colors, darkColors } from "@theme/colors";
+import { radius } from "@theme/radius";
+import { spacing } from "@theme/spacing";
+import { minTouchTarget } from "@theme/sizes";
 import { Question } from "@/types/question";
 
 import { useNavigationGuard } from "@hooks/useNavigationGuard";
@@ -109,22 +114,22 @@ function ClassFeedCardComponent({
       <View style={[styles.actionRail, { bottom: bottomInset + 148 }]}>
         <LikeButton liked={liked} likeCount={likeCount} onPress={toggle} />
 
-        <Pressable
+        <AnimatedPressable
           onPress={openComments}
           style={styles.actionButton}
           accessibilityRole="button"
           accessibilityLabel={`Yorumlar, ${question.commentCount}`}
         >
-          <Ionicons name="chatbubble-outline" size={26} color="white" />
+          <Ionicons name="chatbubble-outline" size={26} color={colors.textInverse} />
           <Text style={styles.actionCount}>{formatCount(question.commentCount)}</Text>
-        </Pressable>
+        </AnimatedPressable>
 
         <View
           style={styles.actionButton}
           accessible
           accessibilityLabel={`Cevap sayısı, ${question.answerCount}`}
         >
-          <Ionicons name="documents-outline" size={26} color="white" />
+          <Ionicons name="documents-outline" size={26} color={colors.textInverse} />
           <Text style={styles.actionCount}>{formatCount(question.answerCount)}</Text>
         </View>
 
@@ -132,7 +137,7 @@ function ClassFeedCardComponent({
       </View>
 
       <View style={[styles.bottomBar, { paddingBottom: bottomInset + 16 }]}>
-        <Pressable
+        <AnimatedPressable
           style={styles.posterRow}
           onPress={openOwnerProfile}
           accessibilityRole="button"
@@ -142,7 +147,7 @@ function ClassFeedCardComponent({
             <Image source={{ uri: photoURL }} style={styles.avatar} contentFit="cover" />
           ) : (
             <View style={styles.avatarPlaceholder}>
-              <Ionicons name="person" size={16} color="white" />
+              <Ionicons name="person" size={16} color={colors.textInverse} />
             </View>
           )}
           <View style={styles.nameColumn}>
@@ -165,22 +170,22 @@ function ClassFeedCardComponent({
             ) : null}
           </View>
           <View style={styles.classBadge}>
-            <Ionicons name="school-outline" size={12} color="white" />
+            <Ionicons name="school-outline" size={12} color={colors.textInverse} />
             <Text style={styles.classBadgeText} numberOfLines={1}>
               {className}
             </Text>
           </View>
-        </Pressable>
+        </AnimatedPressable>
 
-        <Pressable
+        <AnimatedPressable
           onPress={openAnswer}
           style={styles.answerButton}
           accessibilityRole="button"
           accessibilityLabel="Bu soruyu cevapla"
         >
-          <Ionicons name="create-outline" size={18} color="#0B0B0F" />
+          <Ionicons name="create-outline" size={18} color={darkColors.background} />
           <Text style={styles.answerButtonText}>Cevapla</Text>
-        </Pressable>
+        </AnimatedPressable>
       </View>
     </View>
   );
@@ -191,7 +196,7 @@ export const ClassFeedCard = memo(ClassFeedCardComponent);
 const styles = StyleSheet.create({
   card: {
     width: "100%",
-    backgroundColor: "#0B0B0F",
+    backgroundColor: darkColors.background,
   },
   image: {
     flex: 1,
@@ -212,19 +217,19 @@ const styles = StyleSheet.create({
   },
   actionRail: {
     position: "absolute",
-    right: 12,
+    right: spacing.sm,
     alignItems: "center",
     gap: 18,
   },
   actionButton: {
     alignItems: "center",
     justifyContent: "center",
-    gap: 4,
-    minWidth: 44,
-    minHeight: 44,
+    gap: spacing.xxs,
+    minWidth: minTouchTarget,
+    minHeight: minTouchTarget,
   },
   actionCount: {
-    color: "white",
+    color: colors.textInverse,
     fontSize: 12,
     fontWeight: "600",
   },
@@ -233,14 +238,14 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    paddingHorizontal: 16,
-    gap: 12,
+    paddingHorizontal: spacing.md,
+    gap: spacing.sm,
   },
   posterRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
-    minHeight: 44,
+    minHeight: minTouchTarget,
     paddingRight: 72,
   },
   avatar: {
@@ -265,7 +270,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   posterName: {
-    color: "white",
+    color: colors.textInverse,
     fontSize: 15,
     fontWeight: "700",
     flexShrink: 1,
@@ -276,7 +281,7 @@ const styles = StyleSheet.create({
     paddingVertical: 1,
   },
   roleBadgeTeacher: {
-    backgroundColor: "#3358D9",
+    backgroundColor: colors.primary,
   },
   roleBadgeStudent: {
     backgroundColor: "rgba(255,255,255,0.22)",
@@ -284,26 +289,26 @@ const styles = StyleSheet.create({
   roleBadgeText: {
     fontSize: 10,
     fontWeight: "700",
-    color: "white",
+    color: colors.textInverse,
   },
   handle: {
-    color: "white",
+    color: colors.textInverse,
     fontSize: 12,
     opacity: 0.8,
   },
   classBadge: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
+    gap: spacing.xxs,
     flexShrink: 1,
     maxWidth: 140,
     backgroundColor: "rgba(255,255,255,0.16)",
-    borderRadius: 999,
+    borderRadius: radius.pill,
     paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingVertical: spacing.xxs,
   },
   classBadgeText: {
-    color: "white",
+    color: colors.textInverse,
     fontSize: 11,
     fontWeight: "600",
     flexShrink: 1,
@@ -312,13 +317,13 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
+    gap: spacing.xs,
     minHeight: 50,
     borderRadius: 14,
-    backgroundColor: "white",
+    backgroundColor: colors.textInverse,
   },
   answerButtonText: {
-    color: "#0B0B0F",
+    color: darkColors.background,
     fontSize: 16,
     fontWeight: "700",
   },

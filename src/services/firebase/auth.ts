@@ -1,4 +1,5 @@
 import {
+  Auth,
   createUserWithEmailAndPassword,
   User,
   reload,
@@ -15,8 +16,18 @@ export function getCurrentUser(): User | null {
   return auth.currentUser;
 }
 
-export async function createUserAccount(email: string, password: string): Promise<User> {
-  const credential = await createUserWithEmailAndPassword(auth, email, password);
+// `authInstance` defaults to the app's single shared `auth` — every
+// EXISTING call site (registerStudent, etc.) omits it and behaves exactly
+// as before. multiAccountAuth.ts's "add another account" flow is the only
+// caller that ever passes a different (staging) instance explicitly, so a
+// brand-new sign-in/sign-up never disturbs whichever account is currently
+// active on the shared default instance.
+export async function createUserAccount(
+  email: string,
+  password: string,
+  authInstance: Auth = auth,
+): Promise<User> {
+  const credential = await createUserWithEmailAndPassword(authInstance, email, password);
   return credential.user;
 }
 
@@ -28,8 +39,12 @@ export async function sendVerificationEmail(user: User): Promise<void> {
   await sendEmailVerification(user);
 }
 
-export async function signInWithPassword(email: string, password: string): Promise<User> {
-  const credential = await signInWithEmailAndPassword(auth, email, password);
+export async function signInWithPassword(
+  email: string,
+  password: string,
+  authInstance: Auth = auth,
+): Promise<User> {
+  const credential = await signInWithEmailAndPassword(authInstance, email, password);
   return credential.user;
 }
 

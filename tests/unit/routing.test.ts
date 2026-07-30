@@ -180,4 +180,54 @@ describe("resolveRouteForState", () => {
       }),
     ).toBe(ROUTES.login);
   });
+
+  // Feature 3 (Google Sign In): a brand-new Google sign-up has no
+  // requestedRole yet (Stage 1 onboarding hasn't run), so it must be
+  // diverted to the dedicated onboarding screen instead of verify-email.
+  it("routes a pending user with hasRequestedRole false to googleOnboarding", () => {
+    expect(
+      resolveRouteForState({
+        isAuthenticated: true,
+        isEmailVerified: true,
+        role: "student",
+        onboardingStatus: "pending",
+        hasRequestedRole: false,
+      }),
+    ).toBe(ROUTES.googleOnboarding);
+  });
+
+  it("routes a pending user with hasRequestedRole omitted to verify-email (every existing call site before this field existed)", () => {
+    expect(
+      resolveRouteForState({
+        isAuthenticated: true,
+        isEmailVerified: true,
+        role: "student",
+        onboardingStatus: "pending",
+      }),
+    ).toBe(ROUTES.verifyEmail);
+  });
+
+  it("routes a pending user with hasRequestedRole true to verify-email, not googleOnboarding", () => {
+    expect(
+      resolveRouteForState({
+        isAuthenticated: true,
+        isEmailVerified: true,
+        role: "student",
+        onboardingStatus: "pending",
+        hasRequestedRole: true,
+      }),
+    ).toBe(ROUTES.verifyEmail);
+  });
+
+  it("routes a provisioning user to verify-email even when hasRequestedRole is false (only 'pending' diverts to googleOnboarding)", () => {
+    expect(
+      resolveRouteForState({
+        isAuthenticated: true,
+        isEmailVerified: true,
+        role: "student",
+        onboardingStatus: "provisioning",
+        hasRequestedRole: false,
+      }),
+    ).toBe(ROUTES.verifyEmail);
+  });
 });

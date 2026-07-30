@@ -1,19 +1,19 @@
-import { Ionicons } from "@expo/vector-icons";
-import { Image } from "expo-image";
 import { router } from "expo-router";
-import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { Avatar } from "@components/ui/Avatar";
+import { EmptyState } from "@components/ui/EmptyState";
+import { RoleBadge } from "@components/ui/RoleBadge";
+import { SearchInput } from "@components/ui/SearchInput";
 import { useAuth } from "@features/authentication";
+import { colors } from "@theme/colors";
+import { spacing } from "@theme/spacing";
+import { typography } from "@theme/typography";
 import { PublicProfile } from "@/types/publicProfile";
 import { resolvePublicIdentity } from "@utils/publicIdentity";
 
 import { useFriendSearch } from "../hooks/useFriendSearch";
-
-const ROLE_LABELS: Record<string, string> = {
-  student: "Öğrenci",
-  teacher: "Öğretmen",
-};
 
 // Shared by both teacher and student route wrappers (spec section 9).
 export function FindFriendsScreen() {
@@ -32,21 +32,13 @@ export function FindFriendsScreen() {
         onPress={() => router.push({ pathname: publicProfilePathname, params: { userId: item.uid } })}
         accessibilityRole="button"
       >
-        {item.photoURL ? (
-          <Image source={{ uri: item.photoURL }} style={styles.avatar} contentFit="cover" />
-        ) : (
-          <View style={styles.avatarPlaceholder}>
-            <Ionicons name="person" size={20} color="#8A8F98" />
-          </View>
-        )}
+        <Avatar photoURL={item.photoURL} displayName={identity.primaryName} size="md" />
         <View style={styles.textColumn}>
           <View style={styles.nameRow}>
             <Text style={styles.name} numberOfLines={1}>
               {identity.primaryName}
             </Text>
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>{ROLE_LABELS[item.role] ?? item.role}</Text>
-            </View>
+            <RoleBadge role={item.role} />
           </View>
           {identity.usernameHandle ? (
             <Text style={styles.handle} numberOfLines={1}>
@@ -68,18 +60,18 @@ export function FindFriendsScreen() {
         <View style={styles.backButton} />
       </View>
 
-      <TextInput
-        style={styles.input}
-        placeholder="Kullanıcı adına göre ara..."
-        placeholderTextColor="#8A8F98"
-        value={queryText}
-        onChangeText={setQueryText}
-        autoCapitalize="none"
-        autoCorrect={false}
-      />
+      <View style={styles.searchWrapper}>
+        <SearchInput
+          placeholder="Kullanıcı adına göre ara..."
+          value={queryText}
+          onChangeText={setQueryText}
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+      </View>
 
       {isLoading ? (
-        <ActivityIndicator color="black" style={styles.loading} />
+        <ActivityIndicator color={colors.textPrimary} style={styles.loading} />
       ) : errorMessage ? (
         <Text style={styles.errorText}>{errorMessage}</Text>
       ) : (
@@ -90,9 +82,13 @@ export function FindFriendsScreen() {
           contentContainerStyle={styles.listContent}
           ListEmptyComponent={
             queryText.trim().length > 0 ? (
-              <Text style={styles.emptyText}>Sonuç bulunamadı.</Text>
+              <EmptyState icon="search-outline" title="Sonuç bulunamadı" />
             ) : (
-              <Text style={styles.emptyText}>Aramak için kullanıcı adı yazmaya başla.</Text>
+              <EmptyState
+                icon="person-add-outline"
+                title="Arkadaş bul"
+                description="Aramak için kullanıcı adı yazmaya başla."
+              />
             )
           }
         />
@@ -104,14 +100,14 @@ export function FindFriendsScreen() {
 const styles = StyleSheet.create({
   flex: {
     flex: 1,
-    backgroundColor: "white",
+    backgroundColor: colors.background,
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 12,
-    paddingTop: 8,
+    paddingHorizontal: spacing.sm,
+    paddingTop: spacing.xs,
   },
   backButton: {
     minWidth: 44,
@@ -121,64 +117,35 @@ const styles = StyleSheet.create({
   },
   backText: {
     fontSize: 28,
-    color: "black",
+    color: colors.textPrimary,
   },
   title: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "black",
+    ...typography.title,
+    color: colors.textPrimary,
   },
-  input: {
-    marginHorizontal: 20,
-    marginTop: 8,
-    marginBottom: 12,
-    height: 44,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#D0D5DD",
-    paddingHorizontal: 14,
-    fontSize: 15,
-    color: "black",
+  searchWrapper: {
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.xs,
+    marginBottom: spacing.sm,
   },
   loading: {
-    marginTop: 40,
+    marginTop: spacing.xxxl,
   },
   errorText: {
-    fontSize: 14,
-    color: "#D92D20",
+    ...typography.body,
+    color: colors.danger,
     textAlign: "center",
-    marginTop: 24,
+    marginTop: spacing.xl,
   },
   listContent: {
-    paddingBottom: 24,
-  },
-  emptyText: {
-    fontSize: 14,
-    color: "#8A8F98",
-    textAlign: "center",
-    marginTop: 40,
-    paddingHorizontal: 24,
+    paddingBottom: spacing.xl,
   },
   row: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    gap: 12,
-  },
-  avatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "#F2F2F2",
-  },
-  avatarPlaceholder: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "#F2F2F2",
-    alignItems: "center",
-    justifyContent: "center",
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.xs,
+    gap: spacing.sm,
   },
   textColumn: {
     flex: 1,
@@ -187,27 +154,15 @@ const styles = StyleSheet.create({
   nameRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
+    gap: spacing.xxs,
   },
   name: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: "black",
+    ...typography.subtitle,
+    color: colors.textPrimary,
     flexShrink: 1,
   },
   handle: {
-    fontSize: 13,
-    color: "#8A8F98",
-  },
-  badge: {
-    backgroundColor: "#F2F2F2",
-    borderRadius: 6,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-  },
-  badgeText: {
-    fontSize: 11,
-    fontWeight: "600",
-    color: "#5B5F66",
+    ...typography.caption,
+    color: colors.textTertiary,
   },
 });

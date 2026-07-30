@@ -36,10 +36,24 @@ export function RouteGuard({ children }: { children: ReactNode }) {
 
   const settledEnoughToRoute = !isLoading && !(isAuthenticated && isEmailVerified && profileLoading);
   const onboardingStatus = profile?.onboardingStatus ?? null;
+  // undefined (profile not loaded yet) intentionally maps to `true` (the
+  // default), not `false` — only an actually-loaded profile with a null
+  // requestedRole (a brand-new Google sign-up) should ever divert to
+  // googleOnboarding.
+  const hasRequestedRole = profile ? profile.requestedRole !== null : undefined;
 
   useEffect(() => {
     const target = decideRouteGuardTarget(
-      { settledEnoughToRoute, profileError, isAuthenticated, isEmailVerified, role, onboardingStatus, claimsSynced },
+      {
+        settledEnoughToRoute,
+        profileError,
+        isAuthenticated,
+        isEmailVerified,
+        role,
+        onboardingStatus,
+        claimsSynced,
+        hasRequestedRole,
+      },
       segments,
     );
     if (target !== null) router.replace(target);
@@ -52,6 +66,7 @@ export function RouteGuard({ children }: { children: ReactNode }) {
     role,
     onboardingStatus,
     claimsSynced,
+    hasRequestedRole,
     segments,
   ]);
 

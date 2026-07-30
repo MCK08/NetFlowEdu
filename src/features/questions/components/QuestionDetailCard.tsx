@@ -1,11 +1,15 @@
-import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { router } from "expo-router";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
+import { AnimatedPressable } from "@components/ui/AnimatedPressable";
+import { Avatar } from "@components/ui/Avatar";
 import { useAuth } from "@features/authentication";
 import { useProfileHandle } from "@features/profiles";
 import { LikeButton, useLike } from "@features/social/likes";
+import { colors } from "@theme/colors";
+import { radius } from "@theme/radius";
+import { spacing } from "@theme/spacing";
 import { Question } from "@/types/question";
 
 import { SaveButton } from "./SaveButton";
@@ -59,19 +63,13 @@ export function QuestionDetailCard({ question, answerCount, onPressImage }: Ques
       </Pressable>
 
       <View style={styles.metaRow}>
-        <Pressable
+        <AnimatedPressable
           style={styles.ownerRow}
           onPress={openOwnerProfile}
           accessibilityRole="button"
           accessibilityLabel="Profili görüntüle"
         >
-          {photoURL ? (
-            <Image source={{ uri: photoURL }} style={styles.avatar} contentFit="cover" />
-          ) : (
-            <View style={styles.avatarPlaceholder}>
-              <Ionicons name="person" size={16} color="#8A8F98" />
-            </View>
-          )}
+          <Avatar photoURL={photoURL} displayName={primaryName} size="sm" />
           <View style={styles.nameColumn}>
             <Text style={styles.owner} numberOfLines={1}>
               {primaryName}
@@ -82,7 +80,7 @@ export function QuestionDetailCard({ question, answerCount, onPressImage }: Ques
               </Text>
             ) : null}
           </View>
-        </Pressable>
+        </AnimatedPressable>
 
         <View style={styles.infoRow}>
           <Text style={styles.infoText}>{formatDate(question.createdAt)}</Text>
@@ -93,8 +91,8 @@ export function QuestionDetailCard({ question, answerCount, onPressImage }: Ques
         </View>
 
         <View style={styles.actionsRow}>
-          <LikeButton liked={liked} likeCount={likeCount} onPress={toggle} size={22} color="#5B5F66" />
-          <SaveButton saved={saved} onPress={toggleSaved} size={22} color="#5B5F66" />
+          <LikeButton liked={liked} likeCount={likeCount} onPress={toggle} size={22} color={colors.textSecondary} />
+          <SaveButton saved={saved} onPress={toggleSaved} size={22} color={colors.textSecondary} />
         </View>
       </View>
     </View>
@@ -103,35 +101,22 @@ export function QuestionDetailCard({ question, answerCount, onPressImage }: Ques
 
 const styles = StyleSheet.create({
   container: {
-    gap: 12,
+    gap: spacing.sm,
   },
   image: {
     width: "100%",
     aspectRatio: 3 / 4,
-    borderRadius: 16,
-    backgroundColor: "#F2F2F2",
+    borderRadius: radius.xl,
+    backgroundColor: colors.surfaceMuted,
   },
   metaRow: {
-    gap: 8,
+    gap: spacing.xs,
   },
   ownerRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    gap: spacing.xs,
     minHeight: 44,
-  },
-  avatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-  },
-  avatarPlaceholder: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: "#F2F2F2",
-    alignItems: "center",
-    justifyContent: "center",
   },
   nameColumn: {
     flexShrink: 1,
@@ -139,11 +124,11 @@ const styles = StyleSheet.create({
   owner: {
     fontSize: 16,
     fontWeight: "700",
-    color: "black",
+    color: colors.textPrimary,
   },
   handle: {
     fontSize: 13,
-    color: "#8A8F98",
+    color: colors.textTertiary,
   },
   infoRow: {
     flexDirection: "row",
@@ -152,7 +137,7 @@ const styles = StyleSheet.create({
   },
   infoText: {
     fontSize: 13,
-    color: "#5B5F66",
+    color: colors.textSecondary,
   },
   dot: {
     fontSize: 13,
@@ -161,6 +146,6 @@ const styles = StyleSheet.create({
   actionsRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
+    gap: spacing.xxs,
   },
 });

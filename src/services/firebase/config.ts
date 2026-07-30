@@ -30,7 +30,12 @@ function assertRequiredEnvVars(): void {
 
 assertRequiredEnvVars();
 
-const firebaseConfig = {
+// Exported (not just module-local) so multiAccountAuth.ts can initialize
+// additional NAMED FirebaseApp instances (one per stored account, plus one
+// transient staging instance) with the exact same project config — see that
+// file's own doc comment for why this is required rather than reusing the
+// single default `app` below for every account.
+export const firebaseConfig = {
   apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
   authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
   projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID,

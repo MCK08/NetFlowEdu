@@ -1,5 +1,8 @@
 import { StyleSheet, Text, TextInput, TextInputProps, View } from "react-native";
 
+import { colors } from "@theme/colors";
+import { radius } from "@theme/radius";
+
 interface TextFieldProps extends TextInputProps {
   label: string;
   errorMessage?: string;
@@ -13,7 +16,7 @@ export function TextField({ label, errorMessage, style, ...inputProps }: TextFie
       </Text>
       <TextInput
         style={[styles.input, errorMessage ? styles.inputError : null, style]}
-        placeholderTextColor="#8A8F98"
+        placeholderTextColor={colors.textTertiary}
         accessibilityLabel={label}
         accessibilityLabelledBy={`${label}-label`}
         {...inputProps}
@@ -38,16 +41,16 @@ const styles = StyleSheet.create({
   input: {
     minHeight: 48,
     borderWidth: 1,
-    borderColor: "#D0D5DD",
-    borderRadius: 10,
+    borderColor: colors.border,
+    borderRadius: radius.md,
     paddingHorizontal: 14,
     fontSize: 16,
   },
   inputError: {
-    borderColor: "#D92D20",
+    borderColor: colors.danger,
   },
   errorText: {
     fontSize: 13,
-    color: "#D92D20",
+    color: colors.danger,
   },
 });

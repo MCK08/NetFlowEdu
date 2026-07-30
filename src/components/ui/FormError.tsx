@@ -1,5 +1,9 @@
 import { StyleSheet, Text, View } from "react-native";
 
+import { colors } from "@theme/colors";
+import { radius } from "@theme/radius";
+import { spacing } from "@theme/spacing";
+
 export function FormError({ message }: { message: string | null }) {
   if (!message) return null;
   return (
@@ -11,12 +15,12 @@ export function FormError({ message }: { message: string | null }) {
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: "#FEF3F2",
-    borderRadius: 8,
-    padding: 12,
+    backgroundColor: colors.dangerMuted,
+    borderRadius: radius.sm,
+    padding: spacing.sm,
   },
   text: {
-    color: "#D92D20",
+    color: colors.danger,
     fontSize: 14,
   },
 });

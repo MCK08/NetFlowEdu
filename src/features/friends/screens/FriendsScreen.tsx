@@ -1,9 +1,15 @@
+import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useState } from "react";
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { EmptyState } from "@components/ui/EmptyState";
 import { useAuth } from "@features/authentication";
+import { colors } from "@theme/colors";
+import { radius } from "@theme/radius";
+import { spacing } from "@theme/spacing";
+import { typography } from "@theme/typography";
 import { Friendship } from "@/types/friendship";
 
 import { FriendRow } from "../components/FriendRow";
@@ -19,9 +25,15 @@ const SEGMENT_LABELS: Record<Segment, string> = {
 };
 
 const EMPTY_MESSAGES: Record<Segment, string> = {
-  friends: "Henüz arkadaşın yok.",
-  incoming: "Gelen istek yok.",
-  outgoing: "Gönderilen istek yok.",
+  friends: "Henüz arkadaşın yok",
+  incoming: "Gelen istek yok",
+  outgoing: "Gönderilen istek yok",
+};
+
+const EMPTY_ICONS: Record<Segment, keyof typeof Ionicons.glyphMap> = {
+  friends: "people-outline",
+  incoming: "mail-open-outline",
+  outgoing: "paper-plane-outline",
 };
 
 interface FriendsScreenProps {
@@ -123,7 +135,7 @@ export function FriendsScreen({ showBackButton = true }: FriendsScreenProps) {
       </View>
 
       {active.isLoading ? (
-        <ActivityIndicator color="black" style={styles.loading} />
+        <ActivityIndicator color={colors.textPrimary} style={styles.loading} />
       ) : active.errorMessage ? (
         <View style={styles.centered}>
           <Text style={styles.errorText}>{active.errorMessage}</Text>
@@ -139,9 +151,11 @@ export function FriendsScreen({ showBackButton = true }: FriendsScreenProps) {
           onEndReachedThreshold={0.5}
           onEndReached={() => loadMore(segment)}
           contentContainerStyle={styles.listContent}
-          ListEmptyComponent={<Text style={styles.emptyText}>{EMPTY_MESSAGES[segment]}</Text>}
+          ListEmptyComponent={<EmptyState icon={EMPTY_ICONS[segment]} title={EMPTY_MESSAGES[segment]} />}
           ListFooterComponent={
-            active.isLoadingMore ? <ActivityIndicator color="black" style={styles.loadingMore} /> : null
+            active.isLoadingMore ? (
+              <ActivityIndicator color={colors.textPrimary} style={styles.loadingMore} />
+            ) : null
           }
         />
       )}
@@ -152,14 +166,14 @@ export function FriendsScreen({ showBackButton = true }: FriendsScreenProps) {
 const styles = StyleSheet.create({
   flex: {
     flex: 1,
-    backgroundColor: "white",
+    backgroundColor: colors.background,
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 12,
-    paddingTop: 8,
+    paddingHorizontal: spacing.sm,
+    paddingTop: spacing.xs,
   },
   backButton: {
     minWidth: 44,
@@ -169,75 +183,66 @@ const styles = StyleSheet.create({
   },
   backText: {
     fontSize: 28,
-    color: "black",
+    color: colors.textPrimary,
   },
   title: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "black",
+    ...typography.title,
+    color: colors.textPrimary,
   },
   segmentRow: {
     flexDirection: "row",
-    paddingHorizontal: 12,
-    gap: 8,
-    marginTop: 8,
-    marginBottom: 8,
+    paddingHorizontal: spacing.sm,
+    gap: spacing.xs,
+    marginTop: spacing.xs,
+    marginBottom: spacing.xs,
   },
   segment: {
     flex: 1,
-    paddingVertical: 10,
-    borderRadius: 10,
-    backgroundColor: "#F7F7F8",
+    paddingVertical: spacing.xs,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
     alignItems: "center",
   },
   segmentActive: {
-    backgroundColor: "#3358D9",
+    backgroundColor: colors.primary,
   },
   segmentText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#5B5F66",
+    ...typography.caption,
+    color: colors.textSecondary,
     textAlign: "center",
   },
   segmentTextActive: {
-    color: "white",
+    color: colors.textInverse,
   },
   loading: {
-    marginTop: 40,
+    marginTop: spacing.xxxl,
   },
   centered: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    gap: 12,
-    paddingHorizontal: 24,
+    gap: spacing.sm,
+    paddingHorizontal: spacing.xl,
   },
   errorText: {
-    fontSize: 14,
-    color: "#5B5F66",
+    ...typography.body,
+    color: colors.textSecondary,
     textAlign: "center",
   },
   retryButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 10,
-    backgroundColor: "#F2F2F2",
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceMuted,
   },
   retryText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "black",
+    ...typography.bodyStrong,
+    color: colors.textPrimary,
   },
   listContent: {
-    paddingBottom: 24,
-  },
-  emptyText: {
-    fontSize: 14,
-    color: "#8A8F98",
-    textAlign: "center",
-    marginTop: 40,
+    paddingBottom: spacing.xl,
   },
   loadingMore: {
-    paddingVertical: 20,
+    paddingVertical: spacing.lg,
   },
 });

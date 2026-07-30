@@ -1,7 +1,15 @@
+import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { Pressable, StyleSheet, Text } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 
 import { ClassRoom } from "@/types/class";
+import { AnimatedPressable } from "@components/ui/AnimatedPressable";
+import { Avatar } from "@components/ui/Avatar";
+import { colors } from "@theme/colors";
+import { radius } from "@theme/radius";
+import { shadows } from "@theme/shadows";
+import { spacing } from "@theme/spacing";
+import { typography } from "@theme/typography";
 
 interface StudentClassCardProps {
   classRoom: ClassRoom;
@@ -9,32 +17,51 @@ interface StudentClassCardProps {
 
 export function StudentClassCard({ classRoom }: StudentClassCardProps) {
   return (
-    <Pressable
-      style={styles.card}
+    <AnimatedPressable
+      style={[styles.card, shadows.sm]}
       onPress={() => router.push({ pathname: "/(student)/class/[classId]", params: { classId: classRoom.id } })}
       accessibilityRole="button"
       accessibilityLabel={`${classRoom.name} sınıfını aç`}
     >
-      <Text style={styles.name}>{classRoom.name}</Text>
-      <Text style={styles.memberCount}>{classRoom.memberCount} üye</Text>
-    </Pressable>
+      <Avatar displayName={classRoom.name} size="lg" />
+      <View style={styles.textColumn}>
+        <Text style={styles.name} numberOfLines={1}>
+          {classRoom.name}
+        </Text>
+        <View style={styles.memberRow}>
+          <Ionicons name="people-outline" size={14} color={colors.textTertiary} />
+          <Text style={styles.memberCount}>{classRoom.memberCount} üye</Text>
+        </View>
+      </View>
+      <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+    </AnimatedPressable>
   );
 }
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: "#F7F7F8",
-    borderRadius: 16,
-    padding: 16,
-    gap: 4,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    backgroundColor: colors.surface,
+    borderRadius: radius.xl,
+    padding: spacing.md,
+  },
+  textColumn: {
+    flex: 1,
+    gap: 2,
   },
   name: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "black",
+    ...typography.subtitle,
+    color: colors.textPrimary,
+  },
+  memberRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
   },
   memberCount: {
-    fontSize: 13,
-    color: "#5B5F66",
+    ...typography.caption,
+    color: colors.textTertiary,
   },
 });

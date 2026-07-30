@@ -17,14 +17,20 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.netflowedu.app"
+      "bundleIdentifier": "com.netflowedu.app",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#0B0D12"
       },
-      "package": "com.netflowedu.app"
+      "package": "com.netflowedu.app",
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -40,10 +46,17 @@
           "photosPermission": "Fotoğraf seçebilmek için galeri erişimine izin verin."
         }
       ],
-      "expo-asset"
+      "expo-asset",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "7a7b80f6-dedf-48ea-bb43-c75a15272387"
+      }
     }
   }
 }

@@ -6,19 +6,21 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { ImageViewer } from "@components/ImageViewer";
+import { Avatar } from "@components/ui/Avatar";
+import { Card } from "@components/ui/Card";
+import { EmptyState } from "@components/ui/EmptyState";
+import { RoleBadge } from "@components/ui/RoleBadge";
+import { StatTile } from "@components/ui/StatTile";
 import { useAuth } from "@features/authentication";
 import { FriendshipButton } from "@features/friends";
+import { colors } from "@theme/colors";
+import { radius } from "@theme/radius";
+import { spacing } from "@theme/spacing";
+import { typography } from "@theme/typography";
 import { resolvePublicIdentity } from "@utils/publicIdentity";
 
 import { usePublicProfile } from "../hooks/usePublicProfile";
 import { usePublicUserQuestions } from "../hooks/usePublicUserQuestions";
-
-const ROLE_LABELS: Record<string, string> = {
-  student: "Öğrenci",
-  teacher: "Öğretmen",
-  organization_admin: "Kurum Yöneticisi",
-  platform_admin: "Platform Yöneticisi",
-};
 
 function formatDate(millis: number): string {
   if (!millis) return "-";
@@ -69,13 +71,7 @@ export function PublicProfileScreen({ userId }: PublicProfileScreenProps) {
       <Header />
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.avatarWrapper}>
-          {profile.photoURL ? (
-            <Image source={{ uri: profile.photoURL }} style={styles.avatar} contentFit="cover" />
-          ) : (
-            <View style={styles.avatarPlaceholder}>
-              <Ionicons name="person" size={40} color="#8A8F98" />
-            </View>
-          )}
+          <Avatar photoURL={profile.photoURL} displayName={identity.primaryName} size="xl" />
         </View>
 
         <Text style={styles.username}>{identity.primaryName}</Text>
@@ -83,29 +79,27 @@ export function PublicProfileScreen({ userId }: PublicProfileScreenProps) {
           <Text style={styles.displayName}>{identity.usernameHandle}</Text>
         ) : null}
 
-        <View style={styles.badge}>
-          <Text style={styles.badgeText}>{ROLE_LABELS[profile.role] ?? profile.role}</Text>
-        </View>
+        <RoleBadge role={profile.role} />
 
         {!isOwnProfile ? <FriendshipButton ownUid={firebaseUser?.uid} otherUid={userId} /> : null}
 
         <View style={styles.statsRow}>
-          <Stat label="Puan" value={String(profile.totalPoints)} />
-          <Stat label="Haftalık" value={String(profile.weeklyPoints)} />
-          <Stat label="Soru" value={String(questions.length)} />
+          <StatTile label="Puan" value={String(profile.totalPoints)} />
+          <StatTile label="Haftalık" value={String(profile.weeklyPoints)} />
+          <StatTile label="Soru" value={String(questions.length)} />
         </View>
 
-        <View style={styles.card}>
+        <Card style={styles.card}>
           {profile.organizationId ? <InfoRow label="Kurum" value={profile.organizationId} /> : null}
           <InfoRow label="Katılım Tarihi" value={formatDate(profile.createdAt)} />
-        </View>
+        </Card>
 
         <View style={styles.gridSection}>
           <Text style={styles.sectionTitle}>Herkese Açık Sorular</Text>
           {questionsLoading ? (
-            <ActivityIndicator color="black" />
+            <ActivityIndicator color={colors.textPrimary} />
           ) : questions.length === 0 ? (
-            <Text style={styles.emptyText}>Henüz herkese açık soru yok.</Text>
+            <EmptyState icon="images-outline" title="Henüz herkese açık soru yok" />
           ) : (
             <View style={styles.grid}>
               {questions.map((question) => (
@@ -129,15 +123,6 @@ export function PublicProfileScreen({ userId }: PublicProfileScreenProps) {
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.stat}>
-      <Text style={styles.statValue}>{value}</Text>
-      <Text style={styles.statLabel}>{label}</Text>
-    </View>
-  );
-}
-
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
     <View style={styles.infoRow}>
@@ -157,7 +142,7 @@ function Header() {
         accessibilityLabel="Geri"
         hitSlop={8}
       >
-        <Ionicons name="chevron-back" size={26} color="black" />
+        <Ionicons name="chevron-back" size={26} color={colors.textPrimary} />
       </Pressable>
       <Text style={styles.headerTitle}>Profil</Text>
     </View>
@@ -170,14 +155,14 @@ const GRID_ITEM_SIZE = "31.5%";
 const styles = StyleSheet.create({
   flex: {
     flex: 1,
-    backgroundColor: "white",
+    backgroundColor: colors.background,
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    paddingHorizontal: 16,
-    paddingTop: 8,
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.xs,
   },
   backButton: {
     minWidth: 44,
@@ -186,63 +171,36 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   headerTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "black",
+    ...typography.title,
+    color: colors.textPrimary,
   },
   centered: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 24,
+    paddingHorizontal: spacing.xl,
   },
   errorText: {
-    fontSize: 15,
-    color: "#5B5F66",
+    ...typography.subtitle,
+    color: colors.textSecondary,
     textAlign: "center",
   },
   content: {
-    padding: 24,
-    gap: 16,
+    padding: spacing.xl,
+    gap: spacing.md,
     alignItems: "center",
   },
   avatarWrapper: {
-    marginTop: 8,
-  },
-  avatar: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    backgroundColor: "#F2F2F2",
-  },
-  avatarPlaceholder: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    backgroundColor: "#F2F2F2",
-    alignItems: "center",
-    justifyContent: "center",
+    marginTop: spacing.xs,
   },
   username: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "black",
+    ...typography.title,
+    color: colors.textPrimary,
   },
   displayName: {
-    fontSize: 14,
-    color: "#5B5F66",
-    marginTop: -8,
-  },
-  badge: {
-    backgroundColor: "#F2F2F2",
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-  },
-  badgeText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#5B5F66",
+    ...typography.body,
+    color: colors.textSecondary,
+    marginTop: -spacing.xs,
   },
   statsRow: {
     flexDirection: "row",
@@ -250,53 +208,28 @@ const styles = StyleSheet.create({
     justifyContent: "space-around",
     marginTop: 4,
   },
-  stat: {
-    alignItems: "center",
-    gap: 2,
-  },
-  statValue: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "black",
-  },
-  statLabel: {
-    fontSize: 12,
-    color: "#8A8F98",
-  },
   card: {
     width: "100%",
-    backgroundColor: "#F7F7F8",
-    borderRadius: 16,
-    padding: 16,
-    gap: 12,
   },
   infoRow: {
     flexDirection: "row",
     justifyContent: "space-between",
   },
   infoLabel: {
-    fontSize: 14,
-    color: "#5B5F66",
+    ...typography.body,
+    color: colors.textSecondary,
   },
   infoValue: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "black",
+    ...typography.bodyStrong,
+    color: colors.textPrimary,
   },
   gridSection: {
     width: "100%",
-    gap: 12,
+    gap: spacing.sm,
   },
   sectionTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "black",
-  },
-  emptyText: {
-    fontSize: 14,
-    color: "#8A8F98",
-    textAlign: "center",
-    paddingVertical: 12,
+    ...typography.subtitle,
+    color: colors.textPrimary,
   },
   grid: {
     flexDirection: "row",
@@ -306,9 +239,9 @@ const styles = StyleSheet.create({
   gridItem: {
     width: GRID_ITEM_SIZE,
     aspectRatio: 1,
-    borderRadius: 8,
+    borderRadius: radius.sm,
     overflow: "hidden",
-    backgroundColor: "#F2F2F2",
+    backgroundColor: colors.surfaceMuted,
   },
   gridImage: {
     width: "100%",

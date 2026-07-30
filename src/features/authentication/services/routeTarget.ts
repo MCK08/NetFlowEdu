@@ -30,6 +30,7 @@ const EXACT_MATCH_AUTH_ROUTES: ResolvedRoute[] = [
   ROUTES.register,
   ROUTES.forgotPassword,
   ROUTES.verifyEmail,
+  ROUTES.googleOnboarding,
 ];
 
 // Whether the current segments already satisfy `target`, so RouteGuard only

@@ -1,14 +1,29 @@
 import { useState } from "react";
-import { ActivityIndicator, FlatList, StyleSheet, Text, View } from "react-native";
+import { FlatList, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { EmptyState } from "@components/ui/EmptyState";
+import { LoadingSkeleton } from "@components/ui/LoadingSkeleton";
 import { PrimaryButton } from "@components/ui/PrimaryButton";
 import { useAuth } from "@features/authentication";
+import { colors } from "@theme/colors";
+import { spacing } from "@theme/spacing";
+import { typography } from "@theme/typography";
 
 import { JoinClassModal } from "../components/JoinClassModal";
 import { StudentClassCard } from "../components/StudentClassCard";
 import { useStudentClasses } from "../hooks/useStudentClasses";
 import { ClassRoom } from "@/types/class";
+
+function ClassListSkeleton() {
+  return (
+    <View style={styles.skeletonList}>
+      {[0, 1, 2].map((key) => (
+        <LoadingSkeleton key={key} height={76} borderRadius={16} />
+      ))}
+    </View>
+  );
+}
 
 export function StudentClassesScreen() {
   const { firebaseUser } = useAuth();
@@ -38,11 +53,13 @@ export function StudentClassesScreen() {
         }
         ListEmptyComponent={
           isLoading ? (
-            <ActivityIndicator color="black" style={styles.loading} />
+            <ClassListSkeleton />
           ) : (
-            <Text style={styles.emptyText}>
-              Henüz bir sınıfa katılmadın. Öğretmeninden aldığın kodla katılabilirsin.
-            </Text>
+            <EmptyState
+              icon="school-outline"
+              title="Henüz bir sınıfa katılmadın"
+              description="Öğretmeninden aldığın kodla katılabilirsin."
+            />
           )
         }
       />
@@ -61,33 +78,27 @@ export function StudentClassesScreen() {
 const styles = StyleSheet.create({
   flex: {
     flex: 1,
-    backgroundColor: "white",
+    backgroundColor: colors.background,
   },
   list: {
-    paddingHorizontal: 20,
-    paddingBottom: 24,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.xl,
   },
   header: {
-    gap: 16,
-    paddingTop: 16,
-    paddingBottom: 20,
+    gap: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.lg,
   },
   title: {
-    fontSize: 22,
-    fontWeight: "700",
-    color: "black",
+    ...typography.displayLg,
+    fontSize: 26,
+    color: colors.textPrimary,
   },
   separator: {
-    height: 12,
+    height: spacing.sm,
   },
-  loading: {
-    marginTop: 40,
-  },
-  emptyText: {
-    fontSize: 14,
-    color: "#8A8F98",
-    textAlign: "center",
-    marginTop: 40,
-    paddingHorizontal: 32,
+  skeletonList: {
+    gap: spacing.sm,
+    marginTop: spacing.xs,
   },
 });
