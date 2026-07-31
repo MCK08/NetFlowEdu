@@ -1,18 +1,26 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Image } from "expo-image";
 import { router } from "expo-router";
 import { memo } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
+import {
+  FeedActionRail,
+  FeedAuthorHeader,
+  FeedCaption,
+  FeedImage,
+  FeedPill,
+  FeedScrim,
+} from "@components/feed";
 import { AnimatedPressable } from "@components/ui/AnimatedPressable";
 import { useAuth } from "@features/authentication";
 import { useProfileHandle } from "@features/profiles";
-import { SaveButton, useSavedQuestion } from "@features/questions";
-import { LikeButton, useLike } from "@features/social/likes";
+import { useSavedQuestion } from "@features/questions";
+import { useLike } from "@features/social/likes";
 import { colors, darkColors } from "@theme/colors";
 import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
-import { minTouchTarget } from "@theme/sizes";
+import { typography } from "@theme/typography";
+import { formatRelativeTime } from "@utils/feedFormat";
 import { Question } from "@/types/question";
 
 import { useNavigationGuard } from "@hooks/useNavigationGuard";
@@ -25,20 +33,17 @@ interface ClassFeedCardProps {
   bottomInset: number;
 }
 
-function formatCount(value: number): string {
-  // Large counts must not blow out the fixed-width action rail.
-  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
-  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}B`;
-  return String(value);
-}
+// Space the bottom overlay needs before the action rail may start, so the
+// rail never collides with the caption block underneath it.
+const BOTTOM_OVERLAY_RESERVE = 210;
 
 // One full-screen question in the class feed.
 //
 // Every social action here is the SAME production implementation the public
-// feed and question detail use (useLike, useSavedQuestion, useProfileHandle,
-// LikeButton, SaveButton) — this phase adds no parallel like/save/comment
-// system. Comments and answering intentionally navigate to the existing
-// screens rather than re-implementing those flows inline.
+// feed and question detail use (useLike, useSavedQuestion, useProfileHandle)
+// — this card owns no like/save/comment logic of its own. Comments and
+// answering intentionally navigate to the existing screens rather than
+// re-implementing those flows inline.
 //
 // memo'd on the props that actually change: without it, every like/save
 // count update in the list would re-render all mounted cards.
@@ -66,6 +71,8 @@ function ClassFeedCardComponent({
   // so tapping "Cevapla" never blocks a legitimate tap on comments.
   const guardedNavigate = useNavigationGuard();
   const isTeacherPost = question.posterRole === "teacher";
+  const subject = question.subject?.trim();
+  const postedAt = formatRelativeTime(question.createdAt);
 
   function openOwnerProfile() {
     if (!question.ownerId) return;
@@ -96,86 +103,49 @@ function ClassFeedCardComponent({
 
   return (
     <View style={[styles.card, { height }]}>
-      <Image
-        source={{ uri: question.imageUrl }}
-        style={styles.image}
-        // contain (not cover): a maths question cropped at the edges is
-        // unreadable, which defeats the entire point of the feed.
-        contentFit="contain"
-        transition={120}
-        accessibilityLabel="Soru görseli"
-      />
+      <FeedImage uri={question.imageUrl} contentFit="contain" accessibilityLabel="Soru görseli" />
 
-      {/* Scrims keep white text legible over arbitrary question images
-          without washing out the question itself. */}
-      <View pointerEvents="none" style={[styles.topScrim, { height: topInset + 72 }]} />
-      <View pointerEvents="none" style={[styles.bottomScrim, { height: bottomInset + 190 }]} />
+      {/* Gradient scrims keep the overlays legible over an arbitrary
+          question image without washing out the question itself. */}
+      <FeedScrim placement="top" height={topInset + 96} />
+      <FeedScrim placement="bottom" height={bottomInset + BOTTOM_OVERLAY_RESERVE + 60} />
 
-      <View style={[styles.actionRail, { bottom: bottomInset + 148 }]}>
-        <LikeButton liked={liked} likeCount={likeCount} onPress={toggle} />
-
-        <AnimatedPressable
-          onPress={openComments}
-          style={styles.actionButton}
-          accessibilityRole="button"
-          accessibilityLabel={`Yorumlar, ${question.commentCount}`}
-        >
-          <Ionicons name="chatbubble-outline" size={26} color={colors.textInverse} />
-          <Text style={styles.actionCount}>{formatCount(question.commentCount)}</Text>
-        </AnimatedPressable>
-
-        <View
-          style={styles.actionButton}
-          accessible
-          accessibilityLabel={`Cevap sayısı, ${question.answerCount}`}
-        >
-          <Ionicons name="documents-outline" size={26} color={colors.textInverse} />
-          <Text style={styles.actionCount}>{formatCount(question.answerCount)}</Text>
-        </View>
-
-        <SaveButton saved={saved} onPress={toggleSaved} />
+      <View
+        style={[styles.actionRail, { bottom: bottomInset + BOTTOM_OVERLAY_RESERVE }]}
+        pointerEvents="box-none"
+      >
+        <FeedActionRail
+          liked={liked}
+          likeCount={likeCount}
+          onToggleLike={toggle}
+          commentCount={question.commentCount}
+          onOpenComments={openComments}
+          answerCount={question.answerCount}
+          saved={saved}
+          onToggleSave={toggleSaved}
+        />
       </View>
 
-      <View style={[styles.bottomBar, { paddingBottom: bottomInset + 16 }]}>
-        <AnimatedPressable
-          style={styles.posterRow}
+      <View style={[styles.bottomBar, { paddingBottom: bottomInset + spacing.md }]}>
+        <FeedAuthorHeader
+          photoURL={photoURL}
+          primaryName={primaryName}
+          usernameHandle={usernameHandle}
+          // Teacher and student questions now share one class feed, so who
+          // posted is no longer implicit the way it was when only teachers
+          // could publish here.
+          roleLabel={isTeacherPost ? "Öğretmen" : "Öğrenci"}
           onPress={openOwnerProfile}
-          accessibilityRole="button"
-          accessibilityLabel="Profili görüntüle"
-        >
-          {photoURL ? (
-            <Image source={{ uri: photoURL }} style={styles.avatar} contentFit="cover" />
-          ) : (
-            <View style={styles.avatarPlaceholder}>
-              <Ionicons name="person" size={16} color={colors.textInverse} />
-            </View>
-          )}
-          <View style={styles.nameColumn}>
-            <View style={styles.nameRow}>
-              <Text style={styles.posterName} numberOfLines={1}>
-                {primaryName}
-              </Text>
-              {/* Who actually posted this — teacher and student questions
-                  now share the same class feed, so this is no longer
-                  implicit the way it was when only teachers could post.
-                  Same pill pattern as ChatMessageBubble's "Öğretmen" badge. */}
-              <View style={[styles.roleBadge, isTeacherPost ? styles.roleBadgeTeacher : styles.roleBadgeStudent]}>
-                <Text style={styles.roleBadgeText}>{isTeacherPost ? "Öğretmen" : "Öğrenci"}</Text>
-              </View>
-            </View>
-            {usernameHandle ? (
-              <Text style={styles.handle} numberOfLines={1}>
-                {usernameHandle}
-              </Text>
-            ) : null}
-          </View>
-          <View style={styles.classBadge}>
-            <Ionicons name="school-outline" size={12} color={colors.textInverse} />
-            <Text style={styles.classBadgeText} numberOfLines={1}>
-              {className}
-            </Text>
-          </View>
-        </AnimatedPressable>
+          meta={
+            <>
+              {subject ? <FeedPill label={subject} icon="pricetag-outline" /> : null}
+              <FeedPill label={className} icon="school-outline" />
+              {postedAt ? <Text style={styles.timestamp}>{postedAt}</Text> : null}
+            </>
+          }
+        />
+
+        <FeedCaption description={question.description} />
 
         <AnimatedPressable
           onPress={openAnswer}
@@ -198,40 +168,9 @@ const styles = StyleSheet.create({
     width: "100%",
     backgroundColor: darkColors.background,
   },
-  image: {
-    flex: 1,
-  },
-  topScrim: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: "rgba(11,11,15,0.55)",
-  },
-  bottomScrim: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: "rgba(11,11,15,0.72)",
-  },
   actionRail: {
     position: "absolute",
     right: spacing.sm,
-    alignItems: "center",
-    gap: 18,
-  },
-  actionButton: {
-    alignItems: "center",
-    justifyContent: "center",
-    gap: spacing.xxs,
-    minWidth: minTouchTarget,
-    minHeight: minTouchTarget,
-  },
-  actionCount: {
-    color: colors.textInverse,
-    fontSize: 12,
-    fontWeight: "600",
   },
   bottomBar: {
     position: "absolute",
@@ -239,92 +178,30 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     paddingHorizontal: spacing.md,
+    // Clears the action rail so a long name or caption can never run
+    // underneath it.
+    paddingRight: 78,
     gap: spacing.sm,
   },
-  posterRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    minHeight: minTouchTarget,
-    paddingRight: 72,
-  },
-  avatar: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-  },
-  avatarPlaceholder: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: "rgba(255,255,255,0.22)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  nameColumn: {
-    flexShrink: 1,
-  },
-  nameRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  posterName: {
+  timestamp: {
+    ...typography.label,
     color: colors.textInverse,
-    fontSize: 15,
-    fontWeight: "700",
-    flexShrink: 1,
-  },
-  roleBadge: {
-    borderRadius: 6,
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-  },
-  roleBadgeTeacher: {
-    backgroundColor: colors.primary,
-  },
-  roleBadgeStudent: {
-    backgroundColor: "rgba(255,255,255,0.22)",
-  },
-  roleBadgeText: {
-    fontSize: 10,
-    fontWeight: "700",
-    color: colors.textInverse,
-  },
-  handle: {
-    color: colors.textInverse,
-    fontSize: 12,
-    opacity: 0.8,
-  },
-  classBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.xxs,
-    flexShrink: 1,
-    maxWidth: 140,
-    backgroundColor: "rgba(255,255,255,0.16)",
-    borderRadius: radius.pill,
-    paddingHorizontal: 10,
-    paddingVertical: spacing.xxs,
-  },
-  classBadgeText: {
-    color: colors.textInverse,
-    fontSize: 11,
-    fontWeight: "600",
-    flexShrink: 1,
+    opacity: 0.7,
   },
   answerButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: spacing.xs,
-    minHeight: 50,
-    borderRadius: 14,
+    alignSelf: "flex-start",
+    minHeight: 48,
+    paddingHorizontal: spacing.xl,
+    borderRadius: radius.pill,
     backgroundColor: colors.textInverse,
   },
   answerButtonText: {
-    color: darkColors.background,
-    fontSize: 16,
+    ...typography.subtitle,
     fontWeight: "700",
+    color: darkColors.background,
   },
 });

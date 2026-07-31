@@ -1,16 +1,23 @@
-import { Ionicons } from "@expo/vector-icons";
-import { Image } from "expo-image";
 import { router } from "expo-router";
+import { memo } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
-import { AnimatedPressable } from "@components/ui/AnimatedPressable";
+import {
+  FeedActionRail,
+  FeedAuthorHeader,
+  FeedCaption,
+  FeedImage,
+  FeedPill,
+  FeedScrim,
+} from "@components/feed";
 import { useAuth } from "@features/authentication";
 import { useProfileHandle } from "@features/profiles";
-import { SaveButton, useSavedQuestion } from "@features/questions";
-import { LikeButton, useLike } from "@features/social/likes";
-import { colors } from "@theme/colors";
+import { useSavedQuestion } from "@features/questions";
+import { useLike } from "@features/social/likes";
+import { colors, darkColors } from "@theme/colors";
 import { spacing } from "@theme/spacing";
-import { minTouchTarget } from "@theme/sizes";
+import { typography } from "@theme/typography";
+import { formatRelativeTime } from "@utils/feedFormat";
 
 import { Question } from "../types";
 
@@ -25,21 +32,23 @@ const VISIBILITY_LABELS: Record<Question["visibility"], string> = {
   class: "Sınıf",
 };
 
-function formatDate(createdAt: number): string {
-  if (!createdAt) return "";
-  return new Date(createdAt).toLocaleDateString("tr-TR", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  });
-}
+const ROLE_LABELS: Record<Question["posterRole"], string> = {
+  teacher: "Öğretmen",
+  student: "Öğrenci",
+};
+
+// Height reserved at the bottom for the overlay block, so the action rail
+// sits clear of the author/caption content.
+const BOTTOM_OVERLAY_RESERVE = 150;
 
 // Tapping anywhere on the card opens Question Detail, which is the single
 // entry point into the answer flow (its own "Cevapla" button pushes
 // AnswerScreen) — nested Pressables (owner row, like button) still win
 // over the card's own tap, RN only fires the innermost responder for a
-// touch.
-export function FeedCard({ question, height }: FeedCardProps) {
+// touch. That is also why the comment/answer counts stay non-interactive
+// here: making them their own Pressables would silently change where a tap
+// in that area navigates.
+function FeedCardComponent({ question, height }: FeedCardProps) {
   const { firebaseUser } = useAuth();
   const { primaryName, usernameHandle, photoURL } = useProfileHandle(question.ownerId);
   const { liked, likeCount, toggle } = useLike({
@@ -49,6 +58,9 @@ export function FeedCard({ question, height }: FeedCardProps) {
     uid: firebaseUser?.uid,
   });
   const { saved, toggle: toggleSaved } = useSavedQuestion(question, firebaseUser?.uid);
+
+  const subject = question.subject?.trim();
+  const postedAt = formatRelativeTime(question.createdAt);
 
   function openDetail() {
     router.push({ pathname: "/(student)/question/[questionId]", params: { questionId: question.id } });
@@ -66,148 +78,72 @@ export function FeedCard({ question, height }: FeedCardProps) {
       accessibilityRole="button"
       accessibilityLabel="Soruyu aç"
     >
-      <Image source={{ uri: question.imageUrl }} style={styles.image} contentFit="cover" />
+      <FeedImage uri={question.imageUrl} contentFit="cover" accessibilityLabel="Soru görseli" />
 
-      <View style={styles.infoOverlay}>
-        <AnimatedPressable
-          style={styles.ownerRow}
-          onPress={openOwnerProfile}
-          accessibilityRole="button"
-          accessibilityLabel="Profili görüntüle"
-        >
-          {photoURL ? (
-            <Image source={{ uri: photoURL }} style={styles.avatar} contentFit="cover" />
-          ) : (
-            <View style={styles.avatarPlaceholder}>
-              <Ionicons name="person" size={16} color={colors.textInverse} />
-            </View>
-          )}
-          <View style={styles.nameColumn}>
-            <Text style={styles.username} numberOfLines={1}>
-              {primaryName}
-            </Text>
-            {usernameHandle ? (
-              <Text style={styles.handle} numberOfLines={1}>
-                {usernameHandle}
-              </Text>
-            ) : null}
-          </View>
-        </AnimatedPressable>
-        <View style={styles.metaRow}>
-          <Text style={styles.date}>{formatDate(question.createdAt)}</Text>
-          <Text style={styles.dot}>·</Text>
-          <View style={styles.visibilityBadge}>
-            <Text style={styles.visibilityText}>{VISIBILITY_LABELS[question.visibility]}</Text>
-          </View>
-        </View>
+      {/* The public feed previously laid white text straight onto the
+          photograph with no scrim at all — unreadable over any light
+          question image. */}
+      <FeedScrim placement="top" height={96} />
+      <FeedScrim placement="bottom" height={BOTTOM_OVERLAY_RESERVE + 90} />
+
+      <View style={styles.actionRail} pointerEvents="box-none">
+        <FeedActionRail
+          liked={liked}
+          likeCount={likeCount}
+          onToggleLike={toggle}
+          commentCount={question.commentCount}
+          answerCount={question.answerCount}
+          saved={saved}
+          onToggleSave={toggleSaved}
+        />
       </View>
 
-      <View style={styles.actionRail}>
-        <LikeButton liked={liked} likeCount={likeCount} onPress={toggle} />
-        <View style={styles.actionButton}>
-          <Ionicons name="chatbubble-outline" size={26} color={colors.textInverse} />
-          <Text style={styles.actionCount}>{question.commentCount}</Text>
-        </View>
-        <View style={styles.actionButton}>
-          <Ionicons name="documents-outline" size={26} color={colors.textInverse} />
-          <Text style={styles.actionCount}>{question.answerCount}</Text>
-        </View>
-        <SaveButton saved={saved} onPress={toggleSaved} />
+      <View style={styles.infoOverlay}>
+        <FeedAuthorHeader
+          photoURL={photoURL}
+          primaryName={primaryName}
+          usernameHandle={usernameHandle}
+          roleLabel={ROLE_LABELS[question.posterRole] ?? null}
+          onPress={openOwnerProfile}
+          meta={
+            <>
+              {subject ? <FeedPill label={subject} icon="pricetag-outline" /> : null}
+              <FeedPill label={VISIBILITY_LABELS[question.visibility]} />
+              {postedAt ? <Text style={styles.timestamp}>{postedAt}</Text> : null}
+            </>
+          }
+        />
+
+        <FeedCaption description={question.description} />
       </View>
     </Pressable>
   );
 }
 
+// memo'd for the same reason as ClassFeedCard: a like/save toggle on one
+// card re-renders FeedScreen's list, and without this every mounted card
+// re-renders with it.
+export const FeedCard = memo(FeedCardComponent);
+
 const styles = StyleSheet.create({
   card: {
     width: "100%",
-    backgroundColor: "black",
+    backgroundColor: darkColors.background,
   },
-  image: {
-    flex: 1,
+  actionRail: {
+    position: "absolute",
+    right: spacing.sm,
+    bottom: BOTTOM_OVERLAY_RESERVE,
   },
   infoOverlay: {
     position: "absolute",
     left: spacing.md,
-    bottom: 32,
-    right: 88,
-    gap: spacing.xs,
+    right: 78,
+    bottom: spacing.xl,
   },
-  ownerRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.xs,
-    minHeight: minTouchTarget,
-  },
-  avatar: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-  },
-  avatarPlaceholder: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: "rgba(255,255,255,0.25)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  nameColumn: {
-    flexShrink: 1,
-  },
-  username: {
+  timestamp: {
+    ...typography.label,
     color: colors.textInverse,
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  handle: {
-    color: colors.textInverse,
-    fontSize: 12,
-    opacity: 0.85,
-  },
-  metaRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  date: {
-    color: colors.textInverse,
-    fontSize: 13,
-    opacity: 0.85,
-  },
-  dot: {
-    color: colors.textInverse,
-    fontSize: 13,
-    opacity: 0.6,
-  },
-  visibilityBadge: {
-    backgroundColor: "rgba(255,255,255,0.2)",
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-  },
-  visibilityText: {
-    color: colors.textInverse,
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  actionRail: {
-    position: "absolute",
-    right: spacing.md,
-    bottom: 32,
-    alignItems: "center",
-    gap: 18,
-  },
-  actionButton: {
-    alignItems: "center",
-    gap: spacing.xxs,
-    minWidth: minTouchTarget,
-    minHeight: minTouchTarget,
-    justifyContent: "center",
-  },
-  actionCount: {
-    color: colors.textInverse,
-    fontSize: 12,
-    fontWeight: "600",
+    opacity: 0.7,
   },
 });
