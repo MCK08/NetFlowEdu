@@ -1,10 +1,21 @@
+import { memo } from "react";
 import { StyleSheet, Text, View } from "react-native";
+
+import { colors } from "@theme/colors";
+import { radius } from "@theme/radius";
+import { spacing } from "@theme/spacing";
+import { typography } from "@theme/typography";
 
 interface ChatDateSeparatorProps {
   label: string;
 }
 
-export function ChatDateSeparator({ label }: ChatDateSeparatorProps) {
+// The label itself is produced by services/chatDateGrouping's
+// formatDateSeparatorLabel ("Bugün" / "Dün" / an absolute Turkish date) —
+// this component only draws it.
+export const ChatDateSeparator = memo(function ChatDateSeparator({
+  label,
+}: ChatDateSeparatorProps) {
   return (
     <View style={styles.row}>
       <View style={styles.pill}>
@@ -12,22 +23,21 @@ export function ChatDateSeparator({ label }: ChatDateSeparatorProps) {
       </View>
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   row: {
     alignItems: "center",
-    paddingVertical: 8,
+    paddingVertical: spacing.sm,
   },
   pill: {
-    backgroundColor: "#F2F2F2",
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 4,
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xxs,
   },
   text: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#5B5F66",
+    ...typography.label,
+    color: colors.textSecondary,
   },
 });

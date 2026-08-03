@@ -1,11 +1,12 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
   Keyboard,
   KeyboardAvoidingView,
+  ListRenderItemInfo,
   NativeScrollEvent,
   NativeSyntheticEvent,
   Platform,
@@ -18,12 +19,24 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { EmptyState } from "@components/ui/EmptyState";
 import { useAuth } from "@features/authentication";
+import { colors } from "@theme/colors";
+import { radius } from "@theme/radius";
+import { shadows } from "@theme/shadows";
+import { spacing } from "@theme/spacing";
+import { typography } from "@theme/typography";
 
 import { ChatComposer } from "../components/ChatComposer";
 import { ChatDateSeparator } from "../components/ChatDateSeparator";
+import { ChatErrorBanner } from "../components/ChatErrorBanner";
+import { ChatHeader } from "../components/ChatHeader";
+import { ChatLoadingSkeleton } from "../components/ChatLoadingSkeleton";
 import { ChatMessageBubble } from "../components/ChatMessageBubble";
 import { ChatSender, useClassChat } from "../hooks/useClassChat";
-import { ChatListItem, groupMessagesWithDateSeparators } from "../services/chatDateGrouping";
+import {
+  buildChatTimeline,
+  chatTimelineSignature,
+  ChatTimelineItem,
+} from "../services/chatTimeline";
 
 interface ClassChatScreenProps {
   classId: string;
@@ -38,7 +51,7 @@ const AT_BOTTOM_THRESHOLD_PX = 60;
 // caller's own role from AuthProvider and renders identically either way.
 export function ClassChatScreen({ classId }: ClassChatScreenProps) {
   const { firebaseUser, profile } = useAuth();
-  const listRef = useRef<FlatList<ChatListItem>>(null);
+  const listRef = useRef<FlatList<ChatTimelineItem>>(null);
   const isAtBottomRef = useRef(true);
   const lastNewestIdRef = useRef<string | null>(null);
   const [showNewMessageIndicator, setShowNewMessageIndicator] = useState(false);
@@ -88,12 +101,15 @@ export function ClassChatScreen({ classId }: ClassChatScreenProps) {
     }
   }, [messages]);
 
-  function handleScroll(event: NativeSyntheticEvent<NativeScrollEvent>) {
-    const offsetY = event.nativeEvent.contentOffset.y;
-    const atBottom = offsetY < AT_BOTTOM_THRESHOLD_PX;
-    isAtBottomRef.current = atBottom;
-    if (atBottom && showNewMessageIndicator) setShowNewMessageIndicator(false);
-  }
+  const handleScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const offsetY = event.nativeEvent.contentOffset.y;
+      const atBottom = offsetY < AT_BOTTOM_THRESHOLD_PX;
+      isAtBottomRef.current = atBottom;
+      if (atBottom) setShowNewMessageIndicator(false);
+    },
+    [],
+  );
 
   function scrollToBottom() {
     listRef.current?.scrollToOffset({ offset: 0, animated: true });
@@ -102,29 +118,66 @@ export function ClassChatScreen({ classId }: ClassChatScreenProps) {
 
   // Ascending (oldest first) grouped-with-separators, then reversed ONCE
   // for the inverted FlatList, which wants its data newest-first.
-  const invertedData = [...groupMessagesWithDateSeparators(messages)].reverse();
+  //
+  // Memoized on a content signature rather than on `messages` itself:
+  // useClassChat rebuilds that array on every render, so keying the memo on
+  // its identity would rebuild the entire timeline — and hand FlatList a
+  // new data array — on every keystroke in the composer.
+  const signature = chatTimelineSignature(messages);
+  const invertedData = useMemo(
+    () => buildChatTimeline(messages).reverse(),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [signature],
+  );
+
+  // `retryFailed` is a fresh closure on every render of the hook, which
+  // would defeat memoization of every bubble. A ref keeps the identity
+  // stable while always calling the latest implementation.
+  const retryFailedRef = useRef(retryFailed);
+  retryFailedRef.current = retryFailed;
+  const handleRetry = useCallback((clientMessageId: string) => {
+    retryFailedRef.current(clientMessageId);
+  }, []);
+
+  const ownUid = firebaseUser?.uid;
+
+  const keyExtractor = useCallback((item: ChatTimelineItem) => item.id, []);
+
+  const renderItem = useCallback(
+    ({ item }: ListRenderItemInfo<ChatTimelineItem>) =>
+      item.type === "separator" ? (
+        <ChatDateSeparator label={item.label} />
+      ) : (
+        <ChatMessageBubble
+          message={item.message}
+          isOwnMessage={item.message.senderId === ownUid}
+          isFirstInGroup={item.isFirstInGroup}
+          isLastInGroup={item.isLastInGroup}
+          onRetry={handleRetry}
+        />
+      ),
+    [ownUid, handleRetry],
+  );
+
+  const handleEndReached = useCallback(() => {
+    if (hasMoreOlder) loadOlderMessages();
+  }, [hasMoreOlder, loadOlderMessages]);
 
   return (
     <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
-      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-        <View style={styles.header}>
-          <Pressable
-            onPress={() => router.back()}
-            style={styles.backButton}
-            accessibilityRole="button"
-            accessibilityLabel="Geri"
-          >
-            <Ionicons name="chevron-back" size={24} color="black" />
-          </Pressable>
-          <Text style={styles.headerTitle}>Sınıf Sohbeti</Text>
-        </View>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        // Unchanged from the previous implementation: iOS needs the padding
+        // behavior, Android's default windowSoftInputMode already resizes.
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
+        <ChatHeader onBack={() => router.back()} />
 
         {isLoading ? (
-          <View style={styles.centered}>
-            <ActivityIndicator color="black" />
-          </View>
+          <ChatLoadingSkeleton />
         ) : error ? (
           <View style={styles.centered}>
+            <Ionicons name="cloud-offline-outline" size={32} color={colors.textTertiary} />
             <Text style={styles.errorText}>{error}</Text>
           </View>
         ) : (
@@ -134,30 +187,21 @@ export function ClassChatScreen({ classId }: ClassChatScreenProps) {
                 ref={listRef}
                 inverted
                 data={invertedData}
-                keyExtractor={(item) => item.id}
-                renderItem={({ item }) =>
-                  item.type === "separator" ? (
-                    <ChatDateSeparator label={item.label} />
-                  ) : (
-                    <ChatMessageBubble
-                      message={item.message}
-                      isOwnMessage={item.message.senderId === firebaseUser?.uid}
-                      onRetry={retryFailed}
-                    />
-                  )
-                }
+                keyExtractor={keyExtractor}
+                renderItem={renderItem}
                 contentContainerStyle={styles.listContent}
                 onScroll={handleScroll}
                 scrollEventThrottle={16}
-                onEndReached={() => {
-                  if (hasMoreOlder) loadOlderMessages();
-                }}
+                onEndReached={handleEndReached}
                 onEndReachedThreshold={0.3}
                 keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
                 ListFooterComponent={
+                  // Footer of an inverted list renders at the TOP, which is
+                  // exactly where older messages load in.
                   isLoadingOlder ? (
                     <View style={styles.loadingOlder}>
-                      <ActivityIndicator color="black" />
+                      <ActivityIndicator color={colors.textTertiary} />
                     </View>
                   ) : null
                 }
@@ -165,8 +209,8 @@ export function ClassChatScreen({ classId }: ClassChatScreenProps) {
                   <View style={styles.emptyStateWrapper}>
                     <EmptyState
                       icon="chatbubble-ellipses-outline"
-                      title="Henüz mesaj yok"
-                      description="İlk mesajı sen gönder."
+                      title="Sohbet henüz başlamadı"
+                      description="Sınıfına ilk mesajı göndererek konuşmayı başlat."
                     />
                   </View>
                 }
@@ -176,18 +220,18 @@ export function ClassChatScreen({ classId }: ClassChatScreenProps) {
             {showNewMessageIndicator ? (
               <Pressable
                 onPress={scrollToBottom}
-                style={styles.newMessagePill}
+                style={[styles.newMessagePill, shadows.md]}
                 accessibilityRole="button"
                 accessibilityLabel="Yeni mesajlara git"
               >
-                <Ionicons name="arrow-down" size={14} color="white" />
+                <Ionicons name="arrow-down" size={14} color={colors.textInverse} />
                 <Text style={styles.newMessagePillText}>Yeni Mesaj</Text>
               </Pressable>
             ) : null}
           </View>
         )}
 
-        {sendError ? <Text style={styles.sendErrorText}>{sendError}</Text> : null}
+        {sendError ? <ChatErrorBanner message={sendError} /> : null}
 
         <ChatComposer draft={draft} onChangeDraft={setDraft} isSending={isSending} onSend={send} />
       </KeyboardAvoidingView>
@@ -198,49 +242,30 @@ export function ClassChatScreen({ classId }: ClassChatScreenProps) {
 const styles = StyleSheet.create({
   flex: {
     flex: 1,
-    backgroundColor: "white",
-  },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    paddingHorizontal: 8,
-    paddingBottom: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: "#EDEEF0",
-  },
-  backButton: {
-    minWidth: 44,
-    minHeight: 44,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  headerTitle: {
-    fontSize: 17,
-    fontWeight: "700",
-    color: "black",
+    backgroundColor: colors.background,
   },
   centered: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 24,
+    gap: spacing.sm,
+    paddingHorizontal: spacing.xl,
   },
   errorText: {
-    fontSize: 14,
-    color: "#5B5F66",
+    ...typography.body,
+    color: colors.textSecondary,
     textAlign: "center",
   },
   listContent: {
-    paddingVertical: 12,
+    paddingVertical: spacing.sm,
     flexGrow: 1,
     justifyContent: "flex-end",
   },
   loadingOlder: {
-    paddingVertical: 16,
+    paddingVertical: spacing.md,
   },
   emptyStateWrapper: {
-    marginTop: 40,
+    marginTop: spacing.xxxl,
     // Cancels the inverted transform so the empty state reads right-side
     // up (ListEmptyComponent is otherwise flipped like every other child
     // of an inverted FlatList).
@@ -248,31 +273,19 @@ const styles = StyleSheet.create({
   },
   newMessagePill: {
     position: "absolute",
-    bottom: 12,
+    bottom: spacing.sm,
     alignSelf: "center",
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    backgroundColor: "#3358D9",
-    borderRadius: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 3,
+    gap: spacing.xxs,
+    backgroundColor: colors.primary,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
   },
   newMessagePillText: {
-    color: "white",
-    fontSize: 13,
+    ...typography.caption,
     fontWeight: "700",
-  },
-  sendErrorText: {
-    color: "#D92D20",
-    fontSize: 13,
-    textAlign: "center",
-    paddingHorizontal: 16,
-    paddingTop: 6,
+    color: colors.textInverse,
   },
 });
