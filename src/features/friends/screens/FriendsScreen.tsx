@@ -1,11 +1,16 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { useState } from "react";
-import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from "react-native";
+import { useCallback, useMemo, useState } from "react";
+import { ActivityIndicator, FlatList, ListRenderItemInfo, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { Divider } from "@components/ui/Divider";
 import { EmptyState } from "@components/ui/EmptyState";
+import { IconButton } from "@components/ui/IconButton";
+import { LoadingSkeleton } from "@components/ui/LoadingSkeleton";
+import { PrimaryButton } from "@components/ui/PrimaryButton";
 import { useAuth } from "@features/authentication";
+import { useNavigationGuard } from "@hooks/useNavigationGuard";
 import { colors } from "@theme/colors";
 import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
@@ -13,6 +18,7 @@ import { typography } from "@theme/typography";
 import { Friendship } from "@/types/friendship";
 
 import { FriendRow } from "../components/FriendRow";
+import { SocialSegment, SocialSegmentControl } from "../components/SocialSegmentControl";
 import { useFriendsScreen } from "../hooks/useFriendsScreen";
 import { getOtherParticipantId } from "../services/friendshipState";
 
@@ -20,35 +26,58 @@ type Segment = "friends" | "incoming" | "outgoing";
 
 const SEGMENT_LABELS: Record<Segment, string> = {
   friends: "Arkadaşlar",
-  incoming: "Gelen İstekler",
-  outgoing: "Gönderilen İstekler",
+  incoming: "Gelen",
+  outgoing: "Gönderilen",
 };
 
-const EMPTY_MESSAGES: Record<Segment, string> = {
-  friends: "Henüz arkadaşın yok",
-  incoming: "Gelen istek yok",
-  outgoing: "Gönderilen istek yok",
+const EMPTY_CONTENT: Record<Segment, { icon: keyof typeof Ionicons.glyphMap; title: string; description: string }> = {
+  friends: {
+    icon: "people-outline",
+    title: "Henüz arkadaşın yok",
+    description: "Arkadaş Bul ile sınıf arkadaşlarını ve öğretmenlerini ekleyebilirsin.",
+  },
+  incoming: {
+    icon: "mail-open-outline",
+    title: "Gelen istek yok",
+    description: "Biri sana arkadaşlık isteği gönderdiğinde burada görünecek.",
+  },
+  outgoing: {
+    icon: "paper-plane-outline",
+    title: "Gönderilen istek yok",
+    description: "Gönderdiğin ve henüz yanıtlanmayan istekler burada listelenir.",
+  },
 };
 
-const EMPTY_ICONS: Record<Segment, keyof typeof Ionicons.glyphMap> = {
-  friends: "people-outline",
-  incoming: "mail-open-outline",
-  outgoing: "paper-plane-outline",
-};
+const SEGMENT_ORDER: Segment[] = ["friends", "incoming", "outgoing"];
+
+function ListSkeleton() {
+  return (
+    <View style={styles.skeletonList} accessible accessibilityLabel="Liste yükleniyor">
+      {[0, 1, 2, 3].map((key) => (
+        <View key={key} style={styles.skeletonRow}>
+          <LoadingSkeleton width={40} height={40} borderRadius={20} />
+          <View style={styles.skeletonText}>
+            <LoadingSkeleton width={150} height={14} borderRadius={radius.sm} />
+            <LoadingSkeleton width={90} height={10} borderRadius={radius.sm} />
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+}
 
 interface FriendsScreenProps {
   // The student route pushes this as a stack screen (back button makes
-  // sense); the teacher route mounts it as a TAB root (spec section 2) —
-  // a "‹" back chevron on a tab root has nothing to go back to. Defaults
-  // to true so every existing call site keeps its current behavior.
+  // sense); the teacher route mounts it as a TAB root — a back chevron on
+  // a tab root has nothing to go back to.
   showBackButton?: boolean;
 }
 
-// Shared by both teacher and student route wrappers (spec section 11) —
-// the route file just renders this, no role-specific branching beyond the
-// header's back button.
+// Shared by both teacher and student route wrappers — the route file just
+// renders this, with no role-specific branching beyond the header's back
+// button and the role-correct public-profile path.
 export function FriendsScreen({ showBackButton = true }: FriendsScreenProps) {
-  const { firebaseUser } = useAuth();
+  const { firebaseUser, profile } = useAuth();
   const uid = firebaseUser?.uid;
   const {
     friends,
@@ -60,101 +89,137 @@ export function FriendsScreen({ showBackButton = true }: FriendsScreenProps) {
     acceptIncoming,
     declineIncoming,
     cancelOutgoing,
-    removeExistingFriend,
   } = useFriendsScreen(uid);
   const [segment, setSegment] = useState<Segment>("friends");
 
-  const sectionByKey = { friends, incoming, outgoing };
+  // One guard for the whole screen, keyed per user, instead of one focus
+  // listener per rendered row.
+  const guardedNavigate = useNavigationGuard();
+  const publicProfilePathname =
+    profile?.role === "teacher" ? "/(teacher)/user/[userId]" : "/(student)/user/[userId]";
+
+  const sectionByKey = useMemo(
+    () => ({ friends, incoming, outgoing }),
+    [friends, incoming, outgoing],
+  );
   const active = sectionByKey[segment];
 
-  function renderRow({ item }: { item: Friendship }) {
-    if (!uid) return null;
-    const otherUid = getOtherParticipantId(item, uid);
-    const isBusy = actioningId === item.id;
+  const segments: SocialSegment<Segment>[] = useMemo(
+    () =>
+      SEGMENT_ORDER.map((key) => ({
+        key,
+        label: SEGMENT_LABELS[key],
+        // Undefined while the section is still loading, so a badge never
+        // claims "0" for a list that has not arrived.
+        count: sectionByKey[key].isLoading ? undefined : sectionByKey[key].items.length,
+      })),
+    [sectionByKey],
+  );
 
-    if (segment === "friends") {
+  const openProfile = useCallback(
+    (otherUid: string) => {
+      guardedNavigate(`profile-${otherUid}`, () => {
+        router.push({ pathname: publicProfilePathname, params: { userId: otherUid } });
+      });
+    },
+    [guardedNavigate, publicProfilePathname],
+  );
+
+  const keyExtractor = useCallback((item: Friendship) => item.id, []);
+
+  const renderRow = useCallback(
+    ({ item }: ListRenderItemInfo<Friendship>) => {
+      if (!uid) return null;
+      const otherUid = getOtherParticipantId(item, uid);
+      const isBusy = actioningId === item.id;
+
+      if (segment === "incoming") {
+        return (
+          <FriendRow
+            uid={otherUid}
+            variant="incoming"
+            isBusy={isBusy}
+            onOpenProfile={() => openProfile(otherUid)}
+            onAccept={() => acceptIncoming(item, otherUid)}
+            onDecline={() => declineIncoming(item, otherUid)}
+          />
+        );
+      }
+      if (segment === "outgoing") {
+        return (
+          <FriendRow
+            uid={otherUid}
+            variant="outgoing"
+            isBusy={isBusy}
+            onOpenProfile={() => openProfile(otherUid)}
+            onDecline={() => cancelOutgoing(item, otherUid)}
+          />
+        );
+      }
       return (
         <FriendRow
           uid={otherUid}
           variant="friend"
           isBusy={isBusy}
-          onCancel={() => removeExistingFriend(item, otherUid)}
+          onOpenProfile={() => openProfile(otherUid)}
         />
       );
-    }
-    if (segment === "incoming") {
-      return (
-        <FriendRow
-          uid={otherUid}
-          variant="incoming"
-          isBusy={isBusy}
-          onAccept={() => acceptIncoming(item, otherUid)}
-          onDecline={() => declineIncoming(item, otherUid)}
-        />
-      );
-    }
-    return (
-      <FriendRow
-        uid={otherUid}
-        variant="outgoing"
-        isBusy={isBusy}
-        onCancel={() => cancelOutgoing(item, otherUid)}
-      />
-    );
-  }
+    },
+    [uid, segment, actioningId, openProfile, acceptIncoming, declineIncoming, cancelOutgoing],
+  );
+
+  const emptyContent = EMPTY_CONTENT[segment];
 
   return (
     <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
       <View style={styles.header}>
         {showBackButton ? (
-          <Pressable onPress={() => router.back()} style={styles.backButton} accessibilityRole="button">
-            <Text style={styles.backText}>{"‹"}</Text>
-          </Pressable>
+          <IconButton
+            icon="chevron-back"
+            onPress={() => router.back()}
+            accessibilityLabel="Geri"
+            color={colors.textPrimary}
+          />
         ) : (
-          <View style={styles.backButton} />
+          <View style={styles.headerSpacer} />
         )}
         <Text style={styles.title}>Arkadaşlar</Text>
-        <View style={styles.backButton} />
+        <View style={styles.headerSpacer} />
       </View>
 
-      <View style={styles.segmentRow}>
-        {(Object.keys(SEGMENT_LABELS) as Segment[]).map((key) => (
-          <Pressable
-            key={key}
-            onPress={() => setSegment(key)}
-            style={[styles.segment, segment === key ? styles.segmentActive : null]}
-            accessibilityRole="button"
-            accessibilityState={{ selected: segment === key }}
-          >
-            <Text style={[styles.segmentText, segment === key ? styles.segmentTextActive : null]}>
-              {SEGMENT_LABELS[key]}
-              {sectionByKey[key].items.length > 0 ? ` (${sectionByKey[key].items.length})` : ""}
-            </Text>
-          </Pressable>
-        ))}
+      <View style={styles.segmentWrapper}>
+        <SocialSegmentControl segments={segments} value={segment} onChange={setSegment} />
       </View>
+
+      <Divider />
 
       {active.isLoading ? (
-        <ActivityIndicator color={colors.textPrimary} style={styles.loading} />
+        <ListSkeleton />
       ) : active.errorMessage ? (
         <View style={styles.centered}>
+          <Ionicons name="cloud-offline-outline" size={32} color={colors.textTertiary} />
           <Text style={styles.errorText}>{active.errorMessage}</Text>
-          <Pressable onPress={() => retry(segment)} style={styles.retryButton} accessibilityRole="button">
-            <Text style={styles.retryText}>Tekrar Dene</Text>
-          </Pressable>
+          <PrimaryButton label="Tekrar Dene" onPress={() => retry(segment)} variant="secondary" />
         </View>
       ) : (
         <FlatList
           data={active.items}
-          keyExtractor={(item) => item.id}
+          keyExtractor={keyExtractor}
           renderItem={renderRow}
           onEndReachedThreshold={0.5}
           onEndReached={() => loadMore(segment)}
           contentContainerStyle={styles.listContent}
-          ListEmptyComponent={<EmptyState icon={EMPTY_ICONS[segment]} title={EMPTY_MESSAGES[segment]} />}
+          showsVerticalScrollIndicator={false}
+          ListEmptyComponent={
+            <EmptyState
+              icon={emptyContent.icon}
+              title={emptyContent.title}
+              description={emptyContent.description}
+            />
+          }
           ListFooterComponent={
             active.isLoadingMore ? (
-              <ActivityIndicator color={colors.textPrimary} style={styles.loadingMore} />
+              <ActivityIndicator color={colors.textTertiary} style={styles.loadingMore} />
             ) : null
           }
         />
@@ -172,50 +237,19 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: spacing.sm,
+    paddingHorizontal: spacing.xs,
     paddingTop: spacing.xs,
+    paddingBottom: spacing.xs,
   },
-  backButton: {
-    minWidth: 44,
-    minHeight: 44,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  backText: {
-    fontSize: 28,
-    color: colors.textPrimary,
+  headerSpacer: {
+    width: 44,
   },
   title: {
     ...typography.title,
     color: colors.textPrimary,
   },
-  segmentRow: {
-    flexDirection: "row",
-    paddingHorizontal: spacing.sm,
-    gap: spacing.xs,
-    marginTop: spacing.xs,
-    marginBottom: spacing.xs,
-  },
-  segment: {
-    flex: 1,
-    paddingVertical: spacing.xs,
-    borderRadius: radius.md,
-    backgroundColor: colors.surface,
-    alignItems: "center",
-  },
-  segmentActive: {
-    backgroundColor: colors.primary,
-  },
-  segmentText: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    textAlign: "center",
-  },
-  segmentTextActive: {
-    color: colors.textInverse,
-  },
-  loading: {
-    marginTop: spacing.xxxl,
+  segmentWrapper: {
+    paddingBottom: spacing.sm,
   },
   centered: {
     flex: 1,
@@ -229,20 +263,25 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     textAlign: "center",
   },
-  retryButton: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderRadius: radius.md,
-    backgroundColor: colors.surfaceMuted,
-  },
-  retryText: {
-    ...typography.bodyStrong,
-    color: colors.textPrimary,
-  },
   listContent: {
+    paddingTop: spacing.xs,
     paddingBottom: spacing.xl,
+    flexGrow: 1,
   },
   loadingMore: {
     paddingVertical: spacing.lg,
+  },
+  skeletonList: {
+    paddingTop: spacing.sm,
+  },
+  skeletonRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+  },
+  skeletonText: {
+    gap: spacing.xs,
   },
 });

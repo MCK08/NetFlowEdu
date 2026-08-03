@@ -1,21 +1,30 @@
 import { router } from "expo-router";
-import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from "react-native";
+import { useCallback } from "react";
+import { ActivityIndicator, FlatList, ListRenderItemInfo, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { Avatar } from "@components/ui/Avatar";
+import { Divider } from "@components/ui/Divider";
 import { EmptyState } from "@components/ui/EmptyState";
-import { RoleBadge } from "@components/ui/RoleBadge";
+import { IconButton } from "@components/ui/IconButton";
 import { SearchInput } from "@components/ui/SearchInput";
 import { useAuth } from "@features/authentication";
+import { useNavigationGuard } from "@hooks/useNavigationGuard";
 import { colors } from "@theme/colors";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
 import { PublicProfile } from "@/types/publicProfile";
 import { resolvePublicIdentity } from "@utils/publicIdentity";
 
+import { SocialUserRow } from "../components/SocialUserRow";
 import { useFriendSearch } from "../hooks/useFriendSearch";
 
-// Shared by both teacher and student route wrappers (spec section 9).
+// Shared by both teacher and student route wrappers.
+//
+// The search itself is untouched: same useFriendSearch hook, same debounce,
+// same prefix query, same 20-result cap, same self-exclusion. What changed
+// is that every distinct state (idle / searching / results / no results /
+// failure) now has its own explicit presentation instead of collapsing
+// into one list with an ambiguous empty component.
 export function FindFriendsScreen() {
   const { firebaseUser, profile: ownProfile } = useAuth();
   const { queryText, setQueryText, results, isLoading, errorMessage } = useFriendSearch(
@@ -23,41 +32,98 @@ export function FindFriendsScreen() {
   );
   const publicProfilePathname =
     ownProfile?.role === "teacher" ? "/(teacher)/user/[userId]" : "/(student)/user/[userId]";
+  const guardedNavigate = useNavigationGuard();
 
-  function renderItem({ item }: { item: PublicProfile }) {
-    const identity = resolvePublicIdentity(item);
-    return (
-      <Pressable
-        style={styles.row}
-        onPress={() => router.push({ pathname: publicProfilePathname, params: { userId: item.uid } })}
-        accessibilityRole="button"
-      >
-        <Avatar photoURL={item.photoURL} displayName={identity.primaryName} size="md" />
-        <View style={styles.textColumn}>
-          <View style={styles.nameRow}>
-            <Text style={styles.name} numberOfLines={1}>
-              {identity.primaryName}
-            </Text>
-            <RoleBadge role={item.role} />
-          </View>
-          {identity.usernameHandle ? (
-            <Text style={styles.handle} numberOfLines={1}>
-              {identity.usernameHandle}
-            </Text>
-          ) : null}
+  const hasQuery = queryText.trim().length > 0;
+
+  const openProfile = useCallback(
+    (userId: string) => {
+      guardedNavigate(`profile-${userId}`, () => {
+        router.push({ pathname: publicProfilePathname, params: { userId } });
+      });
+    },
+    [guardedNavigate, publicProfilePathname],
+  );
+
+  const keyExtractor = useCallback((item: PublicProfile) => item.uid, []);
+
+  const renderItem = useCallback(
+    ({ item }: ListRenderItemInfo<PublicProfile>) => {
+      const identity = resolvePublicIdentity(item);
+      const roleSuffix = item.role === "teacher" ? ", Öğretmen" : ", Öğrenci";
+      return (
+        <SocialUserRow
+          primaryName={identity.primaryName}
+          usernameHandle={identity.usernameHandle}
+          photoURL={item.photoURL}
+          role={item.role}
+          onPress={() => openProfile(item.uid)}
+          accessibilityLabel={`${identity.primaryName}${roleSuffix}`}
+        />
+      );
+    },
+    [openProfile],
+  );
+
+  function renderBody() {
+    if (isLoading) {
+      return (
+        <View style={styles.centered}>
+          <ActivityIndicator color={colors.textTertiary} />
+          <Text style={styles.hintText}>Aranıyor...</Text>
         </View>
-      </Pressable>
+      );
+    }
+
+    if (errorMessage) {
+      return (
+        <View style={styles.centered}>
+          <EmptyState icon="cloud-offline-outline" title="Arama yapılamadı" description={errorMessage} />
+        </View>
+      );
+    }
+
+    return (
+      <FlatList
+        data={results}
+        keyExtractor={keyExtractor}
+        renderItem={renderItem}
+        contentContainerStyle={styles.listContent}
+        showsVerticalScrollIndicator={false}
+        // Lets a result be tapped while the keyboard is still open, instead
+        // of the first tap only dismissing it.
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        ListEmptyComponent={
+          hasQuery ? (
+            <EmptyState
+              icon="search-outline"
+              title="Sonuç bulunamadı"
+              description="Kullanıcı adını tam yazdığından emin ol."
+            />
+          ) : (
+            <EmptyState
+              icon="person-add-outline"
+              title="Arkadaş bul"
+              description="Aramak için bir kullanıcı adı yazmaya başla."
+            />
+          )
+        }
+      />
     );
   }
 
   return (
     <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.backButton} accessibilityRole="button">
-          <Text style={styles.backText}>{"‹"}</Text>
-        </Pressable>
+        <IconButton
+          icon="chevron-back"
+          onPress={() => router.back()}
+          accessibilityLabel="Geri"
+          color={colors.textPrimary}
+        />
         <Text style={styles.title}>Arkadaş Bul</Text>
-        <View style={styles.backButton} />
+        <View style={styles.headerSpacer} />
       </View>
 
       <View style={styles.searchWrapper}>
@@ -70,29 +136,9 @@ export function FindFriendsScreen() {
         />
       </View>
 
-      {isLoading ? (
-        <ActivityIndicator color={colors.textPrimary} style={styles.loading} />
-      ) : errorMessage ? (
-        <Text style={styles.errorText}>{errorMessage}</Text>
-      ) : (
-        <FlatList
-          data={results}
-          keyExtractor={(item) => item.uid}
-          renderItem={renderItem}
-          contentContainerStyle={styles.listContent}
-          ListEmptyComponent={
-            queryText.trim().length > 0 ? (
-              <EmptyState icon="search-outline" title="Sonuç bulunamadı" />
-            ) : (
-              <EmptyState
-                icon="person-add-outline"
-                title="Arkadaş bul"
-                description="Aramak için kullanıcı adı yazmaya başla."
-              />
-            )
-          }
-        />
-      )}
+      <Divider />
+
+      {renderBody()}
     </SafeAreaView>
   );
 }
@@ -105,64 +151,37 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: spacing.sm,
+    paddingHorizontal: spacing.xs,
     paddingTop: spacing.xs,
-  },
-  backButton: {
-    minWidth: 44,
-    minHeight: 44,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  backText: {
-    fontSize: 28,
-    color: colors.textPrimary,
   },
   title: {
     ...typography.title,
     color: colors.textPrimary,
+    flex: 1,
+    textAlign: "center",
+  },
+  headerSpacer: {
+    width: 44,
   },
   searchWrapper: {
-    marginHorizontal: spacing.lg,
-    marginTop: spacing.xs,
-    marginBottom: spacing.sm,
-  },
-  loading: {
-    marginTop: spacing.xxxl,
-  },
-  errorText: {
-    ...typography.body,
-    color: colors.danger,
-    textAlign: "center",
-    marginTop: spacing.xl,
-  },
-  listContent: {
-    paddingBottom: spacing.xl,
-  },
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
     paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.xs,
-    gap: spacing.sm,
+    paddingTop: spacing.xs,
+    paddingBottom: spacing.sm,
   },
-  textColumn: {
+  centered: {
     flex: 1,
-    gap: 2,
-  },
-  nameRow: {
-    flexDirection: "row",
     alignItems: "center",
-    gap: spacing.xxs,
+    justifyContent: "center",
+    gap: spacing.xs,
+    paddingHorizontal: spacing.xl,
   },
-  name: {
-    ...typography.subtitle,
-    color: colors.textPrimary,
-    flexShrink: 1,
-  },
-  handle: {
+  hintText: {
     ...typography.caption,
     color: colors.textTertiary,
+  },
+  listContent: {
+    paddingTop: spacing.xs,
+    paddingBottom: spacing.xl,
+    flexGrow: 1,
   },
 });

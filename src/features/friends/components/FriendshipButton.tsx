@@ -1,18 +1,38 @@
-import { useState } from "react";
-import { ActivityIndicator, Alert, Pressable, StyleSheet, Text } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { Alert, StyleSheet, Text, View } from "react-native";
+
+import { LoadingSkeleton } from "@components/ui/LoadingSkeleton";
+import { colors } from "@theme/colors";
+import { radius } from "@theme/radius";
+import { spacing } from "@theme/spacing";
+import { typography } from "@theme/typography";
 
 import { useFriendshipAction } from "../hooks/useFriendshipAction";
+import {
+  resolveFriendshipPresentation,
+  SocialActionKind,
+} from "../services/friendshipPresentation";
+import { SocialActionButton } from "./SocialActionButton";
 
 interface FriendshipButtonProps {
   ownUid: string | undefined;
   otherUid: string;
+  // The screen already knows whether this is the caller's own profile;
+  // passing it in keeps that single source of truth instead of the
+  // component re-deriving it.
+  isOwnProfile?: boolean;
 }
 
-// The single status button PublicProfileScreen shows for another
-// student/teacher's profile (spec section 10). Never rendered for the
-// caller's own profile — PublicProfileScreen/user/[userId] already redirect
-// away from that case before this ever mounts.
-export function FriendshipButton({ ownUid, otherUid }: FriendshipButtonProps) {
+// The friendship action area on a public profile.
+//
+// All relationship logic still lives in useFriendshipAction (unchanged);
+// which controls to draw is now decided by the pure, unit-tested
+// resolveFriendshipPresentation mapper rather than by a chain of `if
+// (state === ...)` blocks that each re-declared their own labels and
+// styles. The previous version also lost the entire action area whenever
+// `isMutating` flipped — replaced by a bare centred spinner — which made
+// the profile reflow on every tap; the buttons now stay in place.
+export function FriendshipButton({ ownUid, otherUid, isOwnProfile = false }: FriendshipButtonProps) {
   const {
     state,
     isLoading,
@@ -24,140 +44,107 @@ export function FriendshipButton({ ownUid, otherUid }: FriendshipButtonProps) {
     declineRequest,
     unfriend,
   } = useFriendshipAction(ownUid, otherUid);
-  const [showAcceptDecline, setShowAcceptDecline] = useState(false);
 
-  if (isLoading) {
-    return <ActivityIndicator color="black" style={styles.loading} />;
+  const presentation = resolveFriendshipPresentation({
+    buttonState: state,
+    isOwnProfile,
+    isLoading,
+    isMutating,
+  });
+
+  if (presentation.view === "hidden") return null;
+
+  if (presentation.view === "loading") {
+    // Same footprint as the real action row, so the hero does not shift
+    // when the relationship resolves.
+    return <LoadingSkeleton width={200} height={44} borderRadius={radius.pill} />;
   }
 
-  function confirmUnfriend() {
+  function runAction(kind: SocialActionKind) {
+    switch (kind) {
+      case "add":
+        return sendRequest();
+      case "cancel":
+        return cancelRequest();
+      case "accept":
+        return acceptRequest();
+      case "decline":
+        return declineRequest();
+      case "remove":
+        return unfriend();
+    }
+  }
+
+  function handlePress(kind: SocialActionKind, requiresConfirmation: boolean) {
+    if (!requiresConfirmation) {
+      void runAction(kind);
+      return;
+    }
+    // Preserved verbatim from the previous implementation — removing an
+    // established friendship is the one action that confirms.
     Alert.alert("Arkadaşlıktan çık", "Bu kişiyi arkadaş listenden çıkarmak istiyor musun?", [
       { text: "Vazgeç", style: "cancel" },
-      { text: "Çıkar", style: "destructive", onPress: unfriend },
+      { text: "Çıkar", style: "destructive", onPress: () => void runAction(kind) },
     ]);
   }
 
-  if (isMutating) {
-    return <ActivityIndicator color="black" style={styles.loading} />;
-  }
-
-  if (state === "none") {
-    return (
-      <>
-        <Pressable
-          onPress={sendRequest}
-          style={[styles.button, styles.primary]}
-          accessibilityRole="button"
-          accessibilityLabel="Arkadaş Ekle"
-        >
-          <Text style={styles.primaryText}>Arkadaş Ekle</Text>
-        </Pressable>
-        {errorMessage ? <Text style={styles.error}>{errorMessage}</Text> : null}
-      </>
-    );
-  }
-
-  if (state === "requested_by_me") {
-    return (
-      <>
-        <Pressable
-          onPress={cancelRequest}
-          style={[styles.button, styles.secondary]}
-          accessibilityRole="button"
-          accessibilityLabel="İstek Gönderildi, iptal etmek için dokun"
-        >
-          <Text style={styles.secondaryText}>İstek Gönderildi</Text>
-        </Pressable>
-        {errorMessage ? <Text style={styles.error}>{errorMessage}</Text> : null}
-      </>
-    );
-  }
-
-  if (state === "requested_by_them") {
-    if (!showAcceptDecline) {
-      return (
-        <Pressable
-          onPress={() => setShowAcceptDecline(true)}
-          style={[styles.button, styles.primary]}
-          accessibilityRole="button"
-          accessibilityLabel="İsteği Kabul Et"
-        >
-          <Text style={styles.primaryText}>İsteği Kabul Et</Text>
-        </Pressable>
-      );
-    }
-    return (
-      <>
-        <Pressable
-          onPress={acceptRequest}
-          style={[styles.button, styles.primary]}
-          accessibilityRole="button"
-          accessibilityLabel="Kabul Et"
-        >
-          <Text style={styles.primaryText}>Kabul Et</Text>
-        </Pressable>
-        <Pressable
-          onPress={declineRequest}
-          style={[styles.button, styles.secondary]}
-          accessibilityRole="button"
-          accessibilityLabel="Reddet"
-        >
-          <Text style={styles.secondaryText}>Reddet</Text>
-        </Pressable>
-        {errorMessage ? <Text style={styles.error}>{errorMessage}</Text> : null}
-      </>
-    );
-  }
-
-  // state === "friends"
   return (
-    <>
-      <Pressable
-        onPress={confirmUnfriend}
-        style={[styles.button, styles.secondary]}
-        accessibilityRole="button"
-        accessibilityLabel="Arkadaşsınız"
-      >
-        <Text style={styles.secondaryText}>Arkadaşsınız</Text>
-      </Pressable>
-      {errorMessage ? <Text style={styles.error}>{errorMessage}</Text> : null}
-    </>
+    <View style={styles.container}>
+      {presentation.statusLabel ? (
+        <Text style={styles.statusLabel}>{presentation.statusLabel}</Text>
+      ) : null}
+
+      <View style={styles.actionRow}>
+        {presentation.actions.map((action) => (
+          <SocialActionButton
+            key={action.kind}
+            action={action}
+            isBusy={presentation.isBusy}
+            fill={presentation.actions.length > 1}
+            onPress={() => handlePress(action.kind, action.requiresConfirmation)}
+          />
+        ))}
+      </View>
+
+      {errorMessage ? (
+        <View style={styles.errorRow} accessibilityRole="alert" accessibilityLiveRegion="polite">
+          <Ionicons name="warning-outline" size={14} color={colors.danger} />
+          <Text style={styles.errorText}>{errorMessage}</Text>
+        </View>
+      ) : null}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  loading: {
-    marginVertical: 8,
-  },
-  button: {
-    minHeight: 40,
-    minWidth: 160,
-    borderRadius: 10,
+  container: {
+    alignSelf: "stretch",
     alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 16,
-    marginTop: 4,
+    gap: spacing.xs,
   },
-  primary: {
-    backgroundColor: "#3358D9",
-  },
-  primaryText: {
-    color: "white",
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  secondary: {
-    backgroundColor: "#F2F2F2",
-  },
-  secondaryText: {
-    color: "#5B5F66",
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  error: {
-    color: "#D92D20",
-    fontSize: 12,
+  statusLabel: {
+    ...typography.caption,
+    color: colors.textTertiary,
     textAlign: "center",
-    marginTop: 4,
+  },
+  actionRow: {
+    flexDirection: "row",
+    alignSelf: "stretch",
+    justifyContent: "center",
+    gap: spacing.xs,
+  },
+  errorRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xxs,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xxs,
+    borderRadius: radius.md,
+    backgroundColor: colors.dangerMuted,
+  },
+  errorText: {
+    ...typography.caption,
+    color: colors.danger,
+    flexShrink: 1,
   },
 });
