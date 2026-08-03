@@ -1,17 +1,10 @@
 import { useRouter, useSegments } from "expo-router";
 import { ReactNode, useEffect } from "react";
-import { ActivityIndicator, StyleSheet, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 
+import { AuthBootstrapScreen } from "./AuthBootstrapScreen";
 import { useAuth } from "../hooks/useAuth";
 import { decideRouteGuardTarget } from "../services/routeGuardDecision";
-
-function Splash() {
-  return (
-    <View style={styles.splash}>
-      <ActivityIndicator size="large" />
-    </View>
-  );
-}
 
 // Single centralized place that decides which route group the current auth
 // state is allowed to be in, and redirects otherwise. The decision itself
@@ -57,8 +50,13 @@ export function RouteGuard({ children }: { children: ReactNode }) {
       segments,
     );
     if (target !== null) router.replace(target);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // `router` is included rather than suppressed. Even if expo-router
+    // handed back a fresh object each render, this effect would only re-run
+    // decideRouteGuardTarget — which returns null once the current segments
+    // already satisfy the target, so no extra router.replace is ever issued
+    // (proved by routeGuardDecision.test.ts's idempotency matrix).
   }, [
+    router,
     settledEnoughToRoute,
     isAuthenticated,
     isEmailVerified,
@@ -73,7 +71,15 @@ export function RouteGuard({ children }: { children: ReactNode }) {
   return (
     <View style={styles.flex}>
       {children}
-      {!settledEnoughToRoute ? <Splash /> : null}
+      {/* Overlaid rather than swapped in: unmounting `children` while the
+          auth state settles would tear down and remount the whole navigator
+          on every cold start. This covers it instead, so no protected
+          screen is ever visible before the destination is known. */}
+      {!settledEnoughToRoute ? (
+        <View style={styles.bootstrapOverlay}>
+          <AuthBootstrapScreen />
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -82,10 +88,7 @@ const styles = StyleSheet.create({
   flex: {
     flex: 1,
   },
-  splash: {
+  bootstrapOverlay: {
     ...StyleSheet.absoluteFillObject,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "white",
   },
 });

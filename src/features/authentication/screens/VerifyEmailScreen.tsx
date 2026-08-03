@@ -1,11 +1,19 @@
+import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
-import { StyleSheet, Text } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 
+import { Divider } from "@components/ui/Divider";
 import { FormError } from "@components/ui/FormError";
-import { KeyboardSafeScreen } from "@components/ui/KeyboardSafeScreen";
 import { PrimaryButton } from "@components/ui/PrimaryButton";
+import { colors } from "@theme/colors";
+import { radius } from "@theme/radius";
+import { spacing } from "@theme/spacing";
+import { typography } from "@theme/typography";
 
+import { AuthShell } from "../components/AuthShell";
+import { OnboardingProgress } from "../components/OnboardingProgress";
 import { useEmailVerification } from "../hooks/useEmailVerification";
+import { useOnboardingProgress } from "../hooks/useOnboardingProgress";
 
 const TEACHER_REQUEST_PENDING_MESSAGE =
   "Öğretmen hesap talebiniz gönderildi.\nOnaylandıktan sonra hesabınız Öğretmen hesabına dönüştürülecek.";
@@ -29,16 +37,14 @@ export function VerifyEmailScreen() {
     checkVerified,
     signOut,
   } = useEmailVerification();
+  // Same indicator the register screen shows, one step further along — so
+  // this screen reads as a stage of a flow rather than a dead end.
+  const onboardingStep = useOnboardingProgress("password");
 
-  // Uses ONLY checkVerified()'s own return value, not the `isEmailVerified`
-  // destructured above — that binding is fixed at this render, so by the
-  // time the async checkVerified() call resolves (after it has just called
-  // setEmailVerified(true) inside AuthProvider) it's already stale, and
-  // `verified && isEmailVerified` would read the pre-tap `false` and never
-  // navigate on the very first successful tap. checkVerified() already
-  // implies "email is verified" — verifyAndCompleteOnboarding only
-  // attempts completion after confirming that fresh, post-reload — so its
-  // result alone is the correct, non-stale signal.
+  // Uses ONLY checkVerified()'s own return value, not a destructured
+  // `isEmailVerified` — that binding is fixed at this render, so by the
+  // time the async call resolves it is already stale and the first
+  // successful tap would never navigate.
   async function handleCheck() {
     const onboardingCompleted = await checkVerified();
     if (onboardingCompleted) {
@@ -47,20 +53,34 @@ export function VerifyEmailScreen() {
   }
 
   return (
-    <KeyboardSafeScreen>
-      <Text style={styles.title}>E-postanızı Doğrulayın</Text>
-      <Text style={styles.subtitle}>
-        {emailFailed
-          ? "Hesabınız oluşturuldu ancak doğrulama e-postası gönderilemedi."
-          : email
-            ? `${email} adresine bir doğrulama bağlantısı gönderdik.`
-            : "E-posta adresinize bir doğrulama bağlantısı gönderdik."}
-      </Text>
+    <AuthShell
+      title="E-postanı doğrula"
+      description={
+        emailFailed
+          ? "Hesabın oluşturuldu ancak doğrulama e-postası gönderilemedi."
+          : "Gönderdiğimiz bağlantıya dokunduktan sonra aşağıdaki butonla devam et."
+      }
+    >
+      {onboardingStep ? <OnboardingProgress flow="password" currentStep={onboardingStep} /> : null}
+
+      {/* The address is shown in its own panel rather than buried in the
+          description — it is the one thing the reader needs to check
+          against their inbox. */}
+      {email ? (
+        <View style={styles.emailPanel}>
+          <Ionicons name="mail-outline" size={18} color={colors.primary} />
+          <Text style={styles.emailText} numberOfLines={2}>
+            {email}
+          </Text>
+        </View>
+      ) : null}
 
       <FormError message={error ?? (emailFailed ? EMAIL_SEND_FAILED_MESSAGE : null)} />
 
       {teacherRequestPending ? (
-        <Text style={styles.teacherRequestText}>{TEACHER_REQUEST_PENDING_MESSAGE}</Text>
+        <View style={styles.notice}>
+          <Text style={styles.noticeText}>{TEACHER_REQUEST_PENDING_MESSAGE}</Text>
+        </View>
       ) : null}
 
       <PrimaryButton
@@ -72,7 +92,7 @@ export function VerifyEmailScreen() {
       <PrimaryButton
         label={
           cooldownSeconds > 0
-            ? `Doğrulama e-postasını yeniden gönder (${cooldownSeconds}s)`
+            ? `Yeniden gönder (${cooldownSeconds}s)`
             : "Doğrulama e-postasını yeniden gönder"
         }
         onPress={resend}
@@ -81,34 +101,46 @@ export function VerifyEmailScreen() {
         variant="secondary"
       />
 
+      {/* Sign-out is an escape route, not a peer of the two actions above,
+          so it sits below its own divider. */}
+      <Divider style={styles.divider} />
+
       <PrimaryButton
         label="Çıkış Yap"
         onPress={signOut}
         isLoading={isSigningOut}
         variant="secondary"
       />
-    </KeyboardSafeScreen>
+    </AuthShell>
   );
 }
 
 const styles = StyleSheet.create({
-  title: {
-    fontSize: 24,
-    fontWeight: "700",
+  emailPanel: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    backgroundColor: colors.primaryMuted,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+  },
+  emailText: {
+    ...typography.bodyStrong,
+    color: colors.primary,
+    flex: 1,
+  },
+  notice: {
+    backgroundColor: colors.successMuted,
+    borderRadius: radius.md,
+    padding: spacing.sm,
+  },
+  noticeText: {
+    ...typography.body,
+    color: colors.success,
     textAlign: "center",
   },
-  subtitle: {
-    fontSize: 15,
-    opacity: 0.7,
-    textAlign: "center",
-    marginBottom: 8,
-  },
-  teacherRequestText: {
-    backgroundColor: "#ECFDF3",
-    color: "#027A48",
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 14,
-    textAlign: "center",
+  divider: {
+    marginTop: spacing.xs,
   },
 });

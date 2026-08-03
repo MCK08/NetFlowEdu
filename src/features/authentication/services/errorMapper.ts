@@ -13,6 +13,24 @@ const AUTH_ERROR_MESSAGES: Record<string, string> = {
   "auth/requires-recent-login": "Bu işlem için yeniden giriş yapmanız gerekiyor.",
   "auth/popup-closed-by-user": "İşlem iptal edildi.",
   "auth/user-token-expired": "Oturumunuzun süresi doldu. Lütfen tekrar giriş yapın.",
+  // Newer Firebase Auth builds (email-enumeration protection enabled)
+  // report a bad email/password pair under this code instead of
+  // wrong-password/user-not-found. Mapped to the SAME message as those, so
+  // enabling that setting can never turn a wrong password into a generic
+  // "bir şeyler ters gitti" — and so the message still can't be used to
+  // learn whether an address is registered.
+  "auth/invalid-login-credentials": "E-posta veya şifre hatalı.",
+  // The sign-in provider itself is switched off in the Firebase console —
+  // a configuration problem, deliberately NOT phrased as a credential
+  // failure, which would send the user off retyping a correct password.
+  "auth/operation-not-allowed": "Bu giriş yöntemi şu anda kullanılamıyor.",
+  "auth/internal-error": "Sunucu hatası. Lütfen tekrar deneyin.",
+  "auth/timeout": "İşlem zaman aşımına uğradı. Lütfen tekrar deneyin.",
+  // Google account-linking codes (ProfileScreen's "Google hesabını bağla").
+  "auth/account-exists-with-different-credential":
+    "Bu e-posta adresi farklı bir giriş yöntemiyle kayıtlı. Lütfen o yöntemle giriş yapın.",
+  "auth/credential-already-in-use": "Bu Google hesabı başka bir kullanıcıya bağlı.",
+  "auth/provider-already-linked": "Bu hesaba zaten bir Google hesabı bağlı.",
   // Only reachable if actionCodeSettings is ever passed to
   // sendEmailVerification — this codebase currently does not pass one (see
   // services/firebase/auth.ts), so these are unused today but mapped in
@@ -103,3 +121,48 @@ export function mapOnboardingFailureToMessage(code: string | undefined): string 
   if (code === undefined) return ONBOARDING_DEFAULT_MESSAGE;
   return ONBOARDING_FAILURE_MESSAGES[code] ?? ONBOARDING_DEFAULT_MESSAGE;
 }
+
+// ---------------------------------------------------------------------------
+// Google sign-in outcomes
+//
+// These never reach Firebase at all — they are the results of
+// expo-auth-session's browser flow, which reports them as a plain
+// `result.type`, not as a FirebaseError with a code. They lived as bare
+// string literals inside GoogleSignInButton, where nothing could assert
+// that a CANCELLATION isn't shown as a failure. Kept in this module rather
+// than a second error file so there is still exactly one place that turns
+// an auth outcome into user-facing Turkish.
+// ---------------------------------------------------------------------------
+export type GoogleFailureKind =
+  // The person closed the browser sheet. A deliberate choice, not an error.
+  | "cancelled"
+  // The flow reported success but carried no id_token — nothing to exchange.
+  | "missing_token"
+  // signInWithCredential/addAccount threw while exchanging the token.
+  | "exchange_failed";
+
+const GOOGLE_FAILURE_MESSAGES: Record<GoogleFailureKind, string | null> = {
+  cancelled: null,
+  missing_token: "Google girişi tamamlanamadı. Lütfen tekrar deneyin.",
+  exchange_failed: "Google ile giriş yapılamadı. Lütfen tekrar deneyin.",
+};
+
+// `null` means "show nothing" — the only correct treatment of a
+// cancellation. Callers must handle null rather than falling back to a
+// generic message, which is exactly the regression this guards.
+export function mapGoogleFailureToMessage(kind: GoogleFailureKind): string | null {
+  return GOOGLE_FAILURE_MESSAGES[kind];
+}
+
+// ---------------------------------------------------------------------------
+// Local session / account-switch outcomes
+//
+// switchToStoredAccount returns null (not an error) when a stored account's
+// local Firebase session is gone. That is not a credential failure and must
+// not be phrased as one — nothing the person typed was wrong.
+// ---------------------------------------------------------------------------
+export const SESSION_REQUIRES_REAUTH_MESSAGE =
+  "Bu hesabın oturumu sona ermiş. Devam etmek için şifrenle tekrar giriş yap.";
+
+export const ADD_ACCOUNT_SUSPENDED_MESSAGE =
+  "Bu hesap askıya alınmış. Yardım için okulunuzla veya kurumunuzla iletişime geçin.";

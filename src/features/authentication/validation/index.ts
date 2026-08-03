@@ -6,6 +6,7 @@ import {
   RegisterFieldErrors,
   RegisterInput,
 } from "../types";
+import { validateRoleSelection } from "../services/rolePresentation";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const USERNAME_PATTERN = /^[a-zA-Z0-9_]{3,20}$/;
@@ -45,24 +46,75 @@ export function validateEmail(email: string): string | undefined {
   return undefined;
 }
 
+export interface PasswordRule {
+  id: "length" | "uppercase" | "lowercase" | "number";
+  // Shown on the register screen BEFORE the person fails it. The rules were
+  // previously discoverable only by submitting and reading the error, which
+  // is the worst possible time to learn them.
+  hint: string;
+  // The message shown when this is the first rule violated. Byte-identical
+  // to what validatePassword returned before this list existed.
+  message: string;
+  test: (password: string) => boolean;
+}
+
+// One ordered source of truth: the visible checklist and the validation
+// error are the same four rules, so they can never disagree. Order is
+// load-bearing — validatePassword reports the FIRST failing rule, and that
+// order (length, uppercase, lowercase, number) is preserved exactly.
+export const PASSWORD_RULES: readonly PasswordRule[] = [
+  {
+    id: "length",
+    hint: "En az 8 karakter",
+    message: "Şifre en az 8 karakter olmalı.",
+    test: (password) => password.length >= 8,
+  },
+  {
+    id: "uppercase",
+    hint: "En az bir büyük harf",
+    message: "Şifre en az bir büyük harf içermeli.",
+    test: (password) => PASSWORD_UPPERCASE.test(password),
+  },
+  {
+    id: "lowercase",
+    hint: "En az bir küçük harf",
+    message: "Şifre en az bir küçük harf içermeli.",
+    test: (password) => PASSWORD_LOWERCASE.test(password),
+  },
+  {
+    id: "number",
+    hint: "En az bir rakam",
+    message: "Şifre en az bir rakam içermeli.",
+    test: (password) => PASSWORD_NUMBER.test(password),
+  },
+] as const;
+
+// Which rules a password currently satisfies — drives the live checklist
+// without re-implementing a single test. Never used for authorization;
+// Firebase Auth enforces its own minimum server-side regardless.
+export function evaluatePasswordRules(password: string): { id: PasswordRule["id"]; hint: string; satisfied: boolean }[] {
+  return PASSWORD_RULES.map((rule) => ({
+    id: rule.id,
+    hint: rule.hint,
+    satisfied: rule.test(password),
+  }));
+}
+
 export function validatePassword(password: string): string | undefined {
   if (password.length === 0) {
     return "Şifre gerekli.";
   }
-  if (password.length < 8) {
-    return "Şifre en az 8 karakter olmalı.";
-  }
-  if (!PASSWORD_UPPERCASE.test(password)) {
-    return "Şifre en az bir büyük harf içermeli.";
-  }
-  if (!PASSWORD_LOWERCASE.test(password)) {
-    return "Şifre en az bir küçük harf içermeli.";
-  }
-  if (!PASSWORD_NUMBER.test(password)) {
-    return "Şifre en az bir rakam içermeli.";
-  }
-  return undefined;
+  return PASSWORD_RULES.find((rule) => !rule.test(password))?.message;
 }
+
+// The username rule stated up front, in the same words the failure message
+// uses. USERNAME_PATTERN is the single definition both derive from.
+export const USERNAME_HINT = "3-20 karakter · yalnızca harf, rakam ve alt çizgi (_)";
+
+// displayName and username are two different things and the register form
+// asks for both back to back — saying so once removes the most common
+// "why does it want my name twice?" confusion.
+export const DISPLAY_NAME_HINT = "Uygulamada görünecek adın. Boşluk kullanabilirsin.";
 
 export function validatePasswordConfirmation(
   password: string,
@@ -112,6 +164,15 @@ export function validateRegisterInput(input: RegisterInput): RegisterFieldErrors
 
   const termsError = validateTermsAccepted(input.acceptedTerms);
   if (termsError) errors.acceptedTerms = termsError;
+
+  // The UI defaults to "student" so this normally never fires — it exists so
+  // "no role selected" can never reach initializeOnboarding, which would
+  // record a null requestedRole and permanently strand the account at Stage
+  // 2 (see authService.registerStudent's own incident comment). Checked in
+  // the pure validator rather than relying on a form default that a future
+  // screen might not set.
+  const roleError = validateRoleSelection(input.intendedRole);
+  if (roleError) errors.intendedRole = roleError;
 
   return errors;
 }

@@ -13,8 +13,10 @@ import {
   upsertKnownAccount,
 } from "@services/firebase/accountRegistry";
 import {
+  currentActiveUser,
   forgetStoredAccount,
   runOnStagingAuthAndActivate,
+  setActiveUser,
   switchToStoredAccount,
   syncAccountAuth,
 } from "@services/firebase/multiAccountAuth";
@@ -129,9 +131,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [emailVerified, setEmailVerified] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
-  const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [profileLoading, setProfileLoading] = useState(false);
-  const [profileError, setProfileError] = useState<string | null>(null);
+  // The profile, the uid it belongs to, and its load state are ONE piece of
+  // state on purpose.
+  //
+  // Production race this closes: switching accounts moves firebaseUser
+  // straight from A to B without ever passing through null, so for exactly
+  // one render the component tree saw uid=B alongside A's profile — with
+  // profileLoading still false, because the effect that resets it hadn't run
+  // yet (child effects, including RouteGuard's, run before the parent
+  // provider's). In that render RouteGuard computed a destination from A's
+  // ROLE while signed in as B — a teacher-dashboard flash for a student
+  // account — and the known-accounts upsert effect wrote A's
+  // displayName/username/role onto B's registry entry, corrupting the
+  // switcher list.
+  //
+  // Keeping the uid alongside the data makes the mismatch visible during
+  // RENDER instead of one effect later, so nothing downstream ever sees a
+  // profile that belongs to a different account.
+  const [profileState, setProfileState] = useState<{
+    uid: string | null;
+    profile: UserProfile | null;
+    loading: boolean;
+    error: string | null;
+  }>({ uid: null, profile: null, loading: false, error: null });
 
   // Production bug fix — see routing.ts's `claimsSynced` doc comment for the
   // full race explanation. Defaults true (every existing session/login path
@@ -154,42 +176,55 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return unsubscribe;
   }, []);
 
-  // Subscribe to the signed-in user's profile document. Re-subscribes only
-  // when the uid changes (not on every token refresh) to avoid duplicate
-  // listeners. Bounded: if the profile never appears within
-  // PROFILE_WAIT_TIMEOUT_MS (e.g. the onUserCreate trigger failed), stop
-  // showing a loading spinner and surface a recoverable error instead.
+  // Read once per render so the effect below depends on the uid ALONE. A
+  // token refresh produces a new User object for the same uid; keying the
+  // subscription on the object would tear down and recreate the listener on
+  // every one of those. (This also removes the exhaustive-deps suppression
+  // the previous `[firebaseUser?.uid]` form needed.)
+  const currentUid = firebaseUser?.uid ?? null;
+
+  // Subscribe to the signed-in user's profile document. Bounded: if the
+  // profile never appears within PROFILE_WAIT_TIMEOUT_MS (e.g. the
+  // onUserCreate trigger failed), stop showing a loading spinner and surface
+  // a recoverable error instead.
   useEffect(() => {
-    if (!firebaseUser) {
-      setProfile(null);
-      setProfileLoading(false);
-      setProfileError(null);
+    if (!currentUid) {
+      setProfileState({ uid: null, profile: null, loading: false, error: null });
       setClaimsSynced(true); // fresh session; no known claims lag yet
       return;
     }
 
-    setProfileLoading(true);
-    setProfileError(null);
+    setProfileState({ uid: currentUid, profile: null, loading: true, error: null });
     setClaimsSynced(true); // reset per-uid; the watcher below will flip it if needed
 
+    // Every write below is guarded by `state.uid === currentUid`. The
+    // unsubscribe in the cleanup already stops this listener, but a snapshot
+    // already in flight when the account changes can still land afterwards —
+    // this makes such a late arrival a no-op instead of letting it overwrite
+    // the newer account's profile.
+    const applyIfCurrent = (
+      next: Partial<{ profile: UserProfile | null; loading: boolean; error: string | null }>,
+    ) => {
+      setProfileState((state) => (state.uid === currentUid ? { ...state, ...next } : state));
+    };
+
     const timeoutId = setTimeout(() => {
-      setProfileLoading(false);
-      setProfileError("Profil bilgileri yüklenemedi. Lütfen tekrar deneyin.");
+      applyIfCurrent({
+        loading: false,
+        error: "Profil bilgileri yüklenemedi. Lütfen tekrar deneyin.",
+      });
     }, PROFILE_WAIT_TIMEOUT_MS);
 
     const unsubscribe = subscribeToUserProfile(
-      firebaseUser.uid,
+      currentUid,
       (nextProfile) => {
         if (nextProfile === null) return; // still waiting on onUserCreate
         clearTimeout(timeoutId);
-        setProfile(nextProfile);
-        setProfileLoading(false);
-        setProfileError(null);
+        applyIfCurrent({ profile: nextProfile, loading: false, error: null });
       },
       () => {
         clearTimeout(timeoutId);
-        setProfileLoading(false);
-        setProfileError("Profil bilgileri yüklenirken bir hata oluştu.");
+        applyIfCurrent({ loading: false, error: "Profil bilgileri yüklenirken bir hata oluştu." });
       },
     );
 
@@ -197,11 +232,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       clearTimeout(timeoutId);
       unsubscribe();
     };
-    // Intentionally keyed on uid, not the firebaseUser object — a token
-    // refresh produces a new User reference for the same uid, and
-    // resubscribing on every one of those would create duplicate listeners.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [firebaseUser?.uid]);
+  }, [currentUid]);
+
+  // Derived during RENDER, not in an effect — this is what makes the
+  // "profile belongs to a different account" window invisible to every
+  // consumer instead of one effect wide. While the stored profile's uid
+  // doesn't match the active user, the profile reads as null and the load
+  // state reads as loading, which is exactly what RouteGuard's
+  // settledEnoughToRoute needs in order to hold still.
+  const profileIsForCurrentUser = profileState.uid === currentUid;
+  const profile = profileIsForCurrentUser ? profileState.profile : null;
+  const profileError = profileIsForCurrentUser ? profileState.error : null;
+  const profileLoading = currentUid !== null && (!profileIsForCurrentUser || profileState.loading);
 
   // Production bug fix — the moment Firestore reports a claims-changing
   // operation is in flight for this uid (pending/provisioning), mark claims
@@ -270,25 +312,62 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [refreshKnownAccounts],
   );
 
+  // The suspended-account gate signIn() applies, applied identically to
+  // every add-account path.
+  //
+  // Without this, "+ Başka Hesap Ekle" would be a way AROUND the check: the
+  // same credentials rejected on the login screen would be accepted here.
+  // The account is already active on the default instance by the time its
+  // profile is readable (the read needs its own auth context), so a
+  // rejection rolls back — the account's local session is forgotten and
+  // whichever account was active beforehand is restored, rather than the
+  // person being dumped into a signed-out app for touching a suspended
+  // account.
+  //
+  // A profile that never arrives within the timeout is NOT treated as
+  // suspended, matching signIn()'s existing behaviour exactly.
+  const assertNotSuspended = useCallback(
+    async (addedUser: User, previousUser: User | null): Promise<void> => {
+      const addedProfile = await waitForProfileDocument(addedUser.uid, 5000);
+      if (addedProfile?.accountStatus !== "suspended") return;
+
+      await forgetStoredAccount(addedUser.uid);
+      await setActiveUser(previousUser);
+      throw new SuspendedAccountError();
+    },
+    [],
+  );
+
   // Signs into a DIFFERENT account on a throwaway staging Auth instance —
   // never the shared default one — so whichever account is currently
   // active stays untouched unless/until the credential check actually
   // succeeds. See multiAccountAuth.ts's own doc comment for the full
   // mechanism.
-  const addAccountWithPassword = useCallback(async (input: LoginInput): Promise<void> => {
-    await runOnStagingAuthAndActivate(async (stagingAuth) => ({
-      user: await loginWithPassword(input, stagingAuth),
-    }));
-  }, []);
+  const addAccountWithPassword = useCallback(
+    async (input: LoginInput): Promise<void> => {
+      const previousUser = currentActiveUser();
+      const { user } = await runOnStagingAuthAndActivate(async (stagingAuth) => ({
+        user: await loginWithPassword(input, stagingAuth),
+      }));
+      await assertNotSuspended(user, previousUser);
+    },
+    [assertNotSuspended],
+  );
 
   const addAccountWithGoogle = useCallback(
     async (idToken: string): Promise<{ isNewUser: boolean }> => {
+      const previousUser = currentActiveUser();
       const result = await runOnStagingAuthAndActivate((stagingAuth) =>
         signInWithGoogleIdToken(idToken, stagingAuth),
       );
-      return { isNewUser: getAdditionalUserInfo(result)?.isNewUser ?? false };
+      const isNewUser = getAdditionalUserInfo(result)?.isNewUser ?? false;
+      // A brand-new account has no profile document to be suspended yet, and
+      // waiting on onUserCreate here would only add latency to the one path
+      // that is about to sit on the onboarding screen anyway.
+      if (!isNewUser) await assertNotSuspended(result.user, previousUser);
+      return { isNewUser };
     },
-    [],
+    [assertNotSuspended],
   );
 
   // Stage 1 (initializeOnboarding) for a brand-new Google sign-up — the

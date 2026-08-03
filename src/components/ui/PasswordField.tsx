@@ -1,16 +1,29 @@
-import { useState } from "react";
+import { forwardRef, useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, TextInputProps, View } from "react-native";
 
 import { colors } from "@theme/colors";
 import { radius } from "@theme/radius";
+import { spacing } from "@theme/spacing";
+import { typography } from "@theme/typography";
+import { inputFontSize, minTouchTarget } from "@theme/sizes";
 
 interface PasswordFieldProps extends TextInputProps {
   label: string;
   errorMessage?: string;
+  // Same contract as TextField's: a rule shown up front, replaced by the
+  // error when there is one.
+  hint?: string;
 }
 
-export function PasswordField({ label, errorMessage, style, ...inputProps }: PasswordFieldProps) {
+// forwardRef so a preceding field's return key can move focus here (see
+// LoginScreen's email -> password chain). Purely additive: every existing
+// caller that passes no ref renders exactly as before.
+export const PasswordField = forwardRef<TextInput, PasswordFieldProps>(function PasswordField(
+  { label, errorMessage, hint, style, ...inputProps },
+  ref,
+) {
   const [isVisible, setIsVisible] = useState(false);
+  const helperText = errorMessage ?? hint;
 
   return (
     <View style={styles.container}>
@@ -19,11 +32,15 @@ export function PasswordField({ label, errorMessage, style, ...inputProps }: Pas
       </Text>
       <View style={styles.row}>
         <TextInput
+          ref={ref}
           style={[styles.input, errorMessage ? styles.inputError : null, style]}
+          // Never revealed by default — the toggle below is the only way,
+          // and it announces its own state to a screen reader.
           secureTextEntry={!isVisible}
           placeholderTextColor={colors.textTertiary}
           accessibilityLabel={label}
           accessibilityLabelledBy={`${label}-label`}
+          accessibilityHint={hint}
           {...inputProps}
         />
         <Pressable
@@ -31,27 +48,31 @@ export function PasswordField({ label, errorMessage, style, ...inputProps }: Pas
           style={styles.toggle}
           accessibilityRole="button"
           accessibilityLabel={isVisible ? "Şifreyi gizle" : "Şifreyi göster"}
+          accessibilityState={{ selected: isVisible }}
           hitSlop={8}
         >
           <Text style={styles.toggleText}>{isVisible ? "Gizle" : "Göster"}</Text>
         </Pressable>
       </View>
-      {errorMessage ? (
-        <Text style={styles.errorText} accessibilityLiveRegion="polite">
-          {errorMessage}
+      {helperText ? (
+        <Text
+          style={errorMessage ? styles.errorText : styles.hintText}
+          accessibilityLiveRegion={errorMessage ? "polite" : "none"}
+        >
+          {helperText}
         </Text>
       ) : null}
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   container: {
-    gap: 6,
+    gap: spacing.xxs,
   },
   label: {
-    fontSize: 14,
-    fontWeight: "600",
+    ...typography.bodyStrong,
+    color: colors.textPrimary,
   },
   row: {
     flexDirection: "row",
@@ -59,31 +80,39 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    minHeight: 48,
+    minHeight: minTouchTarget + 4,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.md,
-    paddingHorizontal: 14,
-    fontSize: 16,
+    paddingHorizontal: spacing.sm,
+    // Reserves room for the Göster/Gizle control so a long password never
+    // runs underneath it.
+    paddingRight: 84,
+    fontSize: inputFontSize,
+    color: colors.textPrimary,
   },
   inputError: {
     borderColor: colors.danger,
   },
   toggle: {
     position: "absolute",
-    right: 14,
-    minHeight: 44,
-    minWidth: 44,
+    right: spacing.sm,
+    minHeight: minTouchTarget,
+    minWidth: minTouchTarget,
     alignItems: "center",
     justifyContent: "center",
   },
   toggleText: {
-    fontSize: 13,
+    ...typography.caption,
     fontWeight: "600",
     color: colors.primary,
   },
   errorText: {
-    fontSize: 13,
+    ...typography.caption,
     color: colors.danger,
+  },
+  hintText: {
+    ...typography.caption,
+    color: colors.textTertiary,
   },
 });

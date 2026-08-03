@@ -1,6 +1,11 @@
+import { Ionicons } from "@expo/vector-icons";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { colors } from "@theme/colors";
+import { radius } from "@theme/radius";
+import { spacing } from "@theme/spacing";
+import { typography } from "@theme/typography";
+import { minTouchTarget } from "@theme/sizes";
 
 interface CheckboxProps {
   label: string;
@@ -20,30 +25,43 @@ export function Checkbox({ label, checked, onToggle, errorMessage }: CheckboxPro
         accessibilityLabel={label}
         hitSlop={8}
       >
-        <View style={[styles.box, checked ? styles.boxChecked : null]}>
-          {checked ? <Text style={styles.checkmark}>✓</Text> : null}
+        <View
+          style={[
+            styles.box,
+            checked ? styles.boxChecked : null,
+            errorMessage && !checked ? styles.boxError : null,
+          ]}
+        >
+          {/* An icon rather than a "✓" text glyph: the glyph inherited the
+              user's OS font scaling and overflowed the fixed 22pt box at
+              large dynamic-type settings. */}
+          {checked ? <Ionicons name="checkmark" size={14} color={colors.textInverse} /> : null}
         </View>
         <Text style={styles.label}>{label}</Text>
       </Pressable>
-      {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
+      {errorMessage ? (
+        <Text style={styles.errorText} accessibilityLiveRegion="polite">
+          {errorMessage}
+        </Text>
+      ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    gap: 6,
+    gap: spacing.xxs,
   },
   row: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
-    minHeight: 44,
+    gap: spacing.xs,
+    minHeight: minTouchTarget,
   },
   box: {
     width: 22,
     height: 22,
-    borderRadius: 6,
+    borderRadius: radius.sm - 2,
     borderWidth: 1.5,
     borderColor: colors.textTertiary,
     alignItems: "center",
@@ -53,17 +71,18 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     borderColor: colors.primary,
   },
-  checkmark: {
-    color: colors.textInverse,
-    fontSize: 14,
-    fontWeight: "700",
+  // An unchecked-with-error box was previously indistinguishable from a
+  // normal unchecked one — the only signal was the message underneath.
+  boxError: {
+    borderColor: colors.danger,
   },
   label: {
     flex: 1,
-    fontSize: 14,
+    ...typography.body,
+    color: colors.textPrimary,
   },
   errorText: {
-    fontSize: 13,
+    ...typography.caption,
     color: colors.danger,
   },
 });

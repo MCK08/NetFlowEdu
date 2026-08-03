@@ -104,8 +104,24 @@ function getStagingAuth(): Auth {
 // instance — the only Auth instance every existing screen/service actually
 // reads from. This is the one line that makes a switch/add-account "count"
 // for the rest of the app.
-async function activateOnDefaultAuth(user: User): Promise<void> {
+//
+// `null` is a supported value for updateCurrentUser and signs the default
+// instance out; it is what "there was no previous account to restore" means
+// on the rollback path below.
+export async function setActiveUser(user: User | null): Promise<void> {
   await updateCurrentUser(defaultAuth, user);
+}
+
+async function activateOnDefaultAuth(user: User): Promise<void> {
+  await setActiveUser(user);
+}
+
+// The account currently active on the shared default instance, captured
+// BEFORE an add-account attempt so it can be put back if the newly signed-in
+// account turns out to be rejected (e.g. suspended). Reading it through this
+// module keeps every default-Auth mutation in one file.
+export function currentActiveUser(): User | null {
+  return defaultAuth.currentUser;
 }
 
 // Runs a credential operation (sign-in, register, or a Google credential

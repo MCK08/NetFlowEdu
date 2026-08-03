@@ -3,24 +3,25 @@ import { useEffect, useRef, useState } from "react";
 import { mapAuthErrorToMessage, mapOnboardingFailureToMessage } from "../services/errorMapper";
 import { runGuardedOnce } from "../services/guardedAction";
 import { useAuth } from "./useAuth";
+import { useSignOut } from "./useSignOut";
 
 const RESEND_COOLDOWN_SECONDS = 30;
 
 export function useEmailVerification() {
-  const { firebaseUser, isEmailVerified, resendVerification, refreshSession, signOut: signOutAuth } =
-    useAuth();
+  const { firebaseUser, isEmailVerified, resendVerification, refreshSession } = useAuth();
+  // Shared with the Google onboarding screen's own escape hatch — same
+  // guard, same loading flag, same error mapping, one implementation.
+  const { signOut, isSigningOut, error: signOutError } = useSignOut();
   const [isResending, setIsResending] = useState(false);
   const [isChecking, setIsChecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cooldownSeconds, setCooldownSeconds] = useState(0);
-  const [isSigningOut, setIsSigningOut] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   // Synchronous guard against duplicate parallel sends on rapid multi-click —
   // isResending (state) only takes effect on the next render, so two taps in
   // the same tick could both pass an `isResending` check before either
   // re-render happens. A ref updates immediately, closing that gap.
   const isResendingRef = useRef(false);
-  const isSigningOutRef = useRef(false);
 
   useEffect(() => {
     return () => {
@@ -86,38 +87,17 @@ export function useEmailVerification() {
     }
   }
 
-  // Previously wired directly to the raw AuthProvider.signOut with no
-  // try/catch, loading state, or double-click guard — unlike resend/
-  // checkVerified above. A thrown error (e.g. auth/network-request-failed)
-  // became an unhandled promise rejection with zero visible feedback: the
-  // button appeared to do nothing, the user stayed authenticated-but-
-  // unverified, and RouteGuard kept forcing them back to this exact screen
-  // for any other route (e.g. trying to register with a different email).
-  async function signOut() {
-    await runGuardedOnce(isSigningOutRef, async () => {
-      setError(null);
-      setIsSigningOut(true);
-      try {
-        await signOutAuth();
-        // No explicit navigation here — RouteGuard reacts to isAuthenticated
-        // becoming false (via the auth state listener) and replaces the
-        // route to ROUTES.login itself; see routing.ts's !isAuthenticated
-        // check, which takes priority over every other routing rule.
-      } catch (err) {
-        setError(mapAuthErrorToMessage(err));
-      } finally {
-        setIsSigningOut(false);
-      }
-    });
-  }
-
   return {
     email: firebaseUser?.email ?? "",
     isEmailVerified,
     isResending,
     isChecking,
     isSigningOut,
-    error,
+    // A failed sign-out has to stay visible even though it is produced by a
+    // different hook — this screen has exactly one error slot, and silently
+    // dropping the sign-out failure is the bug that made the button look
+    // like it did nothing.
+    error: error ?? signOutError,
     cooldownSeconds,
     resend,
     checkVerified,

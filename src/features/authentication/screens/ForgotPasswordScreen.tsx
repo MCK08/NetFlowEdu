@@ -1,12 +1,16 @@
+import { Ionicons } from "@expo/vector-icons";
 import { Link } from "expo-router";
-import { StyleSheet, Text } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 
-import { FormError } from "@components/ui/FormError";
-import { KeyboardSafeScreen } from "@components/ui/KeyboardSafeScreen";
 import { PrimaryButton } from "@components/ui/PrimaryButton";
 import { TextField } from "@components/ui/TextField";
 import { ROUTES } from "@constants/routes";
+import { colors } from "@theme/colors";
+import { radius } from "@theme/radius";
+import { spacing } from "@theme/spacing";
+import { typography } from "@theme/typography";
 
+import { AuthShell } from "../components/AuthShell";
 import { useForgotPasswordForm } from "../hooks/useForgotPasswordForm";
 
 export function ForgotPasswordScreen() {
@@ -14,17 +18,23 @@ export function ForgotPasswordScreen() {
     useForgotPasswordForm();
 
   return (
-    <KeyboardSafeScreen>
-      <Text style={styles.title}>Şifremi Unuttum</Text>
-      <Text style={styles.subtitle}>
-        E-posta adresinizi girin, şifre sıfırlama bağlantısı gönderelim.
-      </Text>
-
+    <AuthShell
+      title="Şifreni sıfırla"
+      description="E-posta adresini gir, şifre sıfırlama bağlantısını gönderelim."
+      footer={
+        <Link href={ROUTES.login} style={styles.footerLink}>
+          Girişe dön
+        </Link>
+      }
+    >
+      {/* The success panel replaces the previous bare green Text AND the
+          `<FormError message={null} />` no-op element that sat beside it. */}
       {successMessage ? (
-        <Text style={styles.successText}>{successMessage}</Text>
-      ) : (
-        <FormError message={null} />
-      )}
+        <View style={styles.success} accessibilityRole="alert" accessibilityLiveRegion="polite">
+          <Ionicons name="mail-outline" size={18} color={colors.success} />
+          <Text style={styles.successText}>{successMessage}</Text>
+        </View>
+      ) : null}
 
       <TextField
         label="E-posta"
@@ -33,43 +43,41 @@ export function ForgotPasswordScreen() {
         errorMessage={fieldErrors.email}
         keyboardType="email-address"
         autoCapitalize="none"
+        autoCorrect={false}
         autoComplete="email"
         textContentType="emailAddress"
+        returnKeyType="send"
+        onSubmitEditing={submit}
       />
 
-      <PrimaryButton label="Sıfırlama Bağlantısı Gönder" onPress={submit} isLoading={isSubmitting} />
-
-      <Link href={ROUTES.login} style={styles.linkCenter}>
-        Girişe dön
-      </Link>
-    </KeyboardSafeScreen>
+      <PrimaryButton
+        label="Sıfırlama Bağlantısı Gönder"
+        onPress={submit}
+        isLoading={isSubmitting}
+      />
+    </AuthShell>
   );
 }
 
 const styles = StyleSheet.create({
-  title: {
-    fontSize: 24,
-    fontWeight: "700",
-    textAlign: "center",
-  },
-  subtitle: {
-    fontSize: 15,
-    opacity: 0.7,
-    textAlign: "center",
-    marginBottom: 8,
+  success: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: spacing.xs,
+    backgroundColor: colors.successMuted,
+    borderRadius: radius.md,
+    padding: spacing.sm,
   },
   successText: {
-    backgroundColor: "#ECFDF3",
-    color: "#027A48",
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 14,
+    ...typography.body,
+    color: colors.success,
+    flex: 1,
   },
-  linkCenter: {
-    fontSize: 14,
-    color: "#3358D9",
+  footerLink: {
+    ...typography.body,
+    color: colors.primary,
     fontWeight: "600",
     textAlign: "center",
-    marginTop: 8,
+    paddingVertical: spacing.xs,
   },
 });

@@ -1,20 +1,10 @@
-import { ActivityIndicator, StyleSheet, View } from "react-native";
+import { AuthBootstrapScreen } from "@features/authentication/components/AuthBootstrapScreen";
 
 // RouteGuard (see app/_layout.tsx) redirects away from here based on auth
 // state as soon as it settles — this screen is only ever visible for a
-// single frame at most, so it stays a bare spinner, not a real screen.
+// single frame at most. It now renders the same bootstrap presentation the
+// guard's own overlay uses, so that frame can't flash a differently-styled
+// spinner on a differently-coloured background.
 export default function Index() {
-  return (
-    <View style={styles.container}>
-      <ActivityIndicator size="large" />
-    </View>
-  );
+  return <AuthBootstrapScreen />;
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-});

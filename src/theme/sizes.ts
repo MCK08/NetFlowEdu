@@ -19,3 +19,10 @@ export const avatarSize = {
 // Apple HIG / Material minimum recommended tap target — Step 6
 // (accessibility) baseline every new Pressable/IconButton should meet.
 export const minTouchTarget = 44;
+
+// Load-bearing, not a style choice: iOS Safari/WebView auto-zooms a focused
+// input whose font is under 16pt, and RN's own TextInput inherits nothing
+// from the type scale. Named here so TextField/PasswordField share one
+// value instead of each hardcoding 16. Text still scales with the OS font
+// setting — this is the base size, not a cap.
+export const inputFontSize = 16;

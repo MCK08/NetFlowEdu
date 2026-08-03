@@ -1,23 +1,54 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Image } from "expo-image";
-import { router } from "expo-router";
 import { useState } from "react";
-import { ActivityIndicator, Alert, Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import {
+  Alert,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { AnimatedPressable } from "@components/ui/AnimatedPressable";
+import { Divider } from "@components/ui/Divider";
+import { FormError } from "@components/ui/FormError";
+import { colors } from "@theme/colors";
+import { radius } from "@theme/radius";
+import { spacing } from "@theme/spacing";
+import { typography } from "@theme/typography";
+import { minTouchTarget } from "@theme/sizes";
 import { KnownAccount } from "@services/firebase/accountRegistry";
 
-import { ROUTES } from "@constants/routes";
+import { AccountRow } from "./AccountRow";
+import { AddAccountForm } from "./AddAccountForm";
 import { useAuth } from "../hooks/useAuth";
+import {
+  decideAccountSwitchIntent,
+  presentAccountRow,
+  removeAccountConfirmation,
+  resolveAccountRowState,
+  resolveSwitchOutcome,
+} from "../services/accountSwitchPresentation";
+import { SESSION_REQUIRES_REAUTH_MESSAGE } from "../services/errorMapper";
 
-const ROLE_LABELS: Record<string, string> = {
-  student: "Öğrenci",
-  teacher: "Öğretmen",
-  organization_admin: "Kurum Yöneticisi",
-  platform_admin: "Platform Yöneticisi",
-};
-
-// Same Modal-based sheet pattern already used by CreateClassModal — no new
-// bottom-sheet library, this is the one existing pattern extended.
+// The device account switcher. Same Modal-based sheet pattern as before —
+// what changed is that it no longer dead-ends.
+//
+// Two paths were broken and are now handled in place:
+//   * "+ Başka Hesap Ekle" called router.push(ROUTES.login) while still
+//     signed in, and RouteGuard immediately replaced that route back to the
+//     active account's dashboard. The button visibly did nothing.
+//   * A failed switch (the stored local session had expired) showed an
+//     Alert and then router.replace(ROUTES.login) — which hit the exact same
+//     bounce, because the failed switch leaves the PREVIOUS account signed
+//     in, so the user is still authenticated.
+// Both now open an in-sheet sign-in that runs on the staging Auth instance
+// (AuthProvider.addAccountWithPassword), which is what that API was built
+// for and had no caller until now.
 export default function AccountSwitcherSheet() {
   const {
     isAccountSwitcherOpen,
@@ -27,126 +58,189 @@ export default function AccountSwitcherSheet() {
     switchAccount,
     removeAccount,
   } = useAuth();
-  const [switchingUid, setSwitchingUid] = useState<string | null>(null);
+  const insets = useSafeAreaInsets();
 
-  async function handleSwitch(account: KnownAccount) {
-    if (account.uid === firebaseUser?.uid) {
+  const [switchingUid, setSwitchingUid] = useState<string | null>(null);
+  // uids whose stored session was PROVEN gone by a failed attempt in this
+  // session. Never guessed up front: switchToStoredAccount is the only thing
+  // that can tell, and it can only tell by trying.
+  const [reauthRequiredUids, setReauthRequiredUids] = useState<string[]>([]);
+  const [pendingReauth, setPendingReauth] = useState<KnownAccount | null>(null);
+  const [isAddingAccount, setIsAddingAccount] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  function dismiss() {
+    setPendingReauth(null);
+    setIsAddingAccount(false);
+    setNotice(null);
+    closeAccountSwitcher();
+  }
+
+  async function handleRowAction(account: KnownAccount) {
+    const intent = decideAccountSwitchIntent({
+      targetUid: account.uid,
+      currentUid: firebaseUser?.uid ?? null,
+      switchingUid,
+      reauthRequiredUids,
+    });
+
+    if (intent.kind === "busy") return;
+    if (intent.kind === "noop") {
       closeAccountSwitcher();
       return;
     }
+    if (intent.kind === "reauthenticate") {
+      setNotice(null);
+      setPendingReauth(account);
+      return;
+    }
+
+    setNotice(null);
     setSwitchingUid(account.uid);
     try {
-      const success = await switchAccount(account.uid);
-      closeAccountSwitcher();
-      if (!success) {
-        Alert.alert(
-          "Oturum sona ermiş",
-          `${account.displayName} hesabının oturumu sona ermiş. Lütfen tekrar giriş yapın.`,
-        );
-        router.replace(ROUTES.login);
+      const outcome = resolveSwitchOutcome(account.uid, await switchAccount(account.uid));
+      if (outcome.kind === "activated") {
+        // No routing here: the new session flows through AuthProvider and
+        // RouteGuard recomputes the destination from the NEW account's own
+        // role. A screen that navigated as well would be a second owner of
+        // that decision.
+        dismiss();
+        return;
       }
+      // The previous account is still signed in — a failed switch never
+      // touches the default Auth instance. Offer the real recovery instead
+      // of claiming anything happened.
+      setReauthRequiredUids((uids) => (uids.includes(outcome.uid) ? uids : [...uids, outcome.uid]));
+      setNotice(SESSION_REQUIRES_REAUTH_MESSAGE);
+      setPendingReauth(account);
     } finally {
       setSwitchingUid(null);
     }
   }
 
   function confirmRemove(account: KnownAccount) {
-    Alert.alert(
-      "Hesabı kaldır",
-      `${account.displayName} hesabını bu cihazdan kaldırmak istediğinize emin misiniz?`,
-      [
-        { text: "Vazgeç", style: "cancel" },
-        { text: "Kaldır", style: "destructive", onPress: () => removeAccount(account.uid) },
-      ],
-    );
+    const { title, message, confirmLabel } = removeAccountConfirmation({
+      uid: account.uid,
+      displayName: account.displayName,
+      username: account.username,
+      email: account.email,
+      role: account.role,
+    });
+    Alert.alert(title, message, [
+      { text: "Vazgeç", style: "cancel" },
+      {
+        text: confirmLabel,
+        style: "destructive",
+        onPress: () => {
+          setReauthRequiredUids((uids) => uids.filter((uid) => uid !== account.uid));
+          removeAccount(account.uid);
+        },
+      },
+    ]);
   }
 
-  function handleAddAccount() {
-    closeAccountSwitcher();
-    router.push(ROUTES.login);
-  }
+  const showingForm = isAddingAccount || pendingReauth !== null;
 
   return (
     <Modal
       visible={isAccountSwitcherOpen}
       transparent
       animationType="slide"
-      onRequestClose={closeAccountSwitcher}
+      onRequestClose={dismiss}
     >
       <View style={styles.backdrop}>
-        <Pressable style={styles.backdropTouchable} onPress={closeAccountSwitcher} />
-        <View style={styles.sheet}>
-          <Text style={styles.title}>Hesaplar</Text>
+        <Pressable style={styles.backdropTouchable} onPress={dismiss} accessibilityLabel="Kapat" />
+        {/* Exactly one KeyboardAvoidingView, and only around the sheet — the
+            in-sheet sign-in form must clear the keyboard, and the auth
+            screens' own AuthShell is never mounted inside this. */}
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined}>
+          <View style={[styles.sheet, { paddingBottom: insets.bottom + spacing.lg }]}>
+            <View style={styles.grabber} />
 
-          {knownAccounts.map((account) => {
-            const isActive = account.uid === firebaseUser?.uid;
-            const isSwitching = switchingUid === account.uid;
-            return (
-              <Pressable
-                key={account.uid}
-                onPress={() => handleSwitch(account)}
-                style={styles.row}
-                accessibilityRole="button"
-                accessibilityLabel={`${account.displayName} hesabına geç`}
-              >
-                {account.photoURL ? (
-                  <Image source={{ uri: account.photoURL }} style={styles.avatar} contentFit="cover" />
-                ) : (
-                  <View style={styles.avatarPlaceholder}>
-                    <Ionicons name="person" size={18} color="#8A8F98" />
-                  </View>
-                )}
+            {showingForm ? (
+              <AddAccountForm
+                initialEmail={pendingReauth?.email}
+                title={pendingReauth ? "Tekrar giriş yap" : "Başka hesap ekle"}
+                description={
+                  pendingReauth
+                    ? SESSION_REQUIRES_REAUTH_MESSAGE
+                    : "Mevcut hesabından çıkmadan ikinci bir hesap ekleyebilirsin."
+                }
+                onCancel={() => {
+                  setPendingReauth(null);
+                  setIsAddingAccount(false);
+                  setNotice(null);
+                }}
+                onAdded={dismiss}
+              />
+            ) : (
+              <>
+                <Text style={styles.title}>Hesaplar</Text>
 
-                <View style={styles.nameColumn}>
-                  <Text style={styles.name} numberOfLines={1}>
-                    {account.displayName || "Kullanıcı"}
-                  </Text>
-                  {account.username ? (
-                    <Text style={styles.username} numberOfLines={1}>
-                      @{account.username}
-                    </Text>
-                  ) : null}
-                </View>
+                <FormError message={notice} />
 
-                {account.role ? (
-                  <View style={styles.roleBadge}>
-                    <Text style={styles.roleBadgeText}>{ROLE_LABELS[account.role] ?? account.role}</Text>
-                  </View>
-                ) : null}
+                {/* Bounded height so a long account list scrolls instead of
+                    growing the sheet past the top of the screen. */}
+                <ScrollView
+                  style={styles.list}
+                  contentContainerStyle={styles.listContent}
+                  showsVerticalScrollIndicator={false}
+                >
+                  {knownAccounts.map((account) => {
+                    const state = resolveAccountRowState({
+                      uid: account.uid,
+                      currentUid: firebaseUser?.uid ?? null,
+                      switchingUid,
+                      reauthRequiredUids,
+                    });
+                    return (
+                      <AccountRow
+                        key={account.uid}
+                        account={account}
+                        presentation={presentAccountRow(
+                          {
+                            uid: account.uid,
+                            displayName: account.displayName,
+                            username: account.username,
+                            email: account.email,
+                            role: account.role,
+                          },
+                          state,
+                        )}
+                        onAction={() => handleRowAction(account)}
+                        onRemove={() => confirmRemove(account)}
+                      />
+                    );
+                  })}
+                </ScrollView>
 
-                {isSwitching ? (
-                  <ActivityIndicator color="black" style={styles.trailingIcon} />
-                ) : isActive ? (
-                  <Ionicons name="checkmark-circle" size={22} color="#3358D9" style={styles.trailingIcon} />
-                ) : (
-                  <Pressable
-                    onPress={() => confirmRemove(account)}
-                    style={styles.removeButton}
-                    accessibilityRole="button"
-                    accessibilityLabel={`${account.displayName} hesabını kaldır`}
-                    hitSlop={8}
-                  >
-                    <Ionicons name="close-circle-outline" size={20} color="#8A8F98" />
-                  </Pressable>
-                )}
-              </Pressable>
-            );
-          })}
+                <Divider />
 
-          <Pressable
-            onPress={handleAddAccount}
-            style={styles.addButton}
-            accessibilityRole="button"
-            accessibilityLabel="Başka hesap ekle"
-          >
-            <Ionicons name="add-circle-outline" size={20} color="#3358D9" />
-            <Text style={styles.addButtonText}>Başka Hesap Ekle</Text>
-          </Pressable>
+                <AnimatedPressable
+                  onPress={() => {
+                    setNotice(null);
+                    setIsAddingAccount(true);
+                  }}
+                  style={styles.addButton}
+                  accessibilityRole="button"
+                  accessibilityLabel="Başka hesap ekle"
+                >
+                  <Ionicons name="add-circle-outline" size={20} color={colors.primary} />
+                  <Text style={styles.addButtonText}>Başka Hesap Ekle</Text>
+                </AnimatedPressable>
 
-          <Pressable onPress={closeAccountSwitcher} style={styles.cancelButton}>
-            <Text style={styles.cancelText}>Kapat</Text>
-          </Pressable>
-        </View>
+                <Pressable
+                  onPress={dismiss}
+                  style={styles.cancelButton}
+                  accessibilityRole="button"
+                  accessibilityLabel="Kapat"
+                >
+                  <Text style={styles.cancelText}>Kapat</Text>
+                </Pressable>
+              </>
+            )}
+          </View>
+        </KeyboardAvoidingView>
       </View>
     </Modal>
   );
@@ -155,102 +249,58 @@ export default function AccountSwitcherSheet() {
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.4)",
+    backgroundColor: colors.overlay,
     justifyContent: "flex-end",
   },
   backdropTouchable: {
     ...StyleSheet.absoluteFillObject,
   },
   sheet: {
-    backgroundColor: "white",
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 20,
-    paddingBottom: 32,
-    gap: 4,
+    backgroundColor: colors.background,
+    borderTopLeftRadius: radius.xxl,
+    borderTopRightRadius: radius.xxl,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    gap: spacing.xs,
+  },
+  grabber: {
+    width: 36,
+    height: 4,
+    borderRadius: radius.pill,
+    backgroundColor: colors.divider,
+    alignSelf: "center",
+    marginBottom: spacing.xs,
   },
   title: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "black",
-    marginBottom: 8,
-    textAlign: "center",
+    ...typography.title,
+    color: colors.textPrimary,
   },
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: "#EDEEF0",
+  list: {
+    // Caps the list, not the sheet: the add/close actions below stay
+    // reachable no matter how many accounts this device remembers.
+    maxHeight: 320,
   },
-  avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-  },
-  avatarPlaceholder: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#F2F2F2",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  nameColumn: {
-    flex: 1,
-  },
-  name: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: "black",
-  },
-  username: {
-    fontSize: 12,
-    color: "#8A8F98",
-  },
-  roleBadge: {
-    backgroundColor: "#F2F2F2",
-    borderRadius: 6,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-  },
-  roleBadgeText: {
-    fontSize: 11,
-    fontWeight: "600",
-    color: "#5B5F66",
-  },
-  trailingIcon: {
-    marginLeft: 8,
-  },
-  removeButton: {
-    minWidth: 32,
-    minHeight: 32,
-    alignItems: "center",
-    justifyContent: "center",
+  listContent: {
+    gap: spacing.xxs,
   },
   addButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
-    minHeight: 52,
-    marginTop: 12,
+    gap: spacing.xs,
+    minHeight: minTouchTarget + 8,
   },
   addButtonText: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: "#3358D9",
+    ...typography.subtitle,
+    color: colors.primary,
   },
   cancelButton: {
-    minHeight: 44,
+    minHeight: minTouchTarget,
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 4,
   },
   cancelText: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: "#5B5F66",
+    ...typography.subtitle,
+    color: colors.textSecondary,
   },
 });
