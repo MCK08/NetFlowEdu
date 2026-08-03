@@ -2,13 +2,28 @@ import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
 
 import { ProfileTabButton } from "@features/authentication/components/ProfileTabButton";
+import { colors } from "@theme/colors";
+import { typography } from "@theme/typography";
 
-// Mirrors (student)/(tabs)/_layout.tsx's shape exactly — Phase 10 replaces
-// the teacher's previous single-screen "just class creation" experience
-// with the same three-tab structure the student side already has.
+// Mirrors (student)/(tabs)/_layout.tsx's structure — Phase 10 replaced the
+// teacher's previous single-screen "just class creation" experience with
+// the same three tabs the student side has.
+//
+// Phase 12E: the active tint moved from a hardcoded "black" to the brand
+// primary, and inactive/label styling now comes from the design tokens.
+// Deliberately scoped to THIS file — the student tab bar is a separate
+// layout and is intentionally left untouched.
 export default function TeacherTabsLayout() {
   return (
-    <Tabs screenOptions={{ headerShown: false, tabBarActiveTintColor: "black" }}>
+    <Tabs
+      screenOptions={{
+        headerShown: false,
+        tabBarActiveTintColor: colors.primary,
+        tabBarInactiveTintColor: colors.textTertiary,
+        tabBarLabelStyle: typography.label,
+        tabBarStyle: { borderTopColor: colors.divider },
+      }}
+    >
       <Tabs.Screen
         name="index"
         options={{

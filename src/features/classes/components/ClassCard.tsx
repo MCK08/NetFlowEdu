@@ -1,7 +1,16 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { Pressable, Share, StyleSheet, Text, View } from "react-native";
+import { Share, StyleSheet, Text, View } from "react-native";
 
+import { AnimatedPressable } from "@components/ui/AnimatedPressable";
+import { Avatar } from "@components/ui/Avatar";
+import { Badge } from "@components/ui/Badge";
+import { IconButton } from "@components/ui/IconButton";
+import { colors } from "@theme/colors";
+import { radius } from "@theme/radius";
+import { shadows } from "@theme/shadows";
+import { spacing } from "@theme/spacing";
+import { typography } from "@theme/typography";
 import { ClassRoom } from "@/types/class";
 
 interface ClassCardProps {
@@ -15,70 +24,120 @@ async function shareCode(name: string, code: string) {
   await Share.share({ message: `${name} sınıfına katılmak için kod: ${code}` });
 }
 
+// The teacher's own class row. Teacher-only — the student side has its own
+// StudentClassCard, and this component has exactly one call site
+// (TeacherClassesScreen), so its layout can carry the teacher-specific
+// information (join code, archived status) the student card must never show.
+//
+// The navigation target, the Share action and the "sınıfını aç" label are
+// unchanged from the previous version; only the presentation differs.
 export function ClassCard({ classRoom }: ClassCardProps) {
+  const isArchived = classRoom.status !== "active";
+
   return (
-    <Pressable
-      style={styles.card}
-      onPress={() => router.push({ pathname: "/(teacher)/class/[classId]", params: { classId: classRoom.id } })}
+    <AnimatedPressable
+      style={[styles.card, shadows.sm]}
+      onPress={() =>
+        router.push({ pathname: "/(teacher)/class/[classId]", params: { classId: classRoom.id } })
+      }
       accessibilityRole="button"
       accessibilityLabel={`${classRoom.name} sınıfını aç`}
+      accessibilityHint="Sınıf detayını açar"
     >
-      <Text style={styles.name}>{classRoom.name}</Text>
-      <Text style={styles.memberCount}>{classRoom.memberCount} üye</Text>
+      <View style={styles.topRow}>
+        <Avatar displayName={classRoom.name} size="lg" />
 
-      <View style={styles.codeRow}>
-        <Text style={styles.codeLabel}>Kod</Text>
-        <Text style={styles.code}>{classRoom.joinCode}</Text>
-        <Pressable
-          onPress={() => shareCode(classRoom.name, classRoom.joinCode)}
-          style={styles.iconButton}
-          accessibilityRole="button"
-          accessibilityLabel="Kodu paylaş"
-        >
-          <Ionicons name="share-outline" size={18} color="#3358D9" />
-        </Pressable>
+        <View style={styles.textColumn}>
+          <View style={styles.nameRow}>
+            <Text style={styles.name} numberOfLines={1}>
+              {classRoom.name}
+            </Text>
+            {isArchived ? <Badge label="Arşiv" variant="neutral" /> : null}
+          </View>
+          <View style={styles.memberRow}>
+            <Ionicons name="people-outline" size={14} color={colors.textTertiary} />
+            <Text style={styles.memberCount}>{classRoom.memberCount} üye</Text>
+          </View>
+        </View>
+
+        <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
       </View>
-    </Pressable>
+
+      {/* The join code is already surfaced this prominently on the
+          teacher's own class detail screen ("Sınıf Kodu"), so showing it
+          here exposes nothing the teacher cannot already see — and it is
+          the one thing they come to this screen to hand out. */}
+      <View style={styles.codeRow}>
+        <Ionicons name="key-outline" size={14} color={colors.textTertiary} />
+        <Text style={styles.codeLabel}>Kod</Text>
+        <Text style={styles.code} numberOfLines={1}>
+          {classRoom.joinCode}
+        </Text>
+        <IconButton
+          icon="share-outline"
+          size="sm"
+          color={colors.primary}
+          onPress={() => shareCode(classRoom.name, classRoom.joinCode)}
+          accessibilityLabel={`${classRoom.name} sınıfının katılım kodunu paylaş`}
+        />
+      </View>
+    </AnimatedPressable>
   );
 }
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: "#F7F7F8",
-    borderRadius: 16,
-    padding: 16,
-    gap: 8,
+    backgroundColor: colors.surface,
+    borderRadius: radius.xl,
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  topRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+  },
+  textColumn: {
+    flex: 1,
+    gap: 2,
+  },
+  nameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
   },
   name: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "black",
+    ...typography.subtitle,
+    color: colors.textPrimary,
+    flexShrink: 1,
+  },
+  memberRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
   },
   memberCount: {
-    fontSize: 13,
-    color: "#5B5F66",
+    ...typography.caption,
+    color: colors.textTertiary,
   },
   codeRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    marginTop: 4,
+    gap: spacing.xs,
+    backgroundColor: colors.background,
+    borderRadius: radius.md,
+    paddingLeft: spacing.sm,
+    paddingRight: spacing.xxs,
+    paddingVertical: spacing.xxs,
   },
   codeLabel: {
-    fontSize: 13,
-    color: "#8A8F98",
+    ...typography.caption,
+    color: colors.textTertiary,
   },
   code: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: "black",
+    ...typography.bodyStrong,
+    color: colors.textPrimary,
     letterSpacing: 2,
     flex: 1,
-  },
-  iconButton: {
-    minWidth: 32,
-    minHeight: 32,
-    alignItems: "center",
-    justifyContent: "center",
   },
 });

@@ -1,22 +1,67 @@
+import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { useState } from "react";
-import { ActivityIndicator, FlatList, StyleSheet, Text, View } from "react-native";
+import { useMemo, useState } from "react";
+import { FlatList, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { EmptyState } from "@components/ui/EmptyState";
+import { LoadingSkeleton } from "@components/ui/LoadingSkeleton";
 import { PrimaryButton } from "@components/ui/PrimaryButton";
+import { SectionHeader } from "@components/ui/SectionHeader";
 import { useAuth } from "@features/authentication";
+import {
+  deriveTeacherDashboardStats,
+  resolveGreeting,
+  TeacherDashboardHeader,
+  TeacherQuickActions,
+  TeacherStatsCard,
+} from "@features/teacher";
+import { useNavigationGuard } from "@hooks/useNavigationGuard";
+import { colors } from "@theme/colors";
+import { radius } from "@theme/radius";
+import { spacing } from "@theme/spacing";
+import { typography } from "@theme/typography";
+import { resolvePublicIdentity } from "@utils/publicIdentity";
 
 import { ClassCard } from "../components/ClassCard";
 import { CreateClassModal } from "../components/CreateClassModal";
 import { useTeacherClasses } from "../hooks/useTeacherClasses";
 import { ClassRoom } from "@/types/class";
 
+function ClassListSkeleton() {
+  return (
+    <View style={styles.skeletonList}>
+      {[0, 1, 2].map((key) => (
+        <LoadingSkeleton key={key} height={112} borderRadius={radius.xl} />
+      ))}
+    </View>
+  );
+}
+
 export function TeacherClassesScreen() {
-  const { firebaseUser, signOut } = useAuth();
-  const { classes, isLoading, isCreating, errorMessage, createClass } = useTeacherClasses(
+  const { firebaseUser, profile, signOut } = useAuth();
+  const { classes, isLoading, isCreating, errorMessage, createClass, refresh } = useTeacherClasses(
     firebaseUser?.uid,
   );
   const [isModalOpen, setIsModalOpen] = useState(false);
+  // expo-router's push() does not deduplicate, so an unguarded double-tap
+  // on a quick action stacks the same screen twice — same primitive the
+  // student feed and class screens already use.
+  const guardedNavigate = useNavigationGuard();
+
+  // Recomputed only when the class list identity actually changes, not on
+  // every render (e.g. while the create-class modal's own state updates).
+  const stats = useMemo(() => deriveTeacherDashboardStats(classes), [classes]);
+  const greeting = useMemo(() => resolveGreeting(new Date()), []);
+
+  const identity = resolvePublicIdentity(profile);
+
+  // The hook reuses one `errorMessage` for both "the class list failed to
+  // load" and "createClass failed". The modal already renders the latter
+  // while it is open, so the banner below is scoped to the case the old
+  // screen showed nothing at all for: loading failed and there is not a
+  // single class to fall back on.
+  const showLoadError = !isLoading && !isModalOpen && classes.length === 0 && errorMessage !== null;
 
   async function handleLogout() {
     await signOut();
@@ -36,20 +81,54 @@ export function TeacherClassesScreen() {
         renderItem={({ item }) => <ClassCard classRoom={item} />}
         contentContainerStyle={styles.list}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
+        showsVerticalScrollIndicator={false}
         ListHeaderComponent={
-          <View style={styles.header}>
-            <View style={styles.headerRow}>
-              <Text style={styles.title}>Sınıflarım</Text>
-              <PrimaryButton label="Çıkış Yap" onPress={handleLogout} variant="secondary" />
+          <View>
+            <TeacherDashboardHeader
+              greeting={greeting}
+              displayName={identity.primaryName}
+              photoURL={profile?.photoURL ?? null}
+              onSignOut={handleLogout}
+            />
+
+            <TeacherStatsCard stats={stats} isLoading={isLoading} />
+
+            <View style={styles.quickActions}>
+              <TeacherQuickActions
+                onCreateClass={() => setIsModalOpen(true)}
+                onOpenFriends={() =>
+                  guardedNavigate("friends", () => router.push("/(teacher)/(tabs)/friends"))
+                }
+                onFindFriends={() =>
+                  guardedNavigate("find-friends", () => router.push("/(teacher)/find-friends"))
+                }
+                onOpenProfile={() =>
+                  guardedNavigate("profile", () => router.push("/(teacher)/(tabs)/profile"))
+                }
+              />
             </View>
-            <PrimaryButton label="Yeni Sınıf" onPress={() => setIsModalOpen(true)} />
+
+            <SectionHeader title="Sınıflarım" />
           </View>
         }
         ListEmptyComponent={
           isLoading ? (
-            <ActivityIndicator color="black" style={styles.loading} />
+            <ClassListSkeleton />
+          ) : showLoadError ? (
+            <View style={styles.errorPanel}>
+              <Ionicons name="cloud-offline-outline" size={32} color={colors.textTertiary} />
+              <Text style={styles.errorText}>{errorMessage}</Text>
+              <PrimaryButton label="Tekrar Dene" onPress={refresh} variant="secondary" />
+            </View>
           ) : (
-            <Text style={styles.emptyText}>Henüz bir sınıfın yok. "Yeni Sınıf" ile başla.</Text>
+            <View style={styles.emptyPanel}>
+              <EmptyState
+                icon="school-outline"
+                title="Henüz bir sınıfın yok"
+                description="İlk sınıfını oluştur, öğrencilerin katılım koduyla katılsın."
+              />
+              <PrimaryButton label="İlk Sınıfını Oluştur" onPress={() => setIsModalOpen(true)} />
+            </View>
           )
         }
       />
@@ -68,38 +147,36 @@ export function TeacherClassesScreen() {
 const styles = StyleSheet.create({
   flex: {
     flex: 1,
-    backgroundColor: "white",
+    backgroundColor: colors.background,
   },
   list: {
-    paddingHorizontal: 20,
-    paddingBottom: 24,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.xl,
   },
-  header: {
-    gap: 16,
-    paddingTop: 16,
-    paddingBottom: 20,
-  },
-  headerRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: "700",
-    color: "black",
+  quickActions: {
+    marginTop: spacing.md,
+    marginBottom: spacing.xs,
   },
   separator: {
-    height: 12,
+    height: spacing.sm,
   },
-  loading: {
-    marginTop: 40,
+  skeletonList: {
+    gap: spacing.sm,
+    marginTop: spacing.xs,
   },
-  emptyText: {
-    fontSize: 14,
-    color: "#8A8F98",
+  emptyPanel: {
+    marginTop: spacing.xs,
+    gap: spacing.sm,
+  },
+  errorPanel: {
+    alignItems: "center",
+    gap: spacing.sm,
+    paddingVertical: spacing.xxl,
+    paddingHorizontal: spacing.md,
+  },
+  errorText: {
+    ...typography.body,
+    color: colors.textSecondary,
     textAlign: "center",
-    marginTop: 40,
-    paddingHorizontal: 32,
   },
 });

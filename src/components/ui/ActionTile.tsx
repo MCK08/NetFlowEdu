@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { StyleSheet, Text } from "react-native";
+import { StyleProp, StyleSheet, Text, ViewStyle } from "react-native";
 
 import { colors } from "@theme/colors";
 import { radius } from "@theme/radius";
@@ -13,17 +13,21 @@ interface ActionTileProps {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
   onPress: () => void;
+  // Optional layout override, applied AFTER the base style so a caller can
+  // relax `minWidth` when the tile sits in an equal-width flex row (see
+  // TeacherQuickActions, where four tiles must fit the narrowest supported
+  // phone without overflowing). Omitting it renders exactly as before —
+  // this prop is additive and changes no existing caller's appearance.
+  style?: StyleProp<ViewStyle>;
 }
 
-// Icon-over-label quick-action tile, for a future actions grid (distinct
-// from ListCard's horizontal row shape) — a new primitive, not yet adopted
-// by any screen (ProfileScreen's "Arkadaşlarım"/"Arkadaş Bul" buttons stay
-// on PrimaryButton this phase).
-export function ActionTile({ icon, label, onPress }: ActionTileProps) {
+// Icon-over-label quick-action tile, distinct from ListCard's horizontal
+// row shape. First adopted by the teacher dashboard's quick actions.
+export function ActionTile({ icon, label, onPress, style }: ActionTileProps) {
   return (
     <AnimatedPressable
       onPress={onPress}
-      style={styles.container}
+      style={[styles.container, style]}
       accessibilityRole="button"
       accessibilityLabel={label}
     >
