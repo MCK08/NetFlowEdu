@@ -1,5 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
+import { memo } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
 import { ClassRoom } from "@/types/class";
@@ -15,7 +16,10 @@ interface StudentClassCardProps {
   classRoom: ClassRoom;
 }
 
-export function StudentClassCard({ classRoom }: StudentClassCardProps) {
+// memo'd: rendered from StudentClassesScreen's FlatList — same reasoning
+// as ClassCard's memo (join-modal state changes shouldn't re-render every
+// card whose `classRoom` prop reference is unchanged).
+export const StudentClassCard = memo(function StudentClassCard({ classRoom }: StudentClassCardProps) {
   return (
     <AnimatedPressable
       style={[styles.card, shadows.sm]}
@@ -36,7 +40,7 @@ export function StudentClassCard({ classRoom }: StudentClassCardProps) {
       <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
     </AnimatedPressable>
   );
-}
+});
 
 const styles = StyleSheet.create({
   card: {

@@ -1,5 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
+import { memo } from "react";
 import { Share, StyleSheet, Text, View } from "react-native";
 
 import { AnimatedPressable } from "@components/ui/AnimatedPressable";
@@ -31,7 +32,11 @@ async function shareCode(name: string, code: string) {
 //
 // The navigation target, the Share action and the "sınıfını aç" label are
 // unchanged from the previous version; only the presentation differs.
-export function ClassCard({ classRoom }: ClassCardProps) {
+// memo'd: rendered from TeacherClassesScreen's FlatList — without this,
+// any state change in the screen (e.g. join-modal open/close) re-renders
+// every mounted card even though each `classRoom` prop reference is
+// unchanged.
+export const ClassCard = memo(function ClassCard({ classRoom }: ClassCardProps) {
   const isArchived = classRoom.status !== "active";
 
   return (
@@ -83,7 +88,7 @@ export function ClassCard({ classRoom }: ClassCardProps) {
       </View>
     </AnimatedPressable>
   );
-}
+});
 
 const styles = StyleSheet.create({
   card: {

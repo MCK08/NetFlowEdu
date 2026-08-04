@@ -1,4 +1,5 @@
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
+import { useCallback } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -20,6 +21,10 @@ import { FeedCard } from "../components/FeedCard";
 import { useSocialFeed } from "../hooks/useSocialFeed";
 import { Question } from "../types";
 
+function keyExtractor(item: Question) {
+  return item.id;
+}
+
 export function FeedScreen() {
   const { height: windowHeight } = useWindowDimensions();
   // Each card pages to exactly the space above the tab bar, not the full
@@ -40,6 +45,25 @@ export function FeedScreen() {
     onUploaded: prepend,
   });
 
+  // Stable across renders as long as `height` itself doesn't change
+  // (window rotation aside) — without this, FeedCard's own memo() was
+  // defeated by a new renderItem closure on every FeedScreen render.
+  const renderItem = useCallback(
+    ({ item }: { item: Question }) => <FeedCard question={item} height={height} />,
+    [height],
+  );
+  const getItemLayout = useCallback(
+    (_: ArrayLike<Question> | null | undefined, index: number) => ({
+      length: height,
+      offset: height * index,
+      index,
+    }),
+    [height],
+  );
+  const handleEndReached = useCallback(() => {
+    if (hasMore) loadMore();
+  }, [hasMore, loadMore]);
+
   if (isLoading) {
     return (
       <View style={styles.centered}>
@@ -52,8 +76,9 @@ export function FeedScreen() {
     <View style={styles.flex}>
       <FlatList
         data={questions}
-        keyExtractor={(item: Question) => item.id}
-        renderItem={({ item }) => <FeedCard question={item} height={height} />}
+        keyExtractor={keyExtractor}
+        renderItem={renderItem}
+        getItemLayout={getItemLayout}
         pagingEnabled
         snapToInterval={height}
         snapToAlignment="start"
@@ -62,9 +87,14 @@ export function FeedScreen() {
         ListEmptyComponent={<EmptyState height={height} />}
         refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={refresh} />}
         onEndReachedThreshold={0.5}
-        onEndReached={() => {
-          if (hasMore) loadMore();
-        }}
+        onEndReached={handleEndReached}
+        // Same reasoning as ClassFeedScreen's identical paged-list tuning:
+        // only a small window of full-screen cards needs to stay mounted
+        // around the visible one.
+        initialNumToRender={1}
+        maxToRenderPerBatch={2}
+        windowSize={3}
+        removeClippedSubviews
         ListFooterComponent={
           isLoadingMore ? (
             <View style={styles.loadingMore}>

@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { memo } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View, ViewStyle } from "react-native";
 
 import { colors } from "@theme/colors";
 import { spacing } from "@theme/spacing";
@@ -11,6 +11,11 @@ interface EmptyStateProps {
   icon?: keyof typeof Ionicons.glyphMap;
   title: string;
   description?: string;
+  // Escape hatch for callers that need to size/position the container
+  // beyond the default centered padding (e.g. a full-screen paged feed
+  // sizing itself to one page's height) — additive, every existing call
+  // site that omits it keeps rendering exactly as before.
+  style?: ViewStyle;
 }
 
 // Generic "nothing here yet" panel — several screens currently just render
@@ -21,9 +26,10 @@ export const EmptyState = memo(function EmptyState({
   icon = "file-tray-outline",
   title,
   description,
+  style,
 }: EmptyStateProps) {
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, style]}>
       <Ionicons name={icon} size={iconSize.xl} color={colors.textTertiary} />
       <Text style={styles.title}>{title}</Text>
       {description ? <Text style={styles.description}>{description}</Text> : null}

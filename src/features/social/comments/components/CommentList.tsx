@@ -1,5 +1,11 @@
-import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 
+import { EmptyState } from "@components/ui/EmptyState";
+import { LoadingSkeleton } from "@components/ui/LoadingSkeleton";
+import { colors } from "@theme/colors";
+import { radius } from "@theme/radius";
+import { spacing } from "@theme/spacing";
+import { typography } from "@theme/typography";
 import { QuestionComment } from "@/types/comment";
 
 import { CommentItem } from "./CommentItem";
@@ -21,11 +27,14 @@ export function CommentList({ comments, isLoading, error, currentUid, onDelete }
       <Text style={styles.title}>Yorumlar</Text>
 
       {isLoading ? (
-        <ActivityIndicator color="black" style={styles.loading} />
+        <View style={styles.skeletonList}>
+          <LoadingSkeleton height={40} borderRadius={radius.md} />
+          <LoadingSkeleton height={40} borderRadius={radius.md} />
+        </View>
       ) : error ? (
         <Text style={styles.errorText}>{error}</Text>
       ) : comments.length === 0 ? (
-        <Text style={styles.emptyText}>Henüz yorum yapılmadı.</Text>
+        <EmptyState icon="chatbubble-outline" title="Henüz yorum yapılmadı" />
       ) : (
         <View>
           {comments.map((comment) => (
@@ -44,26 +53,20 @@ export function CommentList({ comments, isLoading, error, currentUid, onDelete }
 
 const styles = StyleSheet.create({
   container: {
-    gap: 12,
+    gap: spacing.sm,
   },
   title: {
+    ...typography.title,
     fontSize: 17,
-    fontWeight: "700",
-    color: "black",
+    color: colors.textPrimary,
   },
-  loading: {
-    marginVertical: 12,
+  skeletonList: {
+    gap: spacing.xs,
   },
   errorText: {
-    fontSize: 14,
-    color: "#5B5F66",
+    ...typography.body,
+    color: colors.textSecondary,
     textAlign: "center",
-    marginVertical: 12,
-  },
-  emptyText: {
-    fontSize: 14,
-    color: "#8A8F98",
-    textAlign: "center",
-    marginVertical: 12,
+    marginVertical: spacing.sm,
   },
 });

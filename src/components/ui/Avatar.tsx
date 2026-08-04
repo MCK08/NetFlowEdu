@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
-import { memo } from "react";
+import { memo, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
 import { avatarSize } from "@theme/sizes";
@@ -31,13 +31,21 @@ export const Avatar = memo(function Avatar({ photoURL, displayName, size = "md" 
   const dimension = avatarSize[size];
   const dimensionStyle = { width: dimension, height: dimension, borderRadius: dimension / 2 };
 
-  if (photoURL) {
+  // Resets to "not failed" when the uri itself changes, without a
+  // useEffect — compares against the last-seen uri during render (same
+  // pattern already used by ImageViewer.tsx).
+  const [failedUri, setFailedUri] = useState<string | null>(null);
+  const hasFailed = failedUri === photoURL;
+
+  if (photoURL && !hasFailed) {
     return (
       <Image
         source={{ uri: photoURL }}
         style={[styles.image, dimensionStyle]}
         contentFit="cover"
+        transition={150}
         accessibilityIgnoresInvertColors
+        onError={() => setFailedUri(photoURL)}
       />
     );
   }

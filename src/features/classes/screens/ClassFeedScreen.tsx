@@ -14,6 +14,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { colors } from "@theme/colors";
 import { Question } from "@/types/question";
 
 import { ClassFeedCard } from "../components/ClassFeedCard";
@@ -125,7 +126,7 @@ export function ClassFeedScreen({ classId }: ClassFeedScreenProps) {
   if (isLoading) {
     return (
       <View style={styles.fullscreenCentered}>
-        <ActivityIndicator color="white" size="large" />
+        <ActivityIndicator color={colors.textInverse} size="large" />
         <Text style={styles.stateSubtitle}>Sorular yükleniyor...</Text>
       </View>
     );
@@ -234,7 +235,7 @@ export function ClassFeedScreen({ classId }: ClassFeedScreenProps) {
 
       {isLoadingMore ? (
         <View style={[styles.paginationSpinner, { bottom: insets.bottom + 96 }]} pointerEvents="none">
-          <ActivityIndicator color="white" />
+          <ActivityIndicator color={colors.textInverse} />
         </View>
       ) : null}
 

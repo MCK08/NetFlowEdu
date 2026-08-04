@@ -2,6 +2,7 @@ import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { lazy, Suspense } from "react";
 
+import { OfflineBanner } from "@components/ui/OfflineBanner";
 import { AuthProvider, useAuth } from "@features/authentication";
 import { RouteGuard } from "@/features/authentication/components/RouteGuard";
 
@@ -32,6 +33,7 @@ export default function RootLayout() {
         <Stack screenOptions={{ headerShown: false }} />
       </RouteGuard>
       <AccountSwitcherHost />
+      <OfflineBanner />
     </AuthProvider>
   );
 }

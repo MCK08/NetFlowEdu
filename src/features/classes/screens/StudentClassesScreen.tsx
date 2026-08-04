@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { FlatList, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -25,6 +25,18 @@ function ClassListSkeleton() {
   );
 }
 
+function keyExtractor(item: ClassRoom) {
+  return item.id;
+}
+
+function renderItem({ item }: { item: ClassRoom }) {
+  return <StudentClassCard classRoom={item} />;
+}
+
+function Separator() {
+  return <View style={styles.separator} />;
+}
+
 export function StudentClassesScreen() {
   const { firebaseUser } = useAuth();
   const { classes, isLoading, isJoining, errorMessage, joinByCode } = useStudentClasses(
@@ -32,19 +44,22 @@ export function StudentClassesScreen() {
   );
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  async function handleJoin(code: string) {
-    const success = await joinByCode(code);
-    if (success) setIsModalOpen(false);
-  }
+  const handleJoin = useCallback(
+    async (code: string) => {
+      const success = await joinByCode(code);
+      if (success) setIsModalOpen(false);
+    },
+    [joinByCode],
+  );
 
   return (
     <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
       <FlatList
         data={classes}
-        keyExtractor={(item: ClassRoom) => item.id}
-        renderItem={({ item }) => <StudentClassCard classRoom={item} />}
+        keyExtractor={keyExtractor}
+        renderItem={renderItem}
         contentContainerStyle={styles.list}
-        ItemSeparatorComponent={() => <View style={styles.separator} />}
+        ItemSeparatorComponent={Separator}
         ListHeaderComponent={
           <View style={styles.header}>
             <Text style={styles.title}>Sınıflarım</Text>

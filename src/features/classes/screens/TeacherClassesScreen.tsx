@@ -38,6 +38,18 @@ function ClassListSkeleton() {
   );
 }
 
+function keyExtractor(item: ClassRoom) {
+  return item.id;
+}
+
+function renderItem({ item }: { item: ClassRoom }) {
+  return <ClassCard classRoom={item} />;
+}
+
+function Separator() {
+  return <View style={styles.separator} />;
+}
+
 export function TeacherClassesScreen() {
   const { firebaseUser, profile, signOut } = useAuth();
   const { classes, isLoading, isCreating, errorMessage, createClass, refresh } = useTeacherClasses(
@@ -77,10 +89,10 @@ export function TeacherClassesScreen() {
     <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
       <FlatList
         data={classes}
-        keyExtractor={(item: ClassRoom) => item.id}
-        renderItem={({ item }) => <ClassCard classRoom={item} />}
+        keyExtractor={keyExtractor}
+        renderItem={renderItem}
         contentContainerStyle={styles.list}
-        ItemSeparatorComponent={() => <View style={styles.separator} />}
+        ItemSeparatorComponent={Separator}
         showsVerticalScrollIndicator={false}
         ListHeaderComponent={
           <View>

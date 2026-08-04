@@ -11,9 +11,11 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { EmptyState } from "@components/ui/EmptyState";
 import { useAuth } from "@features/authentication";
 import { QuestionGridItem } from "@features/profile/components/QuestionGridItem";
 import { useNavigationGuard } from "@hooks/useNavigationGuard";
+import { colors } from "@theme/colors";
 import { Question } from "@/types/question";
 
 import { ClassMemberRow } from "../components/ClassMemberRow";
@@ -52,7 +54,7 @@ export function TeacherClassDetailScreen({ classId }: TeacherClassDetailScreenPr
   if (isLoading || !classRoom) {
     return (
       <SafeAreaView style={styles.centered}>
-        <ActivityIndicator color="black" />
+        <ActivityIndicator color={colors.textPrimary} />
       </SafeAreaView>
     );
   }
@@ -121,7 +123,7 @@ export function TeacherClassDetailScreen({ classId }: TeacherClassDetailScreenPr
               accessibilityLabel="Bu sınıfa soru ekle"
             >
               {isUploading ? (
-                <ActivityIndicator color="white" />
+                <ActivityIndicator color={colors.textInverse} />
               ) : (
                 <>
                   <Ionicons name="camera" size={18} color="white" />
@@ -142,14 +144,14 @@ export function TeacherClassDetailScreen({ classId }: TeacherClassDetailScreenPr
 
             <Text style={styles.sectionTitle}>Sınıf Soruları</Text>
             {questions.length === 0 ? (
-              <Text style={styles.emptyText}>Henüz bu sınıfa soru eklenmedi.</Text>
+              <EmptyState icon="help-circle-outline" title="Henüz bu sınıfa soru eklenmedi" />
             ) : null}
           </View>
         }
         ListFooterComponent={
           isLoadingMore ? (
             <View style={styles.loadingMore}>
-              <ActivityIndicator color="black" />
+              <ActivityIndicator color={colors.textPrimary} />
             </View>
           ) : null
         }
@@ -254,12 +256,6 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "black",
     marginTop: 12,
-  },
-  emptyText: {
-    fontSize: 14,
-    color: "#8A8F98",
-    marginTop: 8,
-    marginBottom: 12,
   },
   loadingMore: {
     paddingVertical: 24,

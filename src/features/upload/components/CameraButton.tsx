@@ -1,5 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
-import { ActivityIndicator, Pressable, StyleSheet } from "react-native";
+import { ActivityIndicator, StyleSheet } from "react-native";
+
+import { AnimatedPressable } from "@components/ui/AnimatedPressable";
+import { colors } from "@theme/colors";
 
 interface CameraButtonProps {
   onPress: () => void;
@@ -8,15 +11,20 @@ interface CameraButtonProps {
 
 export function CameraButton({ onPress, isLoading }: CameraButtonProps) {
   return (
-    <Pressable
+    <AnimatedPressable
       onPress={onPress}
       disabled={isLoading}
       style={[styles.button, isLoading ? styles.disabled : null]}
       accessibilityRole="button"
       accessibilityLabel="Fotoğraf çek"
+      accessibilityHint="Yeni bir soru fotoğrafı çeker"
     >
-      {isLoading ? <ActivityIndicator color="black" /> : <Ionicons name="camera" size={30} color="black" />}
-    </Pressable>
+      {isLoading ? (
+        <ActivityIndicator color={colors.textPrimary} />
+      ) : (
+        <Ionicons name="camera" size={30} color={colors.textPrimary} />
+      )}
+    </AnimatedPressable>
   );
 }
 
@@ -28,12 +36,12 @@ const styles = StyleSheet.create({
     width: 68,
     height: 68,
     borderRadius: 34,
-    backgroundColor: "white",
+    backgroundColor: colors.background,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 3,
-    borderColor: "black",
-    shadowColor: "black",
+    borderColor: colors.textPrimary,
+    shadowColor: colors.textPrimary,
     shadowOpacity: 0.25,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 2 },
