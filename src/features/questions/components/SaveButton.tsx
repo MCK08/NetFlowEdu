@@ -1,5 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Pressable, StyleSheet } from "react-native";
+import { StyleSheet } from "react-native";
+
+import { AnimatedPressable } from "@components/ui/AnimatedPressable";
+import { colors } from "@theme/colors";
+import { minTouchTarget } from "@theme/sizes";
 
 interface SaveButtonProps {
   saved: boolean;
@@ -9,22 +13,23 @@ interface SaveButtonProps {
 }
 
 // Shared by feed card / question detail — mirrors LikeButton's pattern.
-export function SaveButton({ saved, onPress, size = 26, color = "white" }: SaveButtonProps) {
+export function SaveButton({ saved, onPress, size = 26, color = colors.textInverse }: SaveButtonProps) {
   return (
-    <Pressable
+    <AnimatedPressable
       onPress={onPress}
       style={styles.button}
       accessibilityRole="button"
       accessibilityLabel={saved ? "Kaydı kaldır" : "Kaydet"}
+      accessibilityHint={saved ? "Bu soruyu kayıtlılardan çıkarır" : "Bu soruyu kaydeder"}
       accessibilityState={{ selected: saved }}
       hitSlop={8}
     >
       <Ionicons
         name={saved ? "bookmark" : "bookmark-outline"}
         size={size}
-        color={saved ? "#3358D9" : color}
+        color={saved ? colors.primary : color}
       />
-    </Pressable>
+    </AnimatedPressable>
   );
 }
 
@@ -32,7 +37,7 @@ const styles = StyleSheet.create({
   button: {
     alignItems: "center",
     justifyContent: "center",
-    minWidth: 44,
-    minHeight: 44,
+    minWidth: minTouchTarget,
+    minHeight: minTouchTarget,
   },
 });

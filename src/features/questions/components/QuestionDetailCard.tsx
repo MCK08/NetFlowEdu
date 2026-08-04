@@ -1,6 +1,6 @@
 import { Image } from "expo-image";
 import { router } from "expo-router";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 
 import { AnimatedPressable } from "@components/ui/AnimatedPressable";
 import { Avatar } from "@components/ui/Avatar";
@@ -10,16 +10,13 @@ import { LikeButton, useLike } from "@features/social/likes";
 import { colors } from "@theme/colors";
 import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
+import { typography } from "@theme/typography";
+import { minTouchTarget } from "@theme/sizes";
+import { visibilityLabel } from "@utils/questionLabels";
 import { Question } from "@/types/question";
 
 import { SaveButton } from "./SaveButton";
 import { useSavedQuestion } from "../hooks/useSavedQuestion";
-
-const VISIBILITY_LABELS: Record<Question["visibility"], string> = {
-  private: "Sadece Ben",
-  public: "Herkese Açık",
-  class: "Sınıf",
-};
 
 function formatDate(createdAt: number): string {
   if (!createdAt) return "";
@@ -54,13 +51,19 @@ export function QuestionDetailCard({ question, answerCount, onPressImage }: Ques
 
   return (
     <View style={styles.container}>
-      <Pressable
+      <AnimatedPressable
         onPress={() => onPressImage(question.imageUrl)}
         accessibilityRole="button"
         accessibilityLabel="Soru görselini büyüt"
+        accessibilityHint="Görseli tam ekran açar"
       >
-        <Image source={{ uri: question.imageUrl }} style={styles.image} contentFit="cover" />
-      </Pressable>
+        <Image
+          source={{ uri: question.imageUrl }}
+          style={styles.image}
+          contentFit="cover"
+          transition={150}
+        />
+      </AnimatedPressable>
 
       <View style={styles.metaRow}>
         <AnimatedPressable
@@ -68,6 +71,7 @@ export function QuestionDetailCard({ question, answerCount, onPressImage }: Ques
           onPress={openOwnerProfile}
           accessibilityRole="button"
           accessibilityLabel="Profili görüntüle"
+          accessibilityHint={`${primaryName} adlı kullanıcının profilini açar`}
         >
           <Avatar photoURL={photoURL} displayName={primaryName} size="sm" />
           <View style={styles.nameColumn}>
@@ -85,7 +89,7 @@ export function QuestionDetailCard({ question, answerCount, onPressImage }: Ques
         <View style={styles.infoRow}>
           <Text style={styles.infoText}>{formatDate(question.createdAt)}</Text>
           <Text style={styles.dot}>·</Text>
-          <Text style={styles.infoText}>{VISIBILITY_LABELS[question.visibility]}</Text>
+          <Text style={styles.infoText}>{visibilityLabel(question.visibility)}</Text>
           <Text style={styles.dot}>·</Text>
           <Text style={styles.infoText}>{answerCount} cevap</Text>
         </View>
@@ -116,12 +120,13 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.xs,
-    minHeight: 44,
+    minHeight: minTouchTarget,
   },
   nameColumn: {
     flexShrink: 1,
   },
   owner: {
+    ...typography.subtitle,
     fontSize: 16,
     fontWeight: "700",
     color: colors.textPrimary,

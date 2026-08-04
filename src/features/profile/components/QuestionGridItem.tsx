@@ -1,7 +1,10 @@
 import { Image } from "expo-image";
 import { router } from "expo-router";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 
+import { AnimatedPressable } from "@components/ui/AnimatedPressable";
+import { colors } from "@theme/colors";
+import { roleLabel } from "@utils/roleLabels";
 import { Question } from "@/types/question";
 
 const GRID_GAP = 2;
@@ -22,21 +25,22 @@ export function QuestionGridItem({ question, size, showPosterRoleBadge = false }
   const isTeacherPost = question.posterRole === "teacher";
 
   return (
-    <Pressable
+    <AnimatedPressable
       style={[styles.item, { width: size, height: size }]}
       onPress={() =>
         router.push({ pathname: "/(student)/question/[questionId]", params: { questionId: question.id } })
       }
       accessibilityRole="button"
       accessibilityLabel="Soruyu aç"
+      accessibilityHint="Soru detayını açar"
     >
-      <Image source={{ uri: question.imageUrl }} style={styles.image} contentFit="cover" />
+      <Image source={{ uri: question.imageUrl }} style={styles.image} contentFit="cover" transition={150} />
       {showPosterRoleBadge ? (
         <View style={[styles.roleBadge, isTeacherPost ? styles.roleBadgeTeacher : styles.roleBadgeStudent]}>
-          <Text style={styles.roleBadgeText}>{isTeacherPost ? "Öğretmen" : "Öğrenci"}</Text>
+          <Text style={styles.roleBadgeText}>{roleLabel(question.posterRole)}</Text>
         </View>
       ) : null}
-    </Pressable>
+    </AnimatedPressable>
   );
 }
 
@@ -47,7 +51,7 @@ const styles = StyleSheet.create({
   image: {
     flex: 1,
     borderRadius: 4,
-    backgroundColor: "#F2F2F2",
+    backgroundColor: colors.surfaceMuted,
   },
   roleBadge: {
     position: "absolute",
@@ -58,7 +62,7 @@ const styles = StyleSheet.create({
     paddingVertical: 1,
   },
   roleBadgeTeacher: {
-    backgroundColor: "#3358D9",
+    backgroundColor: colors.primary,
   },
   roleBadgeStudent: {
     backgroundColor: "rgba(0,0,0,0.6)",
@@ -66,6 +70,6 @@ const styles = StyleSheet.create({
   roleBadgeText: {
     fontSize: 9,
     fontWeight: "700",
-    color: "white",
+    color: colors.textInverse,
   },
 });

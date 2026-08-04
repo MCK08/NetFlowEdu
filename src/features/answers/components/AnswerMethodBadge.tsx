@@ -1,27 +1,11 @@
-import { StyleSheet, Text, View } from "react-native";
+import { Badge } from "@components/ui/Badge";
 
 import { getAnswerMethodLabel } from "../services/answerMethodLabel";
 import { AnswerMethod } from "../types";
 
+// Delegates to the shared Badge primitive instead of re-implementing the
+// same rounded pill styling — Badge's "primary" variant already matches
+// this badge's original colors exactly (primaryMuted bg, primary text).
 export function AnswerMethodBadge({ method }: { method: AnswerMethod }) {
-  return (
-    <View style={styles.badge}>
-      <Text style={styles.text}>{getAnswerMethodLabel(method)}</Text>
-    </View>
-  );
+  return <Badge label={getAnswerMethodLabel(method)} variant="primary" />;
 }
-
-const styles = StyleSheet.create({
-  badge: {
-    alignSelf: "flex-start",
-    backgroundColor: "#EEF1FB",
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-  },
-  text: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#3358D9",
-  },
-});

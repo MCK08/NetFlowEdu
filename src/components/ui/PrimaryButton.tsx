@@ -10,6 +10,7 @@ interface PrimaryButtonProps {
   isLoading?: boolean;
   disabled?: boolean;
   variant?: "primary" | "secondary";
+  accessibilityHint?: string;
 }
 
 export function PrimaryButton({
@@ -18,6 +19,7 @@ export function PrimaryButton({
   isLoading = false,
   disabled = false,
   variant = "primary",
+  accessibilityHint,
 }: PrimaryButtonProps) {
   const isDisabled = disabled || isLoading;
 
@@ -31,6 +33,7 @@ export function PrimaryButton({
         isDisabled ? styles.disabled : null,
       ]}
       accessibilityRole="button"
+      accessibilityHint={accessibilityHint}
       accessibilityState={{ disabled: isDisabled, busy: isLoading }}
     >
       {isLoading ? (

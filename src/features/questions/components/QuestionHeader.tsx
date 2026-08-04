@@ -1,19 +1,26 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
+
+import { AnimatedPressable } from "@components/ui/AnimatedPressable";
+import { colors } from "@theme/colors";
+import { minTouchTarget } from "@theme/sizes";
+import { spacing } from "@theme/spacing";
+import { typography } from "@theme/typography";
 
 export function QuestionHeader({ title = "Soru" }: { title?: string }) {
   return (
     <View style={styles.header}>
-      <Pressable
+      <AnimatedPressable
         onPress={() => router.back()}
         style={styles.backButton}
         accessibilityRole="button"
         accessibilityLabel="Geri"
+        accessibilityHint="Önceki ekrana döner"
         hitSlop={8}
       >
-        <Ionicons name="chevron-back" size={26} color="black" />
-      </Pressable>
+        <Ionicons name="chevron-back" size={26} color={colors.textPrimary} />
+      </AnimatedPressable>
       <Text style={styles.title}>{title}</Text>
     </View>
   );
@@ -23,19 +30,19 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    paddingHorizontal: 16,
-    paddingTop: 8,
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.xs,
   },
   backButton: {
-    minWidth: 44,
-    minHeight: 44,
+    minWidth: minTouchTarget,
+    minHeight: minTouchTarget,
     alignItems: "center",
     justifyContent: "center",
   },
   title: {
+    ...typography.title,
     fontSize: 20,
-    fontWeight: "700",
-    color: "black",
+    color: colors.textPrimary,
   },
 });

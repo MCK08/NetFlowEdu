@@ -1,11 +1,17 @@
-import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { router } from "expo-router";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 
+import { AnimatedPressable } from "@components/ui/AnimatedPressable";
+import { Avatar } from "@components/ui/Avatar";
 import { useAuth } from "@features/authentication";
 import { useProfileHandle } from "@features/profiles";
 import { LikeButton, useLike } from "@features/social/likes";
+import { colors } from "@theme/colors";
+import { radius } from "@theme/radius";
+import { spacing } from "@theme/spacing";
+import { minTouchTarget } from "@theme/sizes";
+import { typography } from "@theme/typography";
 
 import { AnswerMethodBadge } from "./AnswerMethodBadge";
 import { Answer } from "../types";
@@ -36,16 +42,22 @@ export function AnswerCard({ answer, onPressImage }: AnswerCardProps) {
 
   return (
     <View style={styles.card}>
-      <Pressable
+      <AnimatedPressable
         onPress={() => onPressImage(answer.imageUrl)}
         accessibilityRole="button"
         accessibilityLabel="Cevap görselini büyüt"
+        accessibilityHint="Görseli tam ekran açar"
       >
-        <Image source={{ uri: answer.imageUrl }} style={styles.image} contentFit="cover" />
-      </Pressable>
+        <Image
+          source={{ uri: answer.imageUrl }}
+          style={styles.image}
+          contentFit="cover"
+          transition={150}
+        />
+      </AnimatedPressable>
 
       <View style={styles.footer}>
-        <Pressable
+        <AnimatedPressable
           style={styles.authorRow}
           onPress={() => {
             if (answer.ownerId) {
@@ -54,14 +66,9 @@ export function AnswerCard({ answer, onPressImage }: AnswerCardProps) {
           }}
           accessibilityRole="button"
           accessibilityLabel="Profili görüntüle"
+          accessibilityHint={`${primaryName} adlı kullanıcının profilini açar`}
         >
-          {photoURL ? (
-            <Image source={{ uri: photoURL }} style={styles.avatar} contentFit="cover" />
-          ) : (
-            <View style={styles.avatarPlaceholder}>
-              <Ionicons name="person" size={14} color="#8A8F98" />
-            </View>
-          )}
+          <Avatar photoURL={photoURL} displayName={primaryName} size="sm" />
           <View style={styles.nameColumn}>
             <Text style={styles.author} numberOfLines={1}>
               {primaryName}
@@ -73,7 +80,7 @@ export function AnswerCard({ answer, onPressImage }: AnswerCardProps) {
             ) : null}
           </View>
           <Text style={styles.date}>{formatDate(answer.createdAt)}</Text>
-        </Pressable>
+        </AnimatedPressable>
         <View style={styles.bottomRow}>
           <AnswerMethodBadge method={answer.method} />
           <LikeButton
@@ -81,7 +88,7 @@ export function AnswerCard({ answer, onPressImage }: AnswerCardProps) {
             likeCount={likeCount}
             onPress={toggle}
             size={20}
-            color="#5B5F66"
+            color={colors.textSecondary}
           />
         </View>
       </View>
@@ -91,20 +98,20 @@ export function AnswerCard({ answer, onPressImage }: AnswerCardProps) {
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: 16,
-    backgroundColor: "#F7F7F8",
+    borderRadius: radius.xl,
+    backgroundColor: colors.surface,
     overflow: "hidden",
-    gap: 10,
+    gap: spacing.sm,
   },
   image: {
     width: "100%",
     aspectRatio: 4 / 3,
-    backgroundColor: "#E5E5E5",
+    backgroundColor: colors.surfaceMuted,
   },
   footer: {
-    paddingHorizontal: 12,
-    paddingBottom: 12,
-    gap: 8,
+    paddingHorizontal: spacing.sm,
+    paddingBottom: spacing.sm,
+    gap: spacing.xs,
   },
   bottomRow: {
     flexDirection: "row",
@@ -114,37 +121,24 @@ const styles = StyleSheet.create({
   authorRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    minHeight: 44,
-  },
-  avatar: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-  },
-  avatarPlaceholder: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: "#E5E5E5",
-    alignItems: "center",
-    justifyContent: "center",
+    gap: spacing.xs,
+    minHeight: minTouchTarget,
   },
   nameColumn: {
     flexShrink: 1,
   },
   author: {
+    ...typography.bodyStrong,
     fontSize: 13,
-    fontWeight: "700",
-    color: "black",
+    color: colors.textPrimary,
   },
   handle: {
     fontSize: 11,
-    color: "#8A8F98",
+    color: colors.textTertiary,
   },
   date: {
-    fontSize: 12,
-    color: "#8A8F98",
+    ...typography.caption,
+    color: colors.textTertiary,
     marginLeft: "auto",
   },
 });

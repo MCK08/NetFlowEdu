@@ -1,7 +1,6 @@
 import { deleteApp, FirebaseApp, getApps, initializeApp } from "firebase/app";
 import {
   Auth,
-  getReactNativePersistence,
   inMemoryPersistence,
   initializeAuth,
   Persistence,
@@ -9,8 +8,8 @@ import {
   updateCurrentUser,
   User,
 } from "firebase/auth";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 
+import { getAccountPersistence } from "./accountPersistence";
 import { auth as defaultAuth, firebaseConfig } from "./config";
 
 // ---------------------------------------------------------------------------
@@ -27,12 +26,13 @@ import { auth as defaultAuth, firebaseConfig } from "./config";
 // import its `auth`/`db`/`storage`/`functions` singletons:
 //
 //  1. Every stored account gets its OWN separate, NAMED FirebaseApp +
-//     Auth instance ("account-{uid}"), persisted via the EXACT SAME
-//     getReactNativePersistence(AsyncStorage) mechanism the app's single
-//     default Auth already uses today — just one slot per account instead
-//     of one slot total. Firebase's persistence key format is scoped by
-//     app name internally, so these never collide with each other or with
-//     the default app's own persisted session.
+//     Auth instance ("account-{uid}"), persisted via the SAME
+//     platform-appropriate persistence mechanism the app's single default
+//     Auth already uses today (see accountPersistence.native.ts/.web.ts —
+//     AsyncStorage on iOS/Android, localStorage on web) — just one slot
+//     per account instead of one slot total. Firebase's persistence key
+//     format is scoped by app name internally, so these never collide
+//     with each other or with the default app's own persisted session.
 //  2. `updateCurrentUser(auth, user)` (a real, documented firebase/auth
 //     API) transfers an already-authenticated User from one Auth instance
 //     onto another. Calling `updateCurrentUser(defaultAuth, storedUser)`
@@ -93,7 +93,7 @@ function accountAppName(uid: string): string {
 }
 
 function getAccountAuth(uid: string): Auth {
-  return getOrCreateNamedAuth(accountAppName(uid), getReactNativePersistence(AsyncStorage));
+  return getOrCreateNamedAuth(accountAppName(uid), getAccountPersistence());
 }
 
 function getStagingAuth(): Auth {

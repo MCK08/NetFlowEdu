@@ -2,7 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import { GestureResponderEvent, PanResponder, StyleSheet, View } from "react-native";
 import Svg, { Path } from "react-native-svg";
 
+import { AnimatedPressable } from "@components/ui/AnimatedPressable";
 import { PrimaryButton } from "@components/ui/PrimaryButton";
+import { colors } from "@theme/colors";
+import { radius } from "@theme/radius";
+import { shadows } from "@theme/shadows";
+import { spacing } from "@theme/spacing";
 
 import { toPngDataUri } from "../services/pngDataUri";
 import { clearAll, commitStroke, DrawnPath, PendingStroke, undoLast } from "../services/strokeReducer";
@@ -170,13 +175,16 @@ export function DrawingBoard({ onSave, isSaving, onDirtyChange }: DrawingBoardPr
       <View style={styles.toolbar}>
         <View style={styles.brushRow}>
           {BRUSH_SIZES.map((size) => (
-            <View
+            <AnimatedPressable
               key={size}
               style={[styles.brushDot, strokeWidthUI === size ? styles.brushDotSelected : null]}
-              onTouchEnd={() => selectStrokeWidth(size)}
+              onPress={() => selectStrokeWidth(size)}
+              accessibilityRole="radio"
+              accessibilityLabel={`Kalem kalınlığı ${size}`}
+              accessibilityState={{ selected: strokeWidthUI === size }}
             >
-              <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: "black" }} />
-            </View>
+              <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: colors.textPrimary }} />
+            </AnimatedPressable>
           ))}
         </View>
 
@@ -185,36 +193,59 @@ export function DrawingBoard({ onSave, isSaving, onDirtyChange }: DrawingBoardPr
             label={isErasingUI ? "Kalem" : "Silgi"}
             onPress={toggleEraser}
             variant="secondary"
+            accessibilityHint={isErasingUI ? "Kalem moduna geçer" : "Silgi moduna geçer"}
           />
-          <PrimaryButton label="Geri Al" onPress={undo} variant="secondary" disabled={paths.length === 0} />
-          <PrimaryButton label="Temizle" onPress={clear} variant="secondary" disabled={paths.length === 0} />
+          <PrimaryButton
+            label="Geri Al"
+            onPress={undo}
+            variant="secondary"
+            disabled={paths.length === 0}
+            accessibilityHint="Son çizilen çizgiyi geri alır"
+          />
+          <PrimaryButton
+            label="Temizle"
+            onPress={clear}
+            variant="secondary"
+            disabled={paths.length === 0}
+            accessibilityHint="Tüm çizimi temizler"
+          />
         </View>
       </View>
 
-      <PrimaryButton label="Kaydet" onPress={save} isLoading={isSaving} disabled={paths.length === 0} />
+      <PrimaryButton
+        label="Kaydet"
+        onPress={save}
+        isLoading={isSaving}
+        disabled={paths.length === 0}
+        accessibilityHint="Çizimi cevap olarak gönderir"
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    gap: 16,
+    gap: spacing.md,
   },
   canvas: {
     width: "100%",
     height: CANVAS_HEIGHT,
-    backgroundColor: "white",
-    borderRadius: 16,
+    backgroundColor: colors.background,
+    borderRadius: radius.xl,
     borderWidth: 1,
-    borderColor: "#E5E5E5",
+    borderColor: colors.divider,
     overflow: "hidden",
+    ...shadows.sm,
   },
   toolbar: {
-    gap: 12,
+    gap: spacing.sm,
+    backgroundColor: colors.surface,
+    borderRadius: radius.xl,
+    padding: spacing.sm,
   },
   brushRow: {
     flexDirection: "row",
-    gap: 16,
+    gap: spacing.md,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -228,11 +259,11 @@ const styles = StyleSheet.create({
     borderColor: "transparent",
   },
   brushDotSelected: {
-    borderColor: "#3358D9",
+    borderColor: colors.primary,
   },
   actionsRow: {
     flexDirection: "row",
-    gap: 8,
+    gap: spacing.xs,
   },
 });
 

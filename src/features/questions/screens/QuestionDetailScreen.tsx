@@ -103,7 +103,11 @@ export function QuestionDetailScreen({ questionId }: QuestionDetailScreenProps) 
               onPressImage={setPreviewUri}
             />
 
-            <PrimaryButton label="Cevapla" onPress={handleAnswer} />
+            <PrimaryButton
+              label="Cevapla"
+              onPress={handleAnswer}
+              accessibilityHint="Bu soruya cevap verme ekranını açar"
+            />
 
             <Divider />
 
@@ -167,8 +171,8 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
   },
   answersTitle: {
+    ...typography.title,
     fontSize: 17,
-    fontWeight: "700",
     color: colors.textPrimary,
   },
 });

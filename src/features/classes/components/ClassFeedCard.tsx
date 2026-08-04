@@ -21,6 +21,7 @@ import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
 import { formatRelativeTime } from "@utils/feedFormat";
+import { roleLabel } from "@utils/roleLabels";
 import { Question } from "@/types/question";
 
 import { useNavigationGuard } from "@hooks/useNavigationGuard";
@@ -70,7 +71,6 @@ function ClassFeedCardComponent({
   // see useNavigationGuard for why a timer was the wrong primitive. Keyed,
   // so tapping "Cevapla" never blocks a legitimate tap on comments.
   const guardedNavigate = useNavigationGuard();
-  const isTeacherPost = question.posterRole === "teacher";
   const subject = question.subject?.trim();
   const postedAt = formatRelativeTime(question.createdAt);
 
@@ -134,7 +134,7 @@ function ClassFeedCardComponent({
           // Teacher and student questions now share one class feed, so who
           // posted is no longer implicit the way it was when only teachers
           // could publish here.
-          roleLabel={isTeacherPost ? "Öğretmen" : "Öğrenci"}
+          roleLabel={roleLabel(question.posterRole)}
           onPress={openOwnerProfile}
           meta={
             <>

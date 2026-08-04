@@ -1,4 +1,11 @@
-import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
+
+import { EmptyState } from "@components/ui/EmptyState";
+import { LoadingSkeleton } from "@components/ui/LoadingSkeleton";
+import { colors } from "@theme/colors";
+import { radius } from "@theme/radius";
+import { spacing } from "@theme/spacing";
+import { typography } from "@theme/typography";
 
 import { AnswerCard } from "./AnswerCard";
 import { Answer } from "../types";
@@ -13,8 +20,9 @@ interface AnswerListProps {
 export function AnswerList({ answers, isLoading, error, onPressImage }: AnswerListProps) {
   if (isLoading) {
     return (
-      <View style={styles.stateContainer}>
-        <ActivityIndicator color="black" />
+      <View style={styles.skeletonList}>
+        <LoadingSkeleton height={220} borderRadius={radius.xl} />
+        <LoadingSkeleton height={220} borderRadius={radius.xl} />
       </View>
     );
   }
@@ -29,10 +37,11 @@ export function AnswerList({ answers, isLoading, error, onPressImage }: AnswerLi
 
   if (answers.length === 0) {
     return (
-      <View style={styles.stateContainer}>
-        <Text style={styles.emptyTitle}>Henüz cevap yüklenmedi</Text>
-        <Text style={styles.emptySubtitle}>Bu soruya ilk cevabı sen yükleyebilirsin.</Text>
-      </View>
+      <EmptyState
+        icon="document-text-outline"
+        title="Henüz cevap yüklenmedi"
+        description="Bu soruya ilk cevabı sen yükleyebilirsin."
+      />
     );
   }
 
@@ -46,29 +55,21 @@ export function AnswerList({ answers, isLoading, error, onPressImage }: AnswerLi
 }
 
 const styles = StyleSheet.create({
+  skeletonList: {
+    gap: spacing.sm,
+  },
   stateContainer: {
-    paddingVertical: 32,
+    paddingVertical: spacing.xxl,
     alignItems: "center",
-    gap: 6,
+    gap: spacing.xxs,
   },
   errorText: {
-    fontSize: 14,
-    color: "#D92D20",
+    ...typography.body,
+    color: colors.danger,
     textAlign: "center",
-    paddingHorizontal: 24,
-  },
-  emptyTitle: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: "black",
-  },
-  emptySubtitle: {
-    fontSize: 13,
-    color: "#5B5F66",
-    textAlign: "center",
-    paddingHorizontal: 24,
+    paddingHorizontal: spacing.xl,
   },
   list: {
-    gap: 12,
+    gap: spacing.sm,
   },
 });

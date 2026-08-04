@@ -1,7 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Image } from "expo-image";
-import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
+import { Alert, StyleSheet, Text, View } from "react-native";
 
+import { AnimatedPressable } from "@components/ui/AnimatedPressable";
+import { Avatar } from "@components/ui/Avatar";
+import { colors } from "@theme/colors";
+import { spacing } from "@theme/spacing";
+import { roleLabel } from "@utils/roleLabels";
 import { resolvePublicIdentity } from "@utils/publicIdentity";
 import { ClassMember } from "@/types/class";
 
@@ -27,13 +31,7 @@ export function ClassMemberRow({ member, canRemove, onRemove }: ClassMemberRowPr
 
   return (
     <View style={styles.row}>
-      {member.photoURL ? (
-        <Image source={{ uri: member.photoURL }} style={styles.avatar} contentFit="cover" />
-      ) : (
-        <View style={styles.avatarPlaceholder}>
-          <Ionicons name="person" size={16} color="#8A8F98" />
-        </View>
-      )}
+      <Avatar photoURL={member.photoURL} displayName={identity.primaryName} size="sm" />
       <View style={styles.nameColumn}>
         <Text style={styles.name} numberOfLines={1}>
           {identity.primaryName}
@@ -44,16 +42,17 @@ export function ClassMemberRow({ member, canRemove, onRemove }: ClassMemberRowPr
           </Text>
         ) : null}
       </View>
-      <Text style={styles.role}>{member.role === "teacher" ? "Öğretmen" : "Öğrenci"}</Text>
+      <Text style={styles.role}>{roleLabel(member.role)}</Text>
       {canRemove && member.role !== "teacher" ? (
-        <Pressable
+        <AnimatedPressable
           onPress={confirmRemove}
           style={styles.removeButton}
           accessibilityRole="button"
           accessibilityLabel="Üyeyi sınıftan çıkar"
+          accessibilityHint={`${identity.primaryName} adlı üyeyi sınıftan çıkarır`}
         >
-          <Ionicons name="close-circle-outline" size={20} color="#D92D20" />
-        </Pressable>
+          <Ionicons name="close-circle-outline" size={20} color={colors.danger} />
+        </AnimatedPressable>
       ) : null}
     </View>
   );
@@ -63,23 +62,10 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
-    paddingVertical: 10,
+    gap: spacing.sm,
+    paddingVertical: spacing.sm,
     borderBottomWidth: 1,
-    borderBottomColor: "#EDEEF0",
-  },
-  avatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-  },
-  avatarPlaceholder: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: "#F2F2F2",
-    alignItems: "center",
-    justifyContent: "center",
+    borderBottomColor: colors.divider,
   },
   nameColumn: {
     flex: 1,
@@ -87,15 +73,15 @@ const styles = StyleSheet.create({
   name: {
     fontSize: 14,
     fontWeight: "600",
-    color: "black",
+    color: colors.textPrimary,
   },
   handle: {
     fontSize: 12,
-    color: "#8A8F98",
+    color: colors.textTertiary,
   },
   role: {
     fontSize: 12,
-    color: "#8A8F98",
+    color: colors.textTertiary,
   },
   removeButton: {
     minWidth: 32,

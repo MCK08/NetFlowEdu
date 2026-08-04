@@ -18,6 +18,8 @@ import { colors, darkColors } from "@theme/colors";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
 import { formatRelativeTime } from "@utils/feedFormat";
+import { visibilityLabel } from "@utils/questionLabels";
+import { roleLabel } from "@utils/roleLabels";
 
 import { Question } from "../types";
 
@@ -25,17 +27,6 @@ interface FeedCardProps {
   question: Question;
   height: number;
 }
-
-const VISIBILITY_LABELS: Record<Question["visibility"], string> = {
-  private: "Sadece Ben",
-  public: "Herkese Açık",
-  class: "Sınıf",
-};
-
-const ROLE_LABELS: Record<Question["posterRole"], string> = {
-  teacher: "Öğretmen",
-  student: "Öğrenci",
-};
 
 // Height reserved at the bottom for the overlay block, so the action rail
 // sits clear of the author/caption content.
@@ -103,12 +94,12 @@ function FeedCardComponent({ question, height }: FeedCardProps) {
           photoURL={photoURL}
           primaryName={primaryName}
           usernameHandle={usernameHandle}
-          roleLabel={ROLE_LABELS[question.posterRole] ?? null}
+          roleLabel={roleLabel(question.posterRole)}
           onPress={openOwnerProfile}
           meta={
             <>
               {subject ? <FeedPill label={subject} icon="pricetag-outline" /> : null}
-              <FeedPill label={VISIBILITY_LABELS[question.visibility]} />
+              <FeedPill label={visibilityLabel(question.visibility)} />
               {postedAt ? <Text style={styles.timestamp}>{postedAt}</Text> : null}
             </>
           }

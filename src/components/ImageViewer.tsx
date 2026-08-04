@@ -1,12 +1,19 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
-import { Modal, Pressable, StyleSheet, useWindowDimensions } from "react-native";
+import { useState } from "react";
+import { ActivityIndicator, Modal, StyleSheet, Text, useWindowDimensions } from "react-native";
 import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withTiming,
 } from "react-native-reanimated";
+
+import { AnimatedPressable } from "@components/ui/AnimatedPressable";
+import { colors } from "@theme/colors";
+import { minTouchTarget } from "@theme/sizes";
+import { spacing } from "@theme/spacing";
+import { typography } from "@theme/typography";
 
 interface ImageViewerProps {
   visible: boolean;
@@ -24,6 +31,19 @@ const DOUBLE_TAP_SCALE = 2.5;
 // this is view-only.
 export function ImageViewer({ visible, uri, onClose }: ImageViewerProps) {
   const { width, height } = useWindowDimensions();
+  // No new useEffect: resetting to "loading" when `uri` changes is done by
+  // comparing against the last-seen uri during render (the standard
+  // "adjust state while rendering" pattern) instead of an effect.
+  const [imageState, setImageState] = useState<{
+    uri: string | null;
+    status: "loading" | "loaded" | "error";
+  }>({ uri, status: "loading" });
+  if (imageState.uri !== uri) {
+    setImageState({ uri, status: "loading" });
+  }
+  // Bumped on retry to force expo-image to re-attempt the same uri (it
+  // otherwise treats an unchanged `source` as already resolved/failed).
+  const [retryToken, setRetryToken] = useState(0);
 
   const scale = useSharedValue(1);
   const savedScale = useSharedValue(1);
@@ -99,21 +119,55 @@ export function ImageViewer({ visible, uri, onClose }: ImageViewerProps) {
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={handleClose}>
       <GestureHandlerRootView style={styles.flex}>
-        <Pressable
+        <AnimatedPressable
           style={styles.closeButton}
           onPress={handleClose}
           accessibilityRole="button"
           accessibilityLabel="Kapat"
+          accessibilityHint="Görsel önizlemesini kapatır"
           hitSlop={8}
         >
-          <Ionicons name="close" size={28} color="white" />
-        </Pressable>
+          <Ionicons name="close" size={28} color={colors.textInverse} />
+        </AnimatedPressable>
 
         <GestureDetector gesture={composedGesture}>
           <Animated.View style={[styles.imageWrapper, { width, height }, animatedStyle]}>
-            <Image source={{ uri }} style={styles.image} contentFit="contain" />
+            <Image
+              key={retryToken}
+              source={{ uri }}
+              style={styles.image}
+              contentFit="contain"
+              transition={200}
+              onLoad={() => setImageState({ uri, status: "loaded" })}
+              onError={() => setImageState({ uri, status: "error" })}
+            />
           </Animated.View>
         </GestureDetector>
+
+        {imageState.status === "loading" ? (
+          <ActivityIndicator
+            color={colors.textInverse}
+            size="large"
+            style={styles.centeredOverlay}
+            pointerEvents="none"
+          />
+        ) : null}
+
+        {imageState.status === "error" ? (
+          <AnimatedPressable
+            style={styles.centeredOverlay}
+            onPress={() => {
+              setImageState({ uri, status: "loading" });
+              setRetryToken((token) => token + 1);
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="Tekrar dene"
+            accessibilityHint="Görseli yeniden yüklemeyi dener"
+          >
+            <Ionicons name="alert-circle-outline" size={32} color={colors.textInverse} />
+            <Text style={styles.errorText}>Görsel yüklenemedi. Tekrar denemek için dokun.</Text>
+          </AnimatedPressable>
+        ) : null}
       </GestureHandlerRootView>
     </Modal>
   );
@@ -129,8 +183,8 @@ const styles = StyleSheet.create({
     top: 56,
     right: 20,
     zIndex: 1,
-    width: 44,
-    height: 44,
+    width: minTouchTarget,
+    height: minTouchTarget,
     borderRadius: 22,
     backgroundColor: "rgba(255,255,255,0.15)",
     alignItems: "center",
@@ -143,5 +197,17 @@ const styles = StyleSheet.create({
   image: {
     width: "100%",
     height: "100%",
+  },
+  centeredOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.sm,
+    paddingHorizontal: spacing.xl,
+  },
+  errorText: {
+    ...typography.body,
+    color: colors.textInverse,
+    textAlign: "center",
   },
 });

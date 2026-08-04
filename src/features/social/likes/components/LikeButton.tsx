@@ -1,5 +1,10 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Pressable, StyleSheet, Text } from "react-native";
+import { StyleSheet, Text } from "react-native";
+
+import { AnimatedPressable } from "@components/ui/AnimatedPressable";
+import { colors } from "@theme/colors";
+import { minTouchTarget } from "@theme/sizes";
+import { spacing } from "@theme/spacing";
 
 interface LikeButtonProps {
   liked: boolean;
@@ -18,34 +23,35 @@ export function LikeButton({
   likeCount,
   onPress,
   size = 26,
-  color = "white",
+  color = colors.textInverse,
   textStyle,
 }: LikeButtonProps) {
   return (
-    <Pressable
+    <AnimatedPressable
       onPress={onPress}
       style={styles.button}
       accessibilityRole="button"
       accessibilityLabel={liked ? "Beğeniyi geri al" : "Beğen"}
+      accessibilityHint={liked ? "Bu beğeniyi kaldırır" : "Bu soruyu beğenir"}
       accessibilityState={{ selected: liked }}
       hitSlop={8}
     >
       <Ionicons
         name={liked ? "heart" : "heart-outline"}
         size={size}
-        color={liked ? "#FF3B5C" : color}
+        color={liked ? colors.accent : color}
       />
       <Text style={[styles.count, { color }, textStyle]}>{likeCount}</Text>
-    </Pressable>
+    </AnimatedPressable>
   );
 }
 
 const styles = StyleSheet.create({
   button: {
     alignItems: "center",
-    gap: 4,
-    minWidth: 44,
-    minHeight: 44,
+    gap: spacing.xxs,
+    minWidth: minTouchTarget,
+    minHeight: minTouchTarget,
     justifyContent: "center",
   },
   count: {
