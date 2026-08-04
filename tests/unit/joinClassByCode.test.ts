@@ -16,6 +16,18 @@ const mockClassesStore = new Map<string, Record<string, unknown>>();
 const mockMembersStore = new Map<string, Map<string, Record<string, unknown>>>();
 const mockJoinCodesStore = new Map<string, Record<string, unknown>>();
 const mockUsersStore = new Map<string, Record<string, unknown> | undefined>();
+// Phase 15 — joinClassByCode now also writes a class_student_joined
+// notification (+ its unread-count summary) to the class's teacher via
+// users/{uid}/notifications and users/{uid}/notificationMeta. Not this
+// test file's own subject, but the real handler now touches it, so the
+// fake needs to support the sub-collection rather than throwing.
+const mockNotificationsStore = new Map<string, Map<string, Record<string, unknown>>>();
+const mockNotificationMetaStore = new Map<string, Record<string, unknown>>();
+
+function notificationsFor(uid: string) {
+  if (!mockNotificationsStore.has(uid)) mockNotificationsStore.set(uid, new Map());
+  return mockNotificationsStore.get(uid)!;
+}
 
 const SERVER_TIMESTAMP = "__SERVER_TIMESTAMP__";
 const INCREMENT = "__INCREMENT__";
@@ -76,9 +88,44 @@ function joinCodeDocRef(code: string) {
   };
 }
 
+function notificationDocRef(recipientUid: string, notificationId: string) {
+  return {
+    id: notificationId,
+    async get() {
+      const data = notificationsFor(recipientUid).get(notificationId);
+      return { exists: data !== undefined, data: () => data, id: notificationId };
+    },
+    async set(data: Record<string, unknown>) {
+      notificationsFor(recipientUid).set(notificationId, { ...data });
+    },
+  };
+}
+
+function notificationMetaDocRef(uid: string) {
+  return {
+    id: "summary",
+    async get() {
+      const data = mockNotificationMetaStore.get(uid);
+      return { exists: data !== undefined, data: () => data, id: "summary" };
+    },
+    async set(data: Record<string, unknown>, options?: { merge?: boolean }) {
+      if (options?.merge) {
+        mockNotificationMetaStore.set(uid, { ...(mockNotificationMetaStore.get(uid) ?? {}), ...data });
+      } else {
+        mockNotificationMetaStore.set(uid, { ...data });
+      }
+    },
+  };
+}
+
 function userDocRef(uid: string) {
   return {
     id: uid,
+    collection: (name: string) => {
+      if (name === "notifications") return { doc: (id: string) => notificationDocRef(uid, id) };
+      if (name === "notificationMeta") return { doc: () => notificationMetaDocRef(uid) };
+      throw new Error(`unexpected sub-collection ${name}`);
+    },
     async get() {
       const data = mockUsersStore.get(uid);
       return { exists: data !== undefined, data: () => data, id: uid };
@@ -99,8 +146,11 @@ function mockMakeFakeDb() {
     async runTransaction<T>(fn: (tx: unknown) => Promise<T>): Promise<T> {
       const tx = {
         get: (ref: { get: () => unknown }) => ref.get(),
-        set: (ref: { set: (d: Record<string, unknown>) => unknown }, d: Record<string, unknown>) =>
-          ref.set(d),
+        set: (
+          ref: { set: (d: Record<string, unknown>, o?: { merge?: boolean }) => unknown },
+          d: Record<string, unknown>,
+          options?: { merge?: boolean },
+        ) => ref.set(d, options),
         update: (
           ref: { update: (d: Record<string, unknown>) => unknown },
           d: Record<string, unknown>,
@@ -133,6 +183,8 @@ function resetStores() {
   mockMembersStore.clear();
   mockJoinCodesStore.clear();
   mockUsersStore.clear();
+  mockNotificationsStore.clear();
+  mockNotificationMetaStore.clear();
 }
 
 function seedClass(

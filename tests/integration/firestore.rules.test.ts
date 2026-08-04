@@ -2720,3 +2720,257 @@ describe("firestore.rules — friendships/{pairId} and socialMeta", () => {
     await assertFails(getDoc(doc(unauthed.firestore(), "users", "student-1", "socialMeta", "summary")));
   });
 });
+
+// Phase 15 — users/{uid}/notifications/{notificationId} and
+// users/{uid}/notificationMeta/{docId}. All CREATE/DELETE and every field
+// except isRead/readAt go through createNotificationInTransaction /
+// deleteNotificationInTransaction / markAllNotificationsRead (Admin SDK,
+// bypasses these rules) — client access here is read-only plus the one
+// narrow isRead/readAt update. Real getDocs() queries are used for the
+// list-query cases, never a bare get() standing in.
+describe("firestore.rules — users/{uid}/notifications and notificationMeta", () => {
+  let testEnv: RulesTestEnvironment;
+
+  beforeAll(async () => {
+    testEnv = await initializeTestEnvironment({
+      projectId: PROJECT_ID,
+      firestore: { rules: fs.readFileSync("firestore.rules", "utf8"), host: "127.0.0.1", port: 8080 },
+    });
+  });
+
+  afterAll(async () => testEnv.cleanup());
+  afterEach(async () => testEnv.clearFirestore());
+
+  function studentCtx(uid: string) {
+    return testEnv.authenticatedContext(uid, { role: "student", organizationId: null });
+  }
+
+  function notificationDoc(overrides: Partial<Record<string, unknown>> = {}) {
+    return {
+      recipientId: "student-1",
+      actorId: "student-2",
+      actorDisplayName: "Ayşe",
+      actorUsername: "ayse",
+      actorPhotoURL: null,
+      type: "question_liked",
+      entityType: "question",
+      entityId: "q1",
+      parentEntityId: null,
+      classId: null,
+      messagePreview: null,
+      createdAt: serverTimestamp(),
+      readAt: null,
+      isRead: false,
+      dedupeKey: "student-1_question_liked_student-2_q1",
+      ...overrides,
+    };
+  }
+
+  async function seedNotification(
+    uid: string,
+    notificationId: string,
+    overrides: Partial<Record<string, unknown>> = {},
+  ) {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(
+        doc(context.firestore(), "users", uid, "notifications", notificationId),
+        notificationDoc(overrides),
+      );
+    });
+  }
+
+  async function seedNotificationMeta(uid: string, unreadCount: number) {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "users", uid, "notificationMeta", "summary"), {
+        unreadCount,
+        updatedAt: serverTimestamp(),
+      });
+    });
+  }
+
+  // ---- owner read ------------------------------------------------------
+
+  it("lets the owner read their own notification", async () => {
+    await seedNotification("student-1", "n1");
+    const owner = studentCtx("student-1");
+    await assertSucceeds(getDoc(doc(owner.firestore(), "users", "student-1", "notifications", "n1")));
+  });
+
+  it("denies another user reading someone else's notification", async () => {
+    await seedNotification("student-1", "n1");
+    const outsider = studentCtx("student-2");
+    await assertFails(getDoc(doc(outsider.firestore(), "users", "student-1", "notifications", "n1")));
+  });
+
+  it("denies an unauthenticated read", async () => {
+    await seedNotification("student-1", "n1");
+    const unauthed = testEnv.unauthenticatedContext();
+    await assertFails(getDoc(doc(unauthed.firestore(), "users", "student-1", "notifications", "n1")));
+  });
+
+  // ---- owner LIST query (real getDocs(), never a bare get()) -----------
+
+  it("runs the owner's own notification list query successfully", async () => {
+    await seedNotification("student-1", "n1");
+    await seedNotification("student-1", "n2");
+    const owner = studentCtx("student-1");
+    const snap = await assertSucceeds(
+      getDocs(
+        query(collection(owner.firestore(), "users", "student-1", "notifications"), orderBy("createdAt", "desc")),
+      ),
+    );
+    expect(snap.docs).toHaveLength(2);
+  });
+
+  it("denies another user's list query against this owner's notifications collection", async () => {
+    await seedNotification("student-1", "n1");
+    const outsider = studentCtx("student-2");
+    await assertFails(
+      getDocs(
+        query(
+          collection(outsider.firestore(), "users", "student-1", "notifications"),
+          orderBy("createdAt", "desc"),
+        ),
+      ),
+    );
+  });
+
+  // ---- client create denial ---------------------------------------------
+
+  it("denies a client creating a notification for itself", async () => {
+    const student1 = studentCtx("student-1");
+    await assertFails(
+      setDoc(
+        doc(student1.firestore(), "users", "student-1", "notifications", "fake1"),
+        notificationDoc({ recipientId: "student-1", actorId: "student-1" }),
+      ),
+    );
+  });
+
+  it("denies a client creating a notification for someone else (fabricating a fake event)", async () => {
+    const attacker = studentCtx("student-2");
+    await assertFails(
+      setDoc(
+        doc(attacker.firestore(), "users", "student-1", "notifications", "fake1"),
+        notificationDoc({ recipientId: "student-1", actorId: "student-2" }),
+      ),
+    );
+  });
+
+  // ---- client update is fully denied (Pre-commit hardening) -------------
+  //
+  // Reading a notification is now EXCLUSIVELY the markNotificationRead
+  // callable (see its own doc comment for the incident this closes: a
+  // client-writable isRead/readAt never reconciled
+  // notificationMeta/summary.unreadCount, silently desyncing the badge).
+  // Every field is therefore immutable from a client's perspective —
+  // there is no longer a narrower "only isRead/readAt" case to test,
+  // because there is no client update path left at all.
+
+  it("denies the owner marking isRead/readAt directly (must go through the callable)", async () => {
+    await seedNotification("student-1", "n1");
+    const owner = studentCtx("student-1");
+    await assertFails(
+      updateDoc(doc(owner.firestore(), "users", "student-1", "notifications", "n1"), {
+        isRead: true,
+        readAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it.each([
+    ["recipientId", "someone-else"],
+    ["actorId", "someone-else"],
+    ["actorDisplayName", "Someone Else"],
+    ["actorUsername", "someone_else"],
+    ["actorPhotoURL", "https://example.com/x.png"],
+    ["type", "friend_request_accepted"],
+    ["entityType", "answer"],
+    ["entityId", "some-other-question"],
+    ["parentEntityId", "some-other-parent"],
+    ["classId", "some-other-class"],
+    ["messagePreview", "rewritten preview"],
+    ["dedupeKey", "tampered-key"],
+  ] as const)("denies the owner rewriting the immutable field %s", async (field, value) => {
+    await seedNotification("student-1", "n1");
+    const owner = studentCtx("student-1");
+    await assertFails(
+      updateDoc(doc(owner.firestore(), "users", "student-1", "notifications", "n1"), {
+        [field]: value,
+      }),
+    );
+  });
+
+  it("denies the owner adding a brand-new field", async () => {
+    await seedNotification("student-1", "n1");
+    const owner = studentCtx("student-1");
+    await assertFails(
+      updateDoc(doc(owner.firestore(), "users", "student-1", "notifications", "n1"), {
+        pinned: true,
+      }),
+    );
+  });
+
+  it("denies the owner deleting an existing field via merge-less set", async () => {
+    await seedNotification("student-1", "n1");
+    const owner = studentCtx("student-1");
+    const { entityId: _entityId, ...withoutEntityId } = notificationDoc();
+    void _entityId;
+    await assertFails(
+      setDoc(doc(owner.firestore(), "users", "student-1", "notifications", "n1"), withoutEntityId),
+    );
+  });
+
+  it("denies another user changing this owner's notification at all", async () => {
+    await seedNotification("student-1", "n1");
+    const outsider = studentCtx("student-2");
+    await assertFails(
+      updateDoc(doc(outsider.firestore(), "users", "student-1", "notifications", "n1"), {
+        isRead: true,
+        readAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  // ---- client delete denial ---------------------------------------------
+
+  it("denies the owner deleting their own notification", async () => {
+    await seedNotification("student-1", "n1");
+    const owner = studentCtx("student-1");
+    await assertFails(deleteDoc(doc(owner.firestore(), "users", "student-1", "notifications", "n1")));
+  });
+
+  // ---- notificationMeta/summary ------------------------------------------
+
+  it("lets the owner read their own notificationMeta summary", async () => {
+    await seedNotificationMeta("student-1", 3);
+    const owner = studentCtx("student-1");
+    await assertSucceeds(getDoc(doc(owner.firestore(), "users", "student-1", "notificationMeta", "summary")));
+  });
+
+  it("denies another user reading this owner's notificationMeta summary", async () => {
+    await seedNotificationMeta("student-1", 3);
+    const outsider = studentCtx("student-2");
+    await assertFails(
+      getDoc(doc(outsider.firestore(), "users", "student-1", "notificationMeta", "summary")),
+    );
+  });
+
+  it("denies a client writing their own notificationMeta summary directly", async () => {
+    const student1 = studentCtx("student-1");
+    await assertFails(
+      setDoc(doc(student1.firestore(), "users", "student-1", "notificationMeta", "summary"), {
+        unreadCount: 999,
+        updatedAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it("denies an unauthenticated read of notificationMeta", async () => {
+    await seedNotificationMeta("student-1", 1);
+    const unauthed = testEnv.unauthenticatedContext();
+    await assertFails(
+      getDoc(doc(unauthed.firestore(), "users", "student-1", "notificationMeta", "summary")),
+    );
+  });
+});

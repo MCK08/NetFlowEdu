@@ -2,6 +2,7 @@ import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { FieldValue, getFirestore } from "firebase-admin/firestore";
 
 import { normalizeJoinCode } from "./joinCode";
+import { createNotificationInTransaction } from "../notifications";
 
 interface JoinClassByCodeRequest {
   code: string;
@@ -114,6 +115,27 @@ export const joinClassByCode = onCall<JoinClassByCodeRequest>(
         memberCount: FieldValue.increment(1),
         updatedAt: FieldValue.serverTimestamp(),
       });
+
+      const teacherId = classData.teacherId;
+      if (typeof teacherId === "string") {
+        await createNotificationInTransaction(tx, db, {
+          recipientId: teacherId,
+          actorId: caller.uid,
+          // studentSnap was already read above for the member row — reused
+          // here rather than a second users/{uid} read in the same
+          // transaction.
+          actorSnapshot: {
+            displayName: studentData.displayName ?? "",
+            username: studentData.username ?? null,
+            photoURL: studentData.photoURL ?? null,
+          },
+          type: "class_student_joined",
+          entityType: "class",
+          entityId: classId,
+          classId,
+          messagePreview: typeof classData.name === "string" ? classData.name : null,
+        });
+      }
 
       return { classId, className: classData.name ?? "", alreadyMember: false };
     });

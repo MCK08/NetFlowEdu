@@ -2,6 +2,12 @@ import { onDocumentCreated } from "firebase-functions/v2/firestore";
 import { logger } from "firebase-functions/v2";
 import { FieldValue, getFirestore } from "firebase-admin/firestore";
 
+import {
+  createNotificationInTransaction,
+  getActorSnapshot,
+  resolveQuestionEventRecipient,
+} from "../notifications";
+
 // Maintains questions/{questionId}.answerCount server-side so the feed can
 // display a count without trusting a client-writable field (firestore.rules
 // blocks any client write to answerCount — see the questions/{questionId}
@@ -28,13 +34,43 @@ export const onAnswerCreate = onDocumentCreated("answers/{answerId}", async (eve
 
   const db = getFirestore();
   const questionRef = db.collection("questions").doc(questionId);
+  const answerOwnerId = snapshot.data().ownerId;
+  const answerId = event.params.answerId;
 
   try {
-    await questionRef.update({ answerCount: FieldValue.increment(1) });
+    await db.runTransaction(async (tx) => {
+      const questionSnap = await tx.get(questionRef);
+      if (!questionSnap.exists) return; // deleted between answer create and this trigger
+
+      tx.update(questionRef, { answerCount: FieldValue.increment(1) });
+
+      const questionData = questionSnap.data() ?? {};
+      const recipientId =
+        typeof questionData.ownerId === "string" && typeof answerOwnerId === "string"
+          ? resolveQuestionEventRecipient(
+              { ownerId: questionData.ownerId, posterRole: questionData.posterRole },
+              answerOwnerId,
+            )
+          : null;
+      if (recipientId && typeof answerOwnerId === "string") {
+        const actorSnapshot = await getActorSnapshot(tx, db, answerOwnerId);
+        await createNotificationInTransaction(tx, db, {
+          recipientId,
+          actorId: answerOwnerId,
+          actorSnapshot,
+          type: "question_answered",
+          entityType: "question",
+          entityId: questionId,
+        });
+      }
+    });
   } catch (error) {
     // Most likely cause: the question was deleted between answer creation
     // and this trigger running. Don't fail the function for a missing
     // parent — there's nothing left to count for.
-    logger.warn(`Could not increment answerCount for questions/${questionId}`, { error });
+    logger.warn(`Could not process onAnswerCreate for questions/${questionId}`, {
+      error,
+      answerId,
+    });
   }
 });

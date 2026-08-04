@@ -6,6 +6,8 @@ import { EmptyState } from "@components/ui/EmptyState";
 import { LoadingSkeleton } from "@components/ui/LoadingSkeleton";
 import { PrimaryButton } from "@components/ui/PrimaryButton";
 import { useAuth } from "@features/authentication";
+import { NotificationBellButton } from "@features/notifications";
+import { ROUTES } from "@constants/routes";
 import { colors } from "@theme/colors";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
@@ -62,7 +64,13 @@ export function StudentClassesScreen() {
         ItemSeparatorComponent={Separator}
         ListHeaderComponent={
           <View style={styles.header}>
-            <Text style={styles.title}>Sınıflarım</Text>
+            <View style={styles.headerTitleRow}>
+              <Text style={styles.title}>Sınıflarım</Text>
+              <NotificationBellButton
+                uid={firebaseUser?.uid}
+                route={ROUTES.studentNotifications}
+              />
+            </View>
             <PrimaryButton label="Sınıfa Katıl" onPress={() => setIsModalOpen(true)} />
           </View>
         }
@@ -103,6 +111,11 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     paddingTop: spacing.md,
     paddingBottom: spacing.lg,
+  },
+  headerTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
   title: {
     ...typography.displayLg,

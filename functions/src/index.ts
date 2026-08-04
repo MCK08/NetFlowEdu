@@ -33,5 +33,6 @@ export {
   cancelFriendRequest,
   removeFriend,
 } from "./friends";
+export { markAllNotificationsRead, markNotificationRead } from "./notifications";
 
 // Later phases will export from ./questions and ./review.

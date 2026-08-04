@@ -101,6 +101,7 @@ export function TeacherClassesScreen() {
               displayName={identity.primaryName}
               photoURL={profile?.photoURL ?? null}
               onSignOut={handleLogout}
+              notificationUid={firebaseUser?.uid}
             />
 
             <TeacherStatsCard stats={stats} isLoading={isLoading} />

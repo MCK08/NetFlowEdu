@@ -3,6 +3,8 @@ import { StyleSheet, Text, View } from "react-native";
 import { Avatar } from "@components/ui/Avatar";
 import { IconButton } from "@components/ui/IconButton";
 import { RoleBadge } from "@components/ui/RoleBadge";
+import { NotificationBellButton } from "@features/notifications";
+import { ROUTES } from "@constants/routes";
 import { colors } from "@theme/colors";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
@@ -12,6 +14,10 @@ interface TeacherDashboardHeaderProps {
   displayName: string;
   photoURL: string | null;
   onSignOut: () => void;
+  // Optional so any existing/future caller that omits it renders exactly
+  // as before — the bell simply doesn't appear without a uid to subscribe
+  // its badge to.
+  notificationUid?: string;
 }
 
 // The teacher home's identity block.
@@ -30,6 +36,7 @@ export function TeacherDashboardHeader({
   displayName,
   photoURL,
   onSignOut,
+  notificationUid,
 }: TeacherDashboardHeaderProps) {
   return (
     <View style={styles.container}>
@@ -49,6 +56,10 @@ export function TeacherDashboardHeader({
           </Text>
         </View>
       </View>
+
+      {notificationUid ? (
+        <NotificationBellButton uid={notificationUid} route={ROUTES.teacherNotifications} />
+      ) : null}
 
       <IconButton
         icon="log-out-outline"

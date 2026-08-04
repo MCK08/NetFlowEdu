@@ -3,6 +3,12 @@ import { FieldValue, getFirestore } from "firebase-admin/firestore";
 
 import { buildLikeId } from "./likeId";
 import { canReadQuestion } from "./questionAccess";
+import {
+  createNotificationInTransaction,
+  deleteNotificationInTransaction,
+  getActorSnapshot,
+  resolveQuestionEventRecipient,
+} from "../notifications";
 
 interface ToggleQuestionLikeRequest {
   questionId: string;
@@ -57,6 +63,12 @@ export const toggleQuestionLike = onCall<ToggleQuestionLikeRequest>(
       if (alreadyLiked) {
         tx.delete(likeRef);
         tx.update(questionRef, { likeCount: Math.max(0, currentCount - 1) });
+        await deleteNotificationInTransaction(tx, db, {
+          recipientId: question.ownerId,
+          actorId: caller.uid,
+          type: "question_liked",
+          entityId: questionId,
+        });
         return { liked: false, likeCount: Math.max(0, currentCount - 1) };
       }
 
@@ -66,6 +78,24 @@ export const toggleQuestionLike = onCall<ToggleQuestionLikeRequest>(
         createdAt: FieldValue.serverTimestamp(),
       });
       tx.update(questionRef, { likeCount: currentCount + 1 });
+      const recipientId =
+        typeof question.ownerId === "string"
+          ? resolveQuestionEventRecipient(
+              { ownerId: question.ownerId, posterRole: question.posterRole },
+              caller.uid,
+            )
+          : null;
+      if (recipientId) {
+        const actorSnapshot = await getActorSnapshot(tx, db, caller.uid);
+        await createNotificationInTransaction(tx, db, {
+          recipientId,
+          actorId: caller.uid,
+          actorSnapshot,
+          type: "question_liked",
+          entityType: "question",
+          entityId: questionId,
+        });
+      }
       return { liked: true, likeCount: currentCount + 1 };
     });
   },

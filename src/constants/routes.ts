@@ -6,6 +6,8 @@ export const ROUTES = {
   googleOnboarding: "/(auth)/google-onboarding",
   student: "/(student)/(tabs)",
   editProfile: "/(student)/edit-profile",
+  studentNotifications: "/(student)/notifications",
   teacher: "/(teacher)/(tabs)",
+  teacherNotifications: "/(teacher)/notifications",
   admin: "/(admin)",
 } as const;

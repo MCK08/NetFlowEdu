@@ -579,6 +579,46 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ---- users/{uid}/notifications/{notificationId} -----------------------
+    // Phase 15 — written exclusively by createNotificationInTransaction /
+    // deleteNotificationInTransaction (Admin SDK, from inside an
+    // already-audited backend transaction — see
+    // functions/src/notifications/createNotification.ts). A client can
+    // never fabricate a notification for itself or anyone else, and can
+    // never read another user's inbox.
+    //
+    // Pre-commit hardening: client update access was REMOVED entirely.
+    // The original "owner may flip isRead/readAt" rule let a client mark a
+    // notification read directly, but nothing in that path ever touched
+    // users/{uid}/notificationMeta/summary.unreadCount — the two documents
+    // would silently drift (the badge would never actually go down). Both
+    // single-notification read (markNotificationRead) and "mark all"
+    // (markAllNotificationsRead) are now exclusively Cloud Functions
+    // callables that update isRead/readAt AND the summary counter
+    // atomically in the same transaction — see
+    // functions/src/notifications/markNotificationRead.ts. A client has no
+    // remaining way to write to this collection at all; read-only,
+    // owner-scoped, full stop. This is simpler than a field-allowlisted
+    // update rule and closes the drift bug by construction rather than by
+    // convention.
+    match /users/{uid}/notifications/{notificationId} {
+      allow read: if isOwner(uid);
+      allow create: if false;
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    // ---- users/{uid}/notificationMeta/{docId} ------------------------------
+    // Exact, server-controlled unread counter — see
+    // functions/src/notifications/notificationMeta.ts, the only writer
+    // (transactional, alongside every notification create/delete/mark-all
+    // mutation). Same owner-only-read / never-client-writable boundary as
+    // users/{uid}/socialMeta/{docId} above.
+    match /users/{uid}/notificationMeta/{docId} {
+      allow read: if isOwner(uid);
+      allow write: if false;
+    }
+
     // ---- usernames/{username} ------------------------------------------
     // Written exclusively by the setUsername Cloud Function (Admin SDK,
     // bypasses these rules) as a uniqueness reservation. Never read or

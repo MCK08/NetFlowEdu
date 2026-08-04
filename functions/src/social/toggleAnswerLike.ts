@@ -3,6 +3,12 @@ import { FieldValue, getFirestore } from "firebase-admin/firestore";
 
 import { buildLikeId } from "./likeId";
 import { canReadQuestion } from "./questionAccess";
+import {
+  createNotificationInTransaction,
+  deleteNotificationInTransaction,
+  getActorSnapshot,
+  resolveAnswerEventRecipient,
+} from "../notifications";
 
 interface ToggleAnswerLikeRequest {
   answerId: string;
@@ -62,6 +68,12 @@ export const toggleAnswerLike = onCall<ToggleAnswerLikeRequest>(
       if (alreadyLiked) {
         tx.delete(likeRef);
         tx.update(answerRef, { likeCount: Math.max(0, currentCount - 1) });
+        await deleteNotificationInTransaction(tx, db, {
+          recipientId: answer.ownerId,
+          actorId: caller.uid,
+          type: "answer_liked",
+          entityId: answerId,
+        });
         return { liked: false, likeCount: Math.max(0, currentCount - 1) };
       }
 
@@ -71,6 +83,30 @@ export const toggleAnswerLike = onCall<ToggleAnswerLikeRequest>(
         createdAt: FieldValue.serverTimestamp(),
       });
       tx.update(answerRef, { likeCount: currentCount + 1 });
+      if (typeof answer.ownerId === "string") {
+        // The answer owner's OWN account role — no shipped route lets a
+        // teacher account own an answer today, but this is read rather
+        // than assumed, so the guard holds if that ever changes. See
+        // resolveAnswerEventRecipient's own doc comment.
+        const ownerSnap = await tx.get(db.collection("users").doc(answer.ownerId));
+        const ownerRole = ownerSnap.data()?.role;
+        const recipientId = resolveAnswerEventRecipient(
+          { ownerId: answer.ownerId, ownerRole },
+          caller.uid,
+        );
+        if (recipientId) {
+          const actorSnapshot = await getActorSnapshot(tx, db, caller.uid);
+          await createNotificationInTransaction(tx, db, {
+            recipientId,
+            actorId: caller.uid,
+            actorSnapshot,
+            type: "answer_liked",
+            entityType: "answer",
+            entityId: answerId,
+            parentEntityId: questionId,
+          });
+        }
+      }
       return { liked: true, likeCount: currentCount + 1 };
     });
   },

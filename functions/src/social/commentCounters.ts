@@ -2,6 +2,12 @@ import { onDocumentCreated, onDocumentDeleted } from "firebase-functions/v2/fire
 import { logger } from "firebase-functions/v2";
 import { FieldValue, getFirestore } from "firebase-admin/firestore";
 
+import {
+  createNotificationInTransaction,
+  getActorSnapshot,
+  resolveQuestionEventRecipient,
+} from "../notifications";
+
 // Maintains questions/{questionId}.commentCount, mirroring the
 // onAnswerCreate pattern (see functions/src/answers/onAnswerCreate.ts) —
 // same at-least-once-delivery caveat applies (documented there and in
@@ -14,17 +20,46 @@ export const onQuestionCommentCreate = onDocumentCreated(
     if (!snapshot) return;
 
     const questionId = snapshot.data().questionId;
+    const commentOwnerId = snapshot.data().ownerId;
     if (typeof questionId !== "string" || questionId.length === 0) {
       logger.warn(`questionComments/${event.params.commentId} has no valid questionId`);
       return;
     }
 
-    await getFirestore()
-      .collection("questions")
-      .doc(questionId)
-      .update({ commentCount: FieldValue.increment(1) })
+    const db = getFirestore();
+    const questionRef = db.collection("questions").doc(questionId);
+
+    await db
+      .runTransaction(async (tx) => {
+        const questionSnap = await tx.get(questionRef);
+        if (!questionSnap.exists) return;
+
+        tx.update(questionRef, { commentCount: FieldValue.increment(1) });
+
+        const questionData = questionSnap.data() ?? {};
+        const recipientId =
+          typeof questionData.ownerId === "string" && typeof commentOwnerId === "string"
+            ? resolveQuestionEventRecipient(
+                { ownerId: questionData.ownerId, posterRole: questionData.posterRole },
+                commentOwnerId,
+              )
+            : null;
+        if (recipientId && typeof commentOwnerId === "string") {
+          const actorSnapshot = await getActorSnapshot(tx, db, commentOwnerId);
+          await createNotificationInTransaction(tx, db, {
+            recipientId,
+            actorId: commentOwnerId,
+            actorSnapshot,
+            type: "question_commented",
+            entityType: "question",
+            entityId: questionId,
+          });
+        }
+      })
       .catch((error) => {
-        logger.warn(`Could not increment commentCount for questions/${questionId}`, { error });
+        logger.warn(`Could not process onQuestionCommentCreate for questions/${questionId}`, {
+          error,
+        });
       });
   },
 );
