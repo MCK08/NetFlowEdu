@@ -1,6 +1,13 @@
 export { markAllNotificationsRead } from "./markAllNotificationsRead";
 export { markNotificationRead } from "./markNotificationRead";
-export { createNotificationInTransaction, deleteNotificationInTransaction, getActorSnapshot } from "./createNotification";
+export {
+  prepareNotification,
+  commitNotification,
+  prepareNotificationDeletion,
+  commitNotificationDeletion,
+  getActorSnapshot,
+} from "./createNotification";
+export type { NotificationPlan, NotificationDeletionPlan, ActorSnapshot } from "./createNotification";
 export { buildNotificationDedupeKey } from "./dedupeKey";
 export { resolveQuestionEventRecipient, resolveAnswerEventRecipient } from "./questionEventDecision";
 export { NOTIFICATION_TYPES, isNotificationType } from "./notificationTypes";

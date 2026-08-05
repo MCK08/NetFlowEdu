@@ -4,7 +4,7 @@ import { FieldValue, getFirestore } from "firebase-admin/firestore";
 import { assertEligibleUser, requireOtherUid } from "./eligibility";
 import { buildFriendshipPairId } from "./pairId";
 import { applyMetaDelta, readMeta, socialMetaRef } from "./socialMeta";
-import { createNotificationInTransaction, getActorSnapshot } from "../notifications";
+import { commitNotification, prepareNotification } from "../notifications";
 
 interface RespondToFriendRequestRequest {
   otherUid: string;
@@ -62,11 +62,27 @@ export const respondToFriendRequest = onCall<RespondToFriendRequestRequest>(
         throw new HttpsError("permission-denied", "Bu isteği yanıtlama yetkiniz yok.");
       }
 
+      // ---- READ PHASE (every read must precede every write) ----
       const [callerMeta, otherMeta] = await Promise.all([
         readMeta(tx, callerMetaRef),
         readMeta(tx, otherMetaRef),
       ]);
+      // otherUid is the ORIGINAL requester — they're notified that the
+      // caller (the recipient) accepted. Declines are deliberately silent
+      // (see the `declined` branch below), so this is prepared only for
+      // the accept path.
+      const acceptedPlan =
+        action === "accept"
+          ? await prepareNotification(tx, db, {
+              recipientId: otherUid,
+              actorId: caller.uid,
+              type: "friend_request_accepted",
+              entityType: "friendship",
+              entityId: pairId,
+            })
+          : null;
 
+      // ---- WRITE PHASE ----
       if (action === "accept") {
         tx.update(friendshipRef, {
           status: "accepted",
@@ -82,19 +98,7 @@ export const respondToFriendRequest = onCall<RespondToFriendRequestRequest>(
           outgoingRequestCount: -1,
           friendCount: 1,
         });
-
-        // otherUid is the ORIGINAL requester — they're notified that the
-        // caller (the recipient) accepted. Declines are deliberately
-        // silent (see the `declined` branch below) — no notification.
-        const actorSnapshot = await getActorSnapshot(tx, db, caller.uid);
-        await createNotificationInTransaction(tx, db, {
-          recipientId: otherUid,
-          actorId: caller.uid,
-          actorSnapshot,
-          type: "friend_request_accepted",
-          entityType: "friendship",
-          entityId: pairId,
-        });
+        commitNotification(tx, acceptedPlan);
 
         return { status: "accepted" };
       }

@@ -4,9 +4,10 @@ import { FieldValue, getFirestore } from "firebase-admin/firestore";
 import { buildLikeId } from "./likeId";
 import { canReadQuestion } from "./questionAccess";
 import {
-  createNotificationInTransaction,
-  deleteNotificationInTransaction,
-  getActorSnapshot,
+  commitNotification,
+  commitNotificationDeletion,
+  prepareNotification,
+  prepareNotificationDeletion,
   resolveQuestionEventRecipient,
 } from "../notifications";
 
@@ -61,23 +62,25 @@ export const toggleQuestionLike = onCall<ToggleQuestionLikeRequest>(
       const currentCount = typeof question.likeCount === "number" ? question.likeCount : 0;
 
       if (alreadyLiked) {
+        // ---- READ PHASE (every read must precede every write) ----
+        const deletionPlan =
+          typeof question.ownerId === "string"
+            ? await prepareNotificationDeletion(tx, db, {
+                recipientId: question.ownerId,
+                actorId: caller.uid,
+                type: "question_liked",
+                entityId: questionId,
+              })
+            : null;
+
+        // ---- WRITE PHASE ----
         tx.delete(likeRef);
         tx.update(questionRef, { likeCount: Math.max(0, currentCount - 1) });
-        await deleteNotificationInTransaction(tx, db, {
-          recipientId: question.ownerId,
-          actorId: caller.uid,
-          type: "question_liked",
-          entityId: questionId,
-        });
+        commitNotificationDeletion(tx, deletionPlan);
         return { liked: false, likeCount: Math.max(0, currentCount - 1) };
       }
 
-      tx.set(likeRef, {
-        userId: caller.uid,
-        targetId: questionId,
-        createdAt: FieldValue.serverTimestamp(),
-      });
-      tx.update(questionRef, { likeCount: currentCount + 1 });
+      // ---- READ PHASE (every read must precede every write) ----
       const recipientId =
         typeof question.ownerId === "string"
           ? resolveQuestionEventRecipient(
@@ -85,17 +88,24 @@ export const toggleQuestionLike = onCall<ToggleQuestionLikeRequest>(
               caller.uid,
             )
           : null;
-      if (recipientId) {
-        const actorSnapshot = await getActorSnapshot(tx, db, caller.uid);
-        await createNotificationInTransaction(tx, db, {
-          recipientId,
-          actorId: caller.uid,
-          actorSnapshot,
-          type: "question_liked",
-          entityType: "question",
-          entityId: questionId,
-        });
-      }
+      const notificationPlan = recipientId
+        ? await prepareNotification(tx, db, {
+            recipientId,
+            actorId: caller.uid,
+            type: "question_liked",
+            entityType: "question",
+            entityId: questionId,
+          })
+        : null;
+
+      // ---- WRITE PHASE ----
+      tx.set(likeRef, {
+        userId: caller.uid,
+        targetId: questionId,
+        createdAt: FieldValue.serverTimestamp(),
+      });
+      tx.update(questionRef, { likeCount: currentCount + 1 });
+      commitNotification(tx, notificationPlan);
       return { liked: true, likeCount: currentCount + 1 };
     });
   },

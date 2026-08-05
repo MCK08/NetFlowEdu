@@ -4,7 +4,7 @@ import { FieldValue, getFirestore } from "firebase-admin/firestore";
 import { assertEligibleUser, requireOtherUid } from "./eligibility";
 import { buildFriendshipPairId } from "./pairId";
 import { applyMetaDelta, readMeta, socialMetaRef } from "./socialMeta";
-import { createNotificationInTransaction, getActorSnapshot } from "../notifications";
+import { commitNotification, prepareNotification } from "../notifications";
 
 interface SendFriendRequestRequest {
   otherUid: string;
@@ -43,11 +43,20 @@ export const sendFriendRequest = onCall<SendFriendRequestRequest>(
       const friendshipSnap = await tx.get(friendshipRef);
 
       if (!friendshipSnap.exists) {
+        // ---- READ PHASE (every read must precede every write) ----
         const [callerMeta, otherMeta] = await Promise.all([
           readMeta(tx, callerMetaRef),
           readMeta(tx, otherMetaRef),
         ]);
+        const notificationPlan = await prepareNotification(tx, db, {
+          recipientId: otherUid,
+          actorId: caller.uid,
+          type: "friend_request_received",
+          entityType: "friendship",
+          entityId: pairId,
+        });
 
+        // ---- WRITE PHASE ----
         tx.set(friendshipRef, {
           participantIds: [caller.uid, otherUid].sort(),
           requesterId: caller.uid,
@@ -60,16 +69,7 @@ export const sendFriendRequest = onCall<SendFriendRequestRequest>(
         });
         applyMetaDelta(tx, callerMetaRef, callerMeta, { outgoingRequestCount: 1 });
         applyMetaDelta(tx, otherMetaRef, otherMeta, { incomingRequestCount: 1 });
-
-        const actorSnapshot = await getActorSnapshot(tx, db, caller.uid);
-        await createNotificationInTransaction(tx, db, {
-          recipientId: otherUid,
-          actorId: caller.uid,
-          actorSnapshot,
-          type: "friend_request_received",
-          entityType: "friendship",
-          entityId: pairId,
-        });
+        commitNotification(tx, notificationPlan);
 
         return { status: "pending", created: true };
       }
@@ -93,10 +93,22 @@ export const sendFriendRequest = onCall<SendFriendRequestRequest>(
       // existing request rather than creating a second, symmetric pending
       // document (spec section 5 — chosen behavior, applied consistently
       // here and in respondToFriendRequest).
+      // ---- READ PHASE (every read must precede every write) ----
       const [callerMeta, otherMeta] = await Promise.all([
         readMeta(tx, callerMetaRef),
         readMeta(tx, otherMetaRef),
       ]);
+      // otherUid was the ORIGINAL requester — they're the one who should
+      // learn their request was accepted, by the caller's action just now.
+      const acceptedPlan = await prepareNotification(tx, db, {
+        recipientId: otherUid,
+        actorId: caller.uid,
+        type: "friend_request_accepted",
+        entityType: "friendship",
+        entityId: pairId,
+      });
+
+      // ---- WRITE PHASE ----
       tx.update(friendshipRef, {
         status: "accepted",
         acceptedAt: FieldValue.serverTimestamp(),
@@ -112,18 +124,7 @@ export const sendFriendRequest = onCall<SendFriendRequestRequest>(
         incomingRequestCount: -1,
         friendCount: 1,
       });
-
-      // otherUid was the ORIGINAL requester — they're the one who should
-      // learn their request was accepted, by the caller's action just now.
-      const actorSnapshot = await getActorSnapshot(tx, db, caller.uid);
-      await createNotificationInTransaction(tx, db, {
-        recipientId: otherUid,
-        actorId: caller.uid,
-        actorSnapshot,
-        type: "friend_request_accepted",
-        entityType: "friendship",
-        entityId: pairId,
-      });
+      commitNotification(tx, acceptedPlan);
 
       return { status: "accepted", created: false };
     });

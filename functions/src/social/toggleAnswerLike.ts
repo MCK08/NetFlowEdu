@@ -4,9 +4,10 @@ import { FieldValue, getFirestore } from "firebase-admin/firestore";
 import { buildLikeId } from "./likeId";
 import { canReadQuestion } from "./questionAccess";
 import {
-  createNotificationInTransaction,
-  deleteNotificationInTransaction,
-  getActorSnapshot,
+  commitNotification,
+  commitNotificationDeletion,
+  prepareNotification,
+  prepareNotificationDeletion,
   resolveAnswerEventRecipient,
 } from "../notifications";
 
@@ -66,23 +67,26 @@ export const toggleAnswerLike = onCall<ToggleAnswerLikeRequest>(
       const currentCount = typeof answer.likeCount === "number" ? answer.likeCount : 0;
 
       if (alreadyLiked) {
+        // ---- READ PHASE (every read must precede every write) ----
+        const deletionPlan =
+          typeof answer.ownerId === "string"
+            ? await prepareNotificationDeletion(tx, db, {
+                recipientId: answer.ownerId,
+                actorId: caller.uid,
+                type: "answer_liked",
+                entityId: answerId,
+              })
+            : null;
+
+        // ---- WRITE PHASE ----
         tx.delete(likeRef);
         tx.update(answerRef, { likeCount: Math.max(0, currentCount - 1) });
-        await deleteNotificationInTransaction(tx, db, {
-          recipientId: answer.ownerId,
-          actorId: caller.uid,
-          type: "answer_liked",
-          entityId: answerId,
-        });
+        commitNotificationDeletion(tx, deletionPlan);
         return { liked: false, likeCount: Math.max(0, currentCount - 1) };
       }
 
-      tx.set(likeRef, {
-        userId: caller.uid,
-        targetId: answerId,
-        createdAt: FieldValue.serverTimestamp(),
-      });
-      tx.update(answerRef, { likeCount: currentCount + 1 });
+      // ---- READ PHASE (every read must precede every write) ----
+      let notificationPlan = null;
       if (typeof answer.ownerId === "string") {
         // The answer owner's OWN account role — no shipped route lets a
         // teacher account own an answer today, but this is read rather
@@ -95,11 +99,9 @@ export const toggleAnswerLike = onCall<ToggleAnswerLikeRequest>(
           caller.uid,
         );
         if (recipientId) {
-          const actorSnapshot = await getActorSnapshot(tx, db, caller.uid);
-          await createNotificationInTransaction(tx, db, {
+          notificationPlan = await prepareNotification(tx, db, {
             recipientId,
             actorId: caller.uid,
-            actorSnapshot,
             type: "answer_liked",
             entityType: "answer",
             entityId: answerId,
@@ -107,6 +109,15 @@ export const toggleAnswerLike = onCall<ToggleAnswerLikeRequest>(
           });
         }
       }
+
+      // ---- WRITE PHASE ----
+      tx.set(likeRef, {
+        userId: caller.uid,
+        targetId: answerId,
+        createdAt: FieldValue.serverTimestamp(),
+      });
+      tx.update(answerRef, { likeCount: currentCount + 1 });
+      commitNotification(tx, notificationPlan);
       return { liked: true, likeCount: currentCount + 1 };
     });
   },

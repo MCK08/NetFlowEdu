@@ -66,9 +66,14 @@ export const markNotificationRead = onCall<{ notificationId: string }>(
         return { alreadyRead: true };
       }
 
-      tx.update(ref, { isRead: true, readAt: FieldValue.serverTimestamp() });
-
+      // ---- READ PHASE (every read must precede every write) ----
+      // Firestore rejects a read issued after the first write in a
+      // transaction; the summary must therefore be read BEFORE the
+      // isRead flip below, not after it.
       const meta = await readNotificationMeta(tx, metaRef);
+
+      // ---- WRITE PHASE ----
+      tx.update(ref, { isRead: true, readAt: FieldValue.serverTimestamp() });
       applyNotificationMetaDelta(tx, metaRef, meta, -1); // floored at 0 inside
 
       return { alreadyRead: false };

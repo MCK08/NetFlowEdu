@@ -50,15 +50,38 @@ function mockFakeDb() {
       return collectionRef(name);
     },
     async runTransaction(fn: (tx: unknown) => Promise<unknown>) {
+      // Enforces Firestore's real read-before-write rule — see the same
+      // guard (and the production incident that motivated it) in
+      // tests/unit/notificationCallables.test.ts.
+      let hasWritten = false;
+      const assertReadPhase = () => {
+        if (hasWritten) {
+          throw new Error(
+            "Firestore transactions require all reads to be executed before all writes.",
+          );
+        }
+      };
       const tx = {
-        get: (ref: { get: () => unknown }) => ref.get(),
+        get: (ref: { get: () => unknown }) => {
+          assertReadPhase();
+          return ref.get();
+        },
         set: (
           ref: { set: (d: DocData, o?: { merge?: boolean }) => unknown },
           data: DocData,
           options?: { merge?: boolean },
-        ) => ref.set(data, options),
-        update: (ref: { update: (d: DocData) => unknown }, data: DocData) => ref.update(data),
-        delete: (ref: { delete: () => unknown }) => ref.delete(),
+        ) => {
+          hasWritten = true;
+          return ref.set(data, options);
+        },
+        update: (ref: { update: (d: DocData) => unknown }, data: DocData) => {
+          hasWritten = true;
+          return ref.update(data);
+        },
+        delete: (ref: { delete: () => unknown }) => {
+          hasWritten = true;
+          return ref.delete();
+        },
       };
       return fn(tx);
     },

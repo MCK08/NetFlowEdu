@@ -3,8 +3,8 @@ import { logger } from "firebase-functions/v2";
 import { FieldValue, getFirestore } from "firebase-admin/firestore";
 
 import {
-  createNotificationInTransaction,
-  getActorSnapshot,
+  commitNotification,
+  prepareNotification,
   resolveQuestionEventRecipient,
 } from "../notifications";
 
@@ -42,8 +42,7 @@ export const onAnswerCreate = onDocumentCreated("answers/{answerId}", async (eve
       const questionSnap = await tx.get(questionRef);
       if (!questionSnap.exists) return; // deleted between answer create and this trigger
 
-      tx.update(questionRef, { answerCount: FieldValue.increment(1) });
-
+      // ---- READ PHASE (every read must precede every write) ----
       const questionData = questionSnap.data() ?? {};
       const recipientId =
         typeof questionData.ownerId === "string" && typeof answerOwnerId === "string"
@@ -52,17 +51,20 @@ export const onAnswerCreate = onDocumentCreated("answers/{answerId}", async (eve
               answerOwnerId,
             )
           : null;
-      if (recipientId && typeof answerOwnerId === "string") {
-        const actorSnapshot = await getActorSnapshot(tx, db, answerOwnerId);
-        await createNotificationInTransaction(tx, db, {
-          recipientId,
-          actorId: answerOwnerId,
-          actorSnapshot,
-          type: "question_answered",
-          entityType: "question",
-          entityId: questionId,
-        });
-      }
+      const notificationPlan =
+        recipientId && typeof answerOwnerId === "string"
+          ? await prepareNotification(tx, db, {
+              recipientId,
+              actorId: answerOwnerId,
+              type: "question_answered",
+              entityType: "question",
+              entityId: questionId,
+            })
+          : null;
+
+      // ---- WRITE PHASE ----
+      tx.update(questionRef, { answerCount: FieldValue.increment(1) });
+      commitNotification(tx, notificationPlan);
     });
   } catch (error) {
     // Most likely cause: the question was deleted between answer creation

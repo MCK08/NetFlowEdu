@@ -3,8 +3,8 @@ import { logger } from "firebase-functions/v2";
 import { FieldValue, getFirestore } from "firebase-admin/firestore";
 
 import {
-  createNotificationInTransaction,
-  getActorSnapshot,
+  commitNotification,
+  prepareNotification,
   resolveQuestionEventRecipient,
 } from "../notifications";
 
@@ -34,8 +34,7 @@ export const onQuestionCommentCreate = onDocumentCreated(
         const questionSnap = await tx.get(questionRef);
         if (!questionSnap.exists) return;
 
-        tx.update(questionRef, { commentCount: FieldValue.increment(1) });
-
+        // ---- READ PHASE (every read must precede every write) ----
         const questionData = questionSnap.data() ?? {};
         const recipientId =
           typeof questionData.ownerId === "string" && typeof commentOwnerId === "string"
@@ -44,17 +43,20 @@ export const onQuestionCommentCreate = onDocumentCreated(
                 commentOwnerId,
               )
             : null;
-        if (recipientId && typeof commentOwnerId === "string") {
-          const actorSnapshot = await getActorSnapshot(tx, db, commentOwnerId);
-          await createNotificationInTransaction(tx, db, {
-            recipientId,
-            actorId: commentOwnerId,
-            actorSnapshot,
-            type: "question_commented",
-            entityType: "question",
-            entityId: questionId,
-          });
-        }
+        const notificationPlan =
+          recipientId && typeof commentOwnerId === "string"
+            ? await prepareNotification(tx, db, {
+                recipientId,
+                actorId: commentOwnerId,
+                type: "question_commented",
+                entityType: "question",
+                entityId: questionId,
+              })
+            : null;
+
+        // ---- WRITE PHASE ----
+        tx.update(questionRef, { commentCount: FieldValue.increment(1) });
+        commitNotification(tx, notificationPlan);
       })
       .catch((error) => {
         logger.warn(`Could not process onQuestionCommentCreate for questions/${questionId}`, {

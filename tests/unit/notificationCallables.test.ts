@@ -96,15 +96,44 @@ function mockFakeDb() {
       };
     },
     async runTransaction(fn: (tx: unknown) => Promise<unknown>) {
+      // PRODUCTION INCIDENT GUARD (2026-08-05): real Firestore rejects any
+      // read issued after the first write in a transaction. The original
+      // version of this fake did NOT model that rule, so every Phase 15
+      // notification call site shipped with reads staged after writes and
+      // all 882 unit tests still passed while production threw
+      // "Firestore transactions require all reads to be executed before
+      // all writes" on every friend request, like, answer, comment and
+      // class join. The fake now enforces the same rule, so that class of
+      // bug fails here instead of in production.
+      let hasWritten = false;
+      const assertReadPhase = () => {
+        if (hasWritten) {
+          throw new Error(
+            "Firestore transactions require all reads to be executed before all writes.",
+          );
+        }
+      };
       const tx = {
-        get: (ref: { get: () => unknown }) => ref.get(),
+        get: (ref: { get: () => unknown }) => {
+          assertReadPhase();
+          return ref.get();
+        },
         set: (
           ref: { set: (d: DocData, o?: { merge?: boolean }) => unknown },
           data: DocData,
           options?: { merge?: boolean },
-        ) => ref.set(data, options),
-        update: (ref: { update: (d: DocData) => unknown }, data: DocData) => ref.update(data),
-        delete: (ref: { delete: () => unknown }) => ref.delete(),
+        ) => {
+          hasWritten = true;
+          return ref.set(data, options);
+        },
+        update: (ref: { update: (d: DocData) => unknown }, data: DocData) => {
+          hasWritten = true;
+          return ref.update(data);
+        },
+        delete: (ref: { delete: () => unknown }) => {
+          hasWritten = true;
+          return ref.delete();
+        },
       };
       return fn(tx);
     },
@@ -181,6 +210,10 @@ function seedNotificationDoc(
     readAt: null,
     ...overrides,
   });
+}
+
+function friendshipDocFor(uidA: string, uidB: string) {
+  return store.get(`friendships/${buildFriendshipPairId(uidA, uidB)}`);
 }
 
 function unreadCountFor(uid: string): number {
@@ -551,5 +584,167 @@ describe("buildFriendshipPairId sanity (shared with friendsCallables.test.ts's f
     await sendFriendRequest.run(callerRequest("s1", { otherUid: "s2" }));
     const expectedPairId = buildFriendshipPairId("s1", "s2");
     expect(notificationsFor("s2")[0]?.entityId).toBe(expectedPairId);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PRODUCTION INCIDENT REGRESSION (2026-08-05)
+//
+// Every one of these exercises a path that threw
+//   "Firestore transactions require all reads to be executed before all writes"
+// in production, because the Phase 15 notification helper read (actor
+// snapshot, dedupe check, unread summary) AFTER the caller had already
+// staged its writes. The fake's runTransaction now enforces the same rule
+// real Firestore does, so any reintroduction fails here.
+//
+// Note the reported symptom was "student -> teacher friend request fails",
+// but the defect was never role-dependent: it hit the FIRST-EVER request
+// between ANY two users, plus likes, answers, comments and class joins.
+// ---------------------------------------------------------------------------
+describe("read-before-write regression — every notification-producing path", () => {
+  it("student -> teacher friend request succeeds (the exact reported scenario)", async () => {
+    seedUser("student1", { role: "student" });
+    seedUser("teacher1", { role: "teacher" });
+
+    const result = await sendFriendRequest.run(
+      callerRequest("student1", { otherUid: "teacher1" }),
+    );
+
+    expect(result).toEqual({ status: "pending", created: true });
+    expect(friendshipDocFor("student1", "teacher1")).toMatchObject({
+      requesterId: "student1",
+      recipientId: "teacher1",
+      status: "pending",
+    });
+    expect(notificationsFor("teacher1")).toHaveLength(1);
+  });
+
+  it("teacher -> student friend request succeeds", async () => {
+    seedUser("teacher1", { role: "teacher" });
+    seedUser("student1", { role: "student" });
+    const result = await sendFriendRequest.run(
+      callerRequest("teacher1", { otherUid: "student1" }),
+    );
+    expect(result.created).toBe(true);
+  });
+
+  it("student -> student friend request succeeds", async () => {
+    seedUser("s1");
+    seedUser("s2");
+    expect((await sendFriendRequest.run(callerRequest("s1", { otherUid: "s2" }))).created).toBe(true);
+  });
+
+  it("teacher -> teacher friend request succeeds", async () => {
+    seedUser("t1", { role: "teacher" });
+    seedUser("t2", { role: "teacher" });
+    expect((await sendFriendRequest.run(callerRequest("t1", { otherUid: "t2" }))).created).toBe(true);
+  });
+
+  it("accepting a request succeeds (respondToFriendRequest write/read ordering)", async () => {
+    seedUser("student1");
+    seedUser("teacher1", { role: "teacher" });
+    await sendFriendRequest.run(callerRequest("student1", { otherUid: "teacher1" }));
+
+    const result = await respondToFriendRequest.run(
+      callerRequest("teacher1", { otherUid: "student1", action: "accept" }),
+    );
+
+    expect(result).toEqual({ status: "accepted" });
+    expect(notificationsFor("student1").some((n) => n.type === "friend_request_accepted")).toBe(true);
+  });
+
+  it("declining a request succeeds", async () => {
+    seedUser("s1");
+    seedUser("s2");
+    await sendFriendRequest.run(callerRequest("s1", { otherUid: "s2" }));
+    const result = await respondToFriendRequest.run(
+      callerRequest("s2", { otherUid: "s1", action: "decline" }),
+    );
+    expect(result).toEqual({ status: "declined" });
+  });
+
+  it("liking a question succeeds", async () => {
+    seedUser("owner1");
+    seedUser("liker1");
+    seedQuestion("q1", "owner1");
+    const result = await toggleQuestionLike.run(callerRequest("liker1", { questionId: "q1" }));
+    expect(result.liked).toBe(true);
+  });
+
+  it("UNliking a question succeeds (deletion path ordering)", async () => {
+    seedUser("owner1");
+    seedUser("liker1");
+    seedQuestion("q1", "owner1");
+    await toggleQuestionLike.run(callerRequest("liker1", { questionId: "q1" }));
+    const result = await toggleQuestionLike.run(callerRequest("liker1", { questionId: "q1" }));
+    expect(result.liked).toBe(false);
+  });
+
+  it("liking and unliking an answer succeeds", async () => {
+    seedUser("qOwner");
+    seedUser("aOwner");
+    seedUser("liker1");
+    seedQuestion("q1", "qOwner");
+    seedAnswer("ans1", "aOwner", "q1");
+    expect((await toggleAnswerLike.run(callerRequest("liker1", { answerId: "ans1" }))).liked).toBe(true);
+    expect((await toggleAnswerLike.run(callerRequest("liker1", { answerId: "ans1" }))).liked).toBe(false);
+  });
+
+  it("joining a class succeeds", async () => {
+    seedUser("teacher1", { role: "teacher" });
+    seedUser("student1", { role: "student" });
+    store.set("classes/c1", { name: "10-A", teacherId: "teacher1", status: "active", memberCount: 1 });
+    store.set("classJoinCodes/ABC123", { classId: "c1" });
+    const result = await joinClassByCode.run(
+      callerRequest("student1", { code: "ABC123" }, { role: "student" }),
+    );
+    expect(result.alreadyMember).toBe(false);
+    expect(notificationsFor("teacher1")).toHaveLength(1);
+  });
+
+  it("marking a single notification read succeeds", async () => {
+    seedUser("u1");
+    seedNotificationDoc("u1", "n1", { recipientId: "u1" });
+    store.set("users/u1/notificationMeta/summary", { unreadCount: 1 });
+    const result = await markNotificationRead.run(callerRequest("u1", { notificationId: "n1" }));
+    expect(result).toEqual({ alreadyRead: false });
+    expect(unreadCountFor("u1")).toBe(0);
+  });
+});
+
+describe("optional actor fields never break the action", () => {
+  it("succeeds when the actor has a null username", async () => {
+    seedUser("s1", { username: null });
+    seedUser("teacher1", { role: "teacher" });
+    await sendFriendRequest.run(callerRequest("s1", { otherUid: "teacher1" }));
+    expect(notificationsFor("teacher1")[0]?.actorUsername).toBeNull();
+  });
+
+  it("succeeds when the actor has a null photoURL", async () => {
+    seedUser("s1", { photoURL: null });
+    seedUser("teacher1", { role: "teacher" });
+    await sendFriendRequest.run(callerRequest("s1", { otherUid: "teacher1" }));
+    expect(notificationsFor("teacher1")[0]?.actorPhotoURL).toBeNull();
+  });
+
+  it("never writes undefined for a missing displayName/username/photoURL", async () => {
+    // users doc exists but carries none of the optional display fields.
+    store.set("users/s1", { role: "student", accountStatus: "active" });
+    seedUser("teacher1", { role: "teacher" });
+    await sendFriendRequest.run(callerRequest("s1", { otherUid: "teacher1" }));
+
+    const n = notificationsFor("teacher1")[0]!;
+    for (const key of ["actorDisplayName", "actorUsername", "actorPhotoURL"]) {
+      expect(Object.prototype.hasOwnProperty.call(n, key)).toBe(true);
+      expect(n[key]).not.toBeUndefined();
+    }
+  });
+
+  it("first-ever notification succeeds when the recipient has no notificationMeta summary yet", async () => {
+    seedUser("s1");
+    seedUser("teacher1", { role: "teacher" });
+    expect(store.get("users/teacher1/notificationMeta/summary")).toBeUndefined();
+    await sendFriendRequest.run(callerRequest("s1", { otherUid: "teacher1" }));
+    expect(unreadCountFor("teacher1")).toBe(1);
   });
 });
