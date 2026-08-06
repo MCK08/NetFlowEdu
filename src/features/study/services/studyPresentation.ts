@@ -11,6 +11,14 @@ export interface OutcomeOption {
   accessibilityHint: string;
 }
 
+// Phase 18 — how long the success flourish holds the current card on screen
+// before ReviewSessionScreen auto-advances to the next one. Long enough to
+// register as a deliberate confirmation, short enough that the session still
+// feels brisk over a queue of many questions. One named constant so the
+// hook and any future surface reusing this pattern share the same feel
+// instead of each hardcoding a number.
+export const REVIEW_ADVANCE_DELAY_MS = 400;
+
 // Order matters: hardest → easiest, matching how the buttons read left to
 // right. "Çözdüm" sits last (rightmost) as the affirmative action.
 export const OUTCOME_OPTIONS: readonly OutcomeOption[] = [

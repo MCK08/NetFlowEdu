@@ -19,6 +19,17 @@ interface StudyOutcomeButtonsProps {
   lastOutcome: StudyOutcome | null;
   error?: string | null;
   title?: string;
+  // Phase 18 (scroll-first) — the class feed only ever offers two of the
+  // three outcomes (no "Tekrar Et"/"again": a one-handed swipe surface has
+  // no room for a third choice, and "again"'s 10-minute same-session
+  // reshow doesn't fit a feed the student is continuously scrolling
+  // through anyway). Filters OUTCOME_OPTIONS rather than the caller
+  // picking outcomes ad hoc, so button ORDER stays governed by the one
+  // shared list. Omitting it renders all three, unchanged from every
+  // existing surface (Question surfaces removed this control entirely —
+  // see QuestionDetailScreen; Review Queue and the Study dashboard still
+  // want the full set).
+  visibleOutcomes?: readonly StudyOutcome[];
 }
 
 // The three-way self-assessment control, used identically wherever a
@@ -33,15 +44,19 @@ export const StudyOutcomeButtons = memo(function StudyOutcomeButtons({
   lastOutcome,
   error,
   title = "Bu soruyu nasıl çözdün?",
+  visibleOutcomes,
 }: StudyOutcomeButtonsProps) {
   const isBusy = pendingOutcome !== null;
+  const options = visibleOutcomes
+    ? OUTCOME_OPTIONS.filter((option) => visibleOutcomes.includes(option.outcome))
+    : OUTCOME_OPTIONS;
 
   return (
     <View style={styles.container}>
       <Text style={styles.title}>{title}</Text>
 
       <View style={styles.row}>
-        {OUTCOME_OPTIONS.map((option) => {
+        {options.map((option) => {
           const isSelected = lastOutcome === option.outcome;
           const isPending = pendingOutcome === option.outcome;
           return (

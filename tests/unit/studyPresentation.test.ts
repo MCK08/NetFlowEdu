@@ -4,6 +4,7 @@ import {
   goalProgressLabel,
   OUTCOME_OPTIONS,
   queueEmptyCopy,
+  REVIEW_ADVANCE_DELAY_MS,
   streakLabel,
   studyStatusLabel,
 } from "@features/study/services/studyPresentation";
@@ -14,6 +15,17 @@ const NOW = 1_760_000_000_000;
 const MINUTE = 60 * 1000;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
+
+describe("REVIEW_ADVANCE_DELAY_MS", () => {
+  // Phase 18 spec: "yaklaşık 300–500 ms sonra otomatik sonraki soruya
+  // geçilecek" — pins the constant to that window so a future tweak can't
+  // silently drift outside the specified feel (too fast to register as a
+  // confirmation, or too slow to feel brisk over a long queue).
+  it("falls within the specified 300-500ms window", () => {
+    expect(REVIEW_ADVANCE_DELAY_MS).toBeGreaterThanOrEqual(300);
+    expect(REVIEW_ADVANCE_DELAY_MS).toBeLessThanOrEqual(500);
+  });
+});
 
 describe("OUTCOME_OPTIONS", () => {
   it("exposes exactly the three outcomes, hardest first", () => {

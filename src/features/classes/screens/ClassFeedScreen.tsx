@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -15,7 +15,9 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAuth } from "@features/authentication";
-import { StudyOutcomeControls, useStudyQuestionState } from "@features/study";
+import { StudyOutcome, StudyOutcomeControls, useStudyQuestionState } from "@features/study";
+import { REVIEW_ADVANCE_DELAY_MS } from "@features/study/services/studyPresentation";
+import { StudyOutcomeSuccessFlourish } from "@features/study/components/StudyOutcomeSuccessFlourish";
 import { colors } from "@theme/colors";
 import { Question } from "@/types/question";
 
@@ -28,11 +30,20 @@ import {
   isEndOfFeed,
 } from "../services/classFeedPagination";
 import { isRecoverableFeedError, mapClassFeedErrorToMessage } from "../services/classErrorMapper";
-import { activeStudyQuestionId, shouldShowStudyControls } from "../services/classFeedStudyGating";
+import {
+  activeStudyQuestionId,
+  computeReshowInsertIndex,
+  pickReshowOffset,
+  shouldShowStudyControls,
+} from "../services/classFeedStudyGating";
 
 interface ClassFeedScreenProps {
   classId: string;
 }
+
+// Module-level so it's one stable array reference, not recreated every
+// render (it's passed down to a memoized StudyOutcomeControls prop).
+const STUDY_VISIBLE_OUTCOMES: readonly StudyOutcome[] = ["struggled", "solved"];
 
 // Immersive, vertically paginated feed for ONE class.
 //
@@ -55,6 +66,7 @@ export function ClassFeedScreen({ classId }: ClassFeedScreenProps) {
     onActiveIndexChange,
     loadMore,
     retry,
+    reinjectForSecondChance,
   } = useClassFeed(classId);
 
   // Phase 16C — study controls for the ACTIVE card only.
@@ -88,6 +100,59 @@ export function ClassFeedScreen({ classId }: ClassFeedScreenProps) {
   // Every page is exactly the window height, which is what makes both
   // getItemLayout and calculateActiveIndex exact rather than approximate.
   const pageHeight = windowHeight;
+
+  // Phase 18 — scroll-first self-assessment: shows a brief success flourish
+  // then auto-advances, same timing/primitive the Review Queue already uses
+  // (REVIEW_ADVANCE_DELAY_MS, StudyOutcomeSuccessFlourish) so the "feels
+  // like a confirmation" pause is consistent across both surfaces.
+  const [showFlourish, setShowFlourish] = useState(false);
+  const advanceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Session-local only (a plain ref, never persisted) — which questions
+  // already got their one "second chance" reshow THIS session. See
+  // classFeedStudyGating.ts's module doc for why this deliberately never
+  // touches Firestore.
+  const reshownThisSessionRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    return () => {
+      if (advanceTimeoutRef.current) clearTimeout(advanceTimeoutRef.current);
+    };
+  }, []);
+
+  const handleOutcomeSelect = useCallback(
+    async (outcome: StudyOutcome) => {
+      const activeQuestion = questions[activeIndex];
+      if (!activeQuestion) return;
+      const succeeded = await study.submit(outcome);
+      // A failed write already surfaces via study.mutationError under the
+      // buttons (StudyOutcomeControls) — the card must stay put so the
+      // student can see the error and retry, not auto-advance past it.
+      if (!succeeded) return;
+
+      if (outcome === "struggled") {
+        const insertIndex = computeReshowInsertIndex({
+          currentIndex: activeIndex,
+          totalLength: questions.length,
+          offset: pickReshowOffset(),
+          alreadyReshownThisSession: reshownThisSessionRef.current.has(activeQuestion.id),
+        });
+        if (insertIndex !== null) {
+          reshownThisSessionRef.current.add(activeQuestion.id);
+          reinjectForSecondChance(activeQuestion, insertIndex);
+        }
+      }
+
+      setShowFlourish(true);
+      advanceTimeoutRef.current = setTimeout(() => {
+        advanceTimeoutRef.current = null;
+        setShowFlourish(false);
+        const nextIndex = activeIndex + 1;
+        onActiveIndexChange(nextIndex);
+        listRef.current?.scrollToOffset({ offset: pageHeight * nextIndex, animated: true });
+      }, REVIEW_ADVANCE_DELAY_MS);
+    },
+    [questions, activeIndex, study, reinjectForSecondChance, onActiveIndexChange, pageHeight],
+  );
 
   const className = classRoom?.name ?? "Sınıf";
 
@@ -135,23 +200,40 @@ export function ClassFeedScreen({ classId }: ClassFeedScreenProps) {
           // extra Firestore read is opened for it.
           studyControls={
             showStudy ? (
-              <StudyOutcomeControls
-                item={study.item}
-                isHydrating={study.isHydrating}
-                hydrationError={study.hydrationError}
-                pendingOutcome={study.pendingOutcome}
-                onSelect={study.submit}
-                mutationError={study.mutationError}
-                // This is the one surface that renders over a dark scrim
-                // rather than a white sheet.
-                onDarkSurface
-              />
+              <>
+                <StudyOutcomeControls
+                  item={study.item}
+                  isHydrating={study.isHydrating}
+                  hydrationError={study.hydrationError}
+                  pendingOutcome={study.pendingOutcome}
+                  onSelect={handleOutcomeSelect}
+                  mutationError={study.mutationError}
+                  // This is the one surface that renders over a dark scrim
+                  // rather than a white sheet.
+                  onDarkSurface
+                  // Scroll-first: two outcomes only, one-handed reach. See
+                  // StudyOutcomeButtons's doc comment for why "again" isn't
+                  // offered here.
+                  visibleOutcomes={STUDY_VISIBLE_OUTCOMES}
+                />
+                <StudyOutcomeSuccessFlourish visible={showFlourish} />
+              </>
             ) : null
           }
         />
       );
     },
-    [className, pageHeight, insets.top, insets.bottom, activeIndex, isStudent, study],
+    [
+      className,
+      pageHeight,
+      insets.top,
+      insets.bottom,
+      activeIndex,
+      isStudent,
+      study,
+      handleOutcomeSelect,
+      showFlourish,
+    ],
   );
 
   // A pagination failure also sets hasMore=false (to stop auto-retrying),

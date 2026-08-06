@@ -63,8 +63,13 @@ describe("status vocabulary has one source", () => {
 });
 
 describe("every surface uses the one shared control", () => {
+  // Phase 18 — self-assessment moved OUT of Question Detail entirely (it's
+  // now a "çözüm ekranı" only): the class feed's active card and the
+  // review session are the inline, sequential surfaces; the study
+  // dashboard's queue list is the third. QuestionDetailScreen is
+  // deliberately absent from this list now — see the regression guard
+  // below for the other half of that assertion.
   const surfaces = [
-    "src/features/questions/screens/QuestionDetailScreen.tsx",
     "src/features/classes/screens/ClassFeedScreen.tsx",
     "src/features/study/screens/ReviewSessionScreen.tsx",
     "src/features/study/components/StudyQueueCard.tsx",
@@ -74,6 +79,20 @@ describe("every surface uses the one shared control", () => {
     const source = clientSources.find((file) => file.path === path);
     expect(source).toBeDefined();
     expect(source?.text).toContain("<StudyOutcomeControls");
+  });
+
+  // Phase 18 regression guard: this used to be one of the required
+  // surfaces above. Self-assessment reaching Question Detail again (even
+  // by accident, e.g. a copy-paste from ClassFeedCard) would resurrect the
+  // exact "self-assessment lives in two places" duplication Phase 18
+  // removed it to fix.
+  it("QuestionDetailScreen no longer renders self-assessment (moved to the inline study flow)", () => {
+    const source = clientSources.find(
+      (file) => file.path === "src/features/questions/screens/QuestionDetailScreen.tsx",
+    );
+    expect(source).toBeDefined();
+    expect(source?.text).not.toContain("StudyOutcomeControls");
+    expect(source?.text).not.toContain("useStudyQuestionState");
   });
 
   it("leaves StudyOutcomeButtons with a single consumer", () => {

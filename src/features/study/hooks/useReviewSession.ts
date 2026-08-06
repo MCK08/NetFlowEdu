@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { StudyOutcome } from "../domain/studyTypes";
 import { GestureOperation, resolveGestureOperation } from "../services/gestureOperationId";
 import { mapStudyErrorToMessage } from "../services/studyErrorMapper";
+import { REVIEW_ADVANCE_DELAY_MS } from "../services/studyPresentation";
 import {
   DEFAULT_QUEUE_PAGE_SIZE,
   getDueStudyItemsPage,
@@ -39,10 +40,23 @@ export function useReviewSession(uid: string | undefined) {
   // idle, or when the in-flight action isn't an outcome (e.g. a removal).
   const [pendingOutcome, setPendingOutcome] = useState<StudyOutcome | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // Phase 18 — set the instant the mutation succeeds, cleared once the
+  // success flourish's delay elapses and the card actually advances. The
+  // card stays showing (with pendingOutcome already cleared, so its
+  // buttons are interactive again — a fast student is never blocked)
+  // while this is non-null; ReviewSessionScreen renders the flourish off
+  // of it. Distinct from `pendingOutcome` (in-flight) on purpose: this is
+  // "done, about to move on", not "waiting on the network".
+  const [justSucceededOutcome, setJustSucceededOutcome] = useState<StudyOutcome | null>(null);
   const [hasMore, setHasMore] = useState(true);
   const [isComplete, setIsComplete] = useState(false);
 
   const cursorRef = useRef<QueryDocumentSnapshot<DocumentData> | null>(null);
+  // Guards the delayed advance() the same way generationRef guards page
+  // loads: if the session restarts (retry) or the component unmounts while
+  // the success flourish is still showing, the stale timeout must not fire
+  // advance() against a session that's already moved on.
+  const advanceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Bumped on every fresh session start; a stale in-flight response from a
   // previous generation is discarded rather than overwriting newer state.
   const generationRef = useRef(0);
@@ -70,6 +84,11 @@ export function useReviewSession(uid: string | undefined) {
     }
     const generation = ++generationRef.current;
     cursorRef.current = null;
+    if (advanceTimeoutRef.current) {
+      clearTimeout(advanceTimeoutRef.current);
+      advanceTimeoutRef.current = null;
+    }
+    setJustSucceededOutcome(null);
     setIsLoading(true);
     setLoadError(null);
     setIsComplete(false);
@@ -94,6 +113,15 @@ export function useReviewSession(uid: string | undefined) {
   useEffect(() => {
     loadFirstPage();
   }, [loadFirstPage]);
+
+  // Belt-and-suspenders alongside the retry-time clear above: if the
+  // screen unmounts (student navigates away) while the flourish's timeout
+  // is still pending, it must never fire against unmounted state.
+  useEffect(() => {
+    return () => {
+      if (advanceTimeoutRef.current) clearTimeout(advanceTimeoutRef.current);
+    };
+  }, []);
 
   const loadMore = useCallback(async () => {
     // In-flight guard: overlapping loadMore calls would apply the same
@@ -164,10 +192,28 @@ export function useReviewSession(uid: string | undefined) {
           struggled: prev.struggled + (outcome === "struggled" ? 1 : 0),
           again: prev.again + (outcome === "again" ? 1 : 0),
         }));
-        advance(index + 1);
+        // The mutation and the Study Engine scheduling it triggers are
+        // already complete at this point — recordStudyOutcome has
+        // resolved. Everything below is purely presentational: hold this
+        // SAME card in its "just answered" state for a short, fixed delay
+        // (the success flourish) before moving on. No scheduling/algorithm
+        // logic lives here.
+        setJustSucceededOutcome(outcome);
+        setPendingOutcome(null);
+        setIsSubmitting(false);
+        // submitLockRef stays held through the flourish (released below,
+        // not in `finally`) — the card on screen hasn't changed yet, so a
+        // second tap during this window must still be ignored rather than
+        // firing a second mutation for the same question.
+        advanceTimeoutRef.current = setTimeout(() => {
+          advanceTimeoutRef.current = null;
+          setJustSucceededOutcome(null);
+          submitLockRef.current = false;
+          advance(index + 1);
+        }, REVIEW_ADVANCE_DELAY_MS);
+        return;
       } catch (error) {
         setActionError(mapStudyErrorToMessage(error));
-      } finally {
         submitLockRef.current = false;
         setIsSubmitting(false);
         setPendingOutcome(null);
@@ -221,6 +267,7 @@ export function useReviewSession(uid: string | undefined) {
     paginationError,
     actionError,
     pendingOutcome,
+    justSucceededOutcome,
     isSubmitting,
     isComplete,
     hasMore,

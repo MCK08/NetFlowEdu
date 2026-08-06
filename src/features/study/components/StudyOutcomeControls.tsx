@@ -38,6 +38,9 @@ interface StudyOutcomeControlsProps {
   // only low-contrast text on that screen, sitting next to captions and
   // timestamps that use white. Switches just those three labels.
   onDarkSurface?: boolean;
+  // Passed straight through to StudyOutcomeButtons — see that component's
+  // doc comment. Omitted everywhere except the class feed.
+  visibleOutcomes?: readonly StudyOutcome[];
 }
 
 // The full self-assessment control INCLUDING current state — the single
@@ -58,6 +61,7 @@ export const StudyOutcomeControls = memo(function StudyOutcomeControls({
   now = Date.now(),
   showLastOutcome = true,
   onDarkSurface = false,
+  visibleOutcomes,
 }: StudyOutcomeControlsProps) {
   const summary = summarizeStudyState(item, now);
   // Same opacity/weight, readable tone. textInverse is the exact white the
@@ -102,6 +106,7 @@ export const StudyOutcomeControls = memo(function StudyOutcomeControls({
         pendingOutcome={pendingOutcome}
         lastOutcome={showLastOutcome ? (item?.lastOutcome ?? null) : null}
         error={mutationError ?? null}
+        visibleOutcomes={visibleOutcomes}
       />
     </View>
   );

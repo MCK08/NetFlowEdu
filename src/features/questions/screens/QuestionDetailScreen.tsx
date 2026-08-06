@@ -19,7 +19,6 @@ import { ImageViewer } from "@components/ImageViewer";
 import { AnswerList, useQuestionAnswers } from "@features/answers";
 import { useAuth } from "@features/authentication";
 import { CommentComposer, CommentList, useQuestionComments } from "@features/social/comments";
-import { StudyOutcomeControls, useStudyQuestionState } from "@features/study";
 import { useNavigationGuard } from "@hooks/useNavigationGuard";
 import { colors } from "@theme/colors";
 import { radius } from "@theme/radius";
@@ -35,16 +34,8 @@ interface QuestionDetailScreenProps {
 }
 
 export function QuestionDetailScreen({ questionId }: QuestionDetailScreenProps) {
-  const { firebaseUser, role } = useAuth();
+  const { firebaseUser } = useAuth();
   const { question, isLoading, errorMessage } = useQuestionDetail(questionId);
-  // Phase 16 — self-assessment feeds the adaptive review queue. Student-only:
-  // teachers have no study queue, and the backend callable rejects them
-  // anyway, so showing the control to a teacher would be a guaranteed error.
-  const isStudent = role === "student";
-  // Hydrates the student's CURRENT state for this question (status, last
-  // outcome, next review) instead of always starting blank, and owns the
-  // mutation. Disabled entirely for teachers — no request is even opened.
-  const study = useStudyQuestionState({ questionId, enabled: isStudent });
   const { answers, isLoading: answersLoading, error: answersError } = useQuestionAnswers(
     question ? questionId : undefined,
   );
@@ -117,20 +108,6 @@ export function QuestionDetailScreen({ questionId }: QuestionDetailScreenProps) 
               onPress={handleAnswer}
               accessibilityHint="Bu soruya cevap verme ekranını açar"
             />
-
-            {isStudent ? (
-              <>
-                <Divider />
-                <StudyOutcomeControls
-                  item={study.item}
-                  isHydrating={study.isHydrating}
-                  hydrationError={study.hydrationError}
-                  pendingOutcome={study.pendingOutcome}
-                  onSelect={study.submit}
-                  mutationError={study.mutationError}
-                />
-              </>
-            ) : null}
 
             <Divider />
 

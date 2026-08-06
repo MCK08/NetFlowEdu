@@ -4,6 +4,7 @@ import {
   formatFeedPosition,
   isEndOfFeed,
   mergeQuestionPages,
+  reinjectQuestionForSecondChance,
   restoreActiveIndex,
   shouldPrefetchNextPage,
 } from "@features/classes/services/classFeedPagination";
@@ -235,5 +236,42 @@ describe("formatFeedPosition", () => {
   it("clamps an out-of-range index rather than showing 19 / 18", () => {
     expect(formatFeedPosition(99, 18)).toBe("18 / 18");
     expect(formatFeedPosition(-3, 18)).toBe("1 / 18");
+  });
+});
+
+// Phase 18 — the array-mutation half of the scroll-first "second chance"
+// reshow (classFeedStudyGating.test.ts covers the decision half).
+describe("reinjectQuestionForSecondChance", () => {
+  it("splices the question in at the given index without removing anything", () => {
+    const questions = [q("a"), q("b"), q("c"), q("d")];
+    const result = reinjectQuestionForSecondChance(questions, q("a"), 2);
+    expect(result.map((question) => question.id)).toEqual(["a", "b", "a", "c", "d"]);
+  });
+
+  it("deliberately allows the same id to appear twice", () => {
+    // The whole point: the struggled question's SAME id resurfaces later in
+    // this session. A dedupe pass here would silently cancel the feature.
+    const questions = [q("a"), q("b")];
+    const result = reinjectQuestionForSecondChance(questions, q("a"), 1);
+    expect(result.filter((question) => question.id === "a")).toHaveLength(2);
+  });
+
+  it("does not mutate the input array", () => {
+    const questions = [q("a"), q("b")];
+    const copy = [...questions];
+    reinjectQuestionForSecondChance(questions, q("c"), 1);
+    expect(questions).toEqual(copy);
+  });
+
+  it("clamps a negative index to the start", () => {
+    const questions = [q("a"), q("b")];
+    const result = reinjectQuestionForSecondChance(questions, q("c"), -5);
+    expect(result.map((question) => question.id)).toEqual(["c", "a", "b"]);
+  });
+
+  it("clamps an index past the end to the end", () => {
+    const questions = [q("a"), q("b")];
+    const result = reinjectQuestionForSecondChance(questions, q("c"), 999);
+    expect(result.map((question) => question.id)).toEqual(["a", "b", "c"]);
   });
 });

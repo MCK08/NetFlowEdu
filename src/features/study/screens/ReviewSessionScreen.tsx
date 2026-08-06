@@ -10,12 +10,15 @@ import { LoadingSkeleton } from "@components/ui/LoadingSkeleton";
 import { PrimaryButton } from "@components/ui/PrimaryButton";
 import { ROUTES } from "@constants/routes";
 import { useAuth } from "@features/authentication";
+import { useNavigationGuard } from "@hooks/useNavigationGuard";
 import { colors } from "@theme/colors";
 import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { QuestionVisibility } from "@/types/question";
 
 import { StudyOutcomeControls } from "../components/StudyOutcomeControls";
+import { StudyOutcomeSuccessFlourish } from "../components/StudyOutcomeSuccessFlourish";
 import { toHydratedStudyItem } from "../services/studyItemParser";
 import { useReviewSession } from "../hooks/useReviewSession";
 
@@ -25,11 +28,24 @@ import { useReviewSession } from "../hooks/useReviewSession";
 export function ReviewSessionScreen() {
   const { firebaseUser } = useAuth();
   const session = useReviewSession(firebaseUser?.uid);
+  // Same double-tap guard every other "Cevapla" entry point in the app
+  // uses (QuestionDetailScreen, ClassFeedCard) — expo-router's push()
+  // doesn't dedupe on its own.
+  const guardedNavigate = useNavigationGuard();
 
   // Single, safe way back to the dashboard. `replace` (not push) so the
   // session never stacks up behind itself.
   function backToDashboard() {
     router.replace(ROUTES.studentStudy as never);
+  }
+
+  function handleAnswer(questionId: string, visibility: QuestionVisibility) {
+    guardedNavigate("answer", () => {
+      router.push({
+        pathname: "/(student)/answer/[questionId]",
+        params: { questionId, visibility },
+      });
+    });
   }
 
   if (session.isLoading) {
@@ -112,6 +128,17 @@ export function ReviewSessionScreen() {
               <Text style={styles.description}>{question.description}</Text>
             ) : null}
 
+            {/* "İstenirse Cevapla" — optional, same destination/guard every
+                other question surface uses. Answering isn't required to
+                self-assess: a student who already knows how it went can
+                skip straight to the outcome buttons below. */}
+            <PrimaryButton
+              label="Cevapla"
+              onPress={() => handleAnswer(item.questionId, question.visibility)}
+              variant="secondary"
+              accessibilityHint="Bu soruya cevap verme ekranını açar"
+            />
+
             {/* Same control, same wording as the question surfaces. The
                 previous answer is NOT pre-selected here (showLastOutcome) —
                 the student is judging the question right now, and a
@@ -125,6 +152,7 @@ export function ReviewSessionScreen() {
               mutationError={session.actionError}
               showLastOutcome={false}
             />
+            <StudyOutcomeSuccessFlourish visible={session.justSucceededOutcome !== null} />
           </>
         ) : (
           // Deleted question, or access revoked (class removal / visibility
