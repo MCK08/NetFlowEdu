@@ -1,5 +1,5 @@
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -11,6 +11,9 @@ import {
 
 import { LoadingSkeleton } from "@components/ui/LoadingSkeleton";
 import { useAuth } from "@features/authentication";
+import { FeedItem } from "@features/classes/services/feedItems";
+import { RatingCard } from "@features/study/components/RatingCard";
+import { useInterleavedStudyFeed } from "@features/study/hooks/useInterleavedStudyFeed";
 import { CameraButton } from "@features/upload/components/CameraButton";
 import { VisibilityPicker } from "@features/upload/components/VisibilityPicker";
 import { useUpload } from "@features/upload/hooks/useUpload";
@@ -19,10 +22,9 @@ import { colors } from "@theme/colors";
 import { EmptyState } from "../components/EmptyState";
 import { FeedCard } from "../components/FeedCard";
 import { useSocialFeed } from "../hooks/useSocialFeed";
-import { Question } from "../types";
 
-function keyExtractor(item: Question) {
-  return item.id;
+function keyExtractor(item: FeedItem) {
+  return item.key;
 }
 
 export function FeedScreen() {
@@ -33,9 +35,10 @@ export function FeedScreen() {
   // behind the bar instead of scrolling fully clear of it.
   const tabBarHeight = useBottomTabBarHeight();
   const height = windowHeight - tabBarHeight;
-  const { firebaseUser, profile } = useAuth();
+  const { firebaseUser, profile, role } = useAuth();
   const uid = firebaseUser?.uid;
   const organizationId = profile?.organizationId ?? null;
+  const isStudent = role === "student";
 
   const { questions, isLoading, isLoadingMore, isRefreshing, hasMore, loadMore, refresh, prepend } =
     useSocialFeed(uid);
@@ -45,15 +48,45 @@ export function FeedScreen() {
     onUploaded: prepend,
   });
 
-  // Stable across renders as long as `height` itself doesn't change
-  // (window rotation aside) — without this, FeedCard's own memo() was
-  // defeated by a new renderItem closure on every FeedScreen render.
-  const renderItem = useCallback(
-    ({ item }: { item: Question }) => <FeedCard question={item} height={height} />,
+  const listRef = useRef<FlatList<FeedItem>>(null);
+  const scrollToIndex = useCallback(
+    (index: number) => {
+      listRef.current?.scrollToOffset({ offset: height * index, animated: true });
+    },
     [height],
   );
+
+  // Phase 19.2 — the rating "screen" is a real feed item now (see
+  // feedItems.ts / useInterleavedStudyFeed's doc comments), not an overlay
+  // layered on top of a question card. Shared verbatim with
+  // ClassFeedScreen — one implementation, so the two surfaces cannot
+  // silently drift.
+  const { items, handleOutcomeRecorded } = useInterleavedStudyFeed({
+    questions,
+    isStudent,
+    scrollToIndex,
+  });
+
+  const renderItem = useCallback(
+    ({ item, index }: { item: FeedItem; index: number }) => {
+      if (item.type === "rating") {
+        return (
+          <RatingCard
+            question={item.question}
+            height={height}
+            isStudent={isStudent}
+            onOutcomeRecorded={(outcome, question) =>
+              handleOutcomeRecorded(outcome, question, index, item.questionIndex)
+            }
+          />
+        );
+      }
+      return <FeedCard question={item.question} height={height} />;
+    },
+    [height, isStudent, handleOutcomeRecorded],
+  );
   const getItemLayout = useCallback(
-    (_: ArrayLike<Question> | null | undefined, index: number) => ({
+    (_: ArrayLike<FeedItem> | null | undefined, index: number) => ({
       length: height,
       offset: height * index,
       index,
@@ -75,7 +108,8 @@ export function FeedScreen() {
   return (
     <View style={styles.flex}>
       <FlatList
-        data={questions}
+        ref={listRef}
+        data={items}
         keyExtractor={keyExtractor}
         renderItem={renderItem}
         getItemLayout={getItemLayout}
@@ -83,6 +117,7 @@ export function FeedScreen() {
         snapToInterval={height}
         snapToAlignment="start"
         decelerationRate="fast"
+        disableIntervalMomentum
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={<EmptyState height={height} />}
         refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={refresh} />}

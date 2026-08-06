@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -15,35 +15,24 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAuth } from "@features/authentication";
-import { StudyOutcome, StudyOutcomeControls, useStudyQuestionState } from "@features/study";
-import { REVIEW_ADVANCE_DELAY_MS } from "@features/study/services/studyPresentation";
-import { StudyOutcomeSuccessFlourish } from "@features/study/components/StudyOutcomeSuccessFlourish";
+import { FeedItem } from "@features/classes/services/feedItems";
+import { RatingCard } from "@features/study/components/RatingCard";
+import { useInterleavedStudyFeed } from "@features/study/hooks/useInterleavedStudyFeed";
 import { colors } from "@theme/colors";
-import { Question } from "@/types/question";
 
 import { ClassFeedCard } from "../components/ClassFeedCard";
 import { useClassFeed } from "../hooks/useClassFeed";
 import { useStudentClassInfo } from "../hooks/useStudentClassInfo";
-import {
-  calculateActiveIndex,
-  formatFeedPosition,
-  isEndOfFeed,
-} from "../services/classFeedPagination";
+import { calculateActiveIndex, formatFeedPosition, isEndOfFeed } from "../services/classFeedPagination";
 import { isRecoverableFeedError, mapClassFeedErrorToMessage } from "../services/classErrorMapper";
-import {
-  activeStudyQuestionId,
-  computeReshowInsertIndex,
-  pickReshowOffset,
-  shouldShowStudyControls,
-} from "../services/classFeedStudyGating";
 
 interface ClassFeedScreenProps {
   classId: string;
 }
 
-// Module-level so it's one stable array reference, not recreated every
-// render (it's passed down to a memoized StudyOutcomeControls prop).
-const STUDY_VISIBLE_OUTCOMES: readonly StudyOutcome[] = ["struggled", "solved"];
+function keyExtractor(item: FeedItem) {
+  return item.key;
+}
 
 // Immersive, vertically paginated feed for ONE class.
 //
@@ -66,113 +55,61 @@ export function ClassFeedScreen({ classId }: ClassFeedScreenProps) {
     onActiveIndexChange,
     loadMore,
     retry,
-    reinjectForSecondChance,
   } = useClassFeed(classId);
 
-  // Phase 16C — study controls for the ACTIVE card only.
-  //
-  // Architecture (Option A: screen owns the fetch, card stays presentational):
-  // a hook cannot be called conditionally, so putting useStudyQuestionState
-  // inside ClassFeedCard would instantiate it in every mounted card and rely
-  // on an internal `enabled` flag to stay quiet — one hook instance per card,
-  // and any future mistake there becomes N reads. Owning it here means there
-  // is exactly ONE instance for the whole feed, keyed to the active question,
-  // which makes "inactive cards never fetch" true by construction rather than
-  // by discipline. It also keeps the card memo-friendly (inactive cards get a
-  // stable null) and reuses the activeIndex the screen already tracks.
   const isStudent = role === "student";
-  // Null for a teacher or an out-of-range index — and null means the hook
-  // opens no read at all, so "inactive cards cost nothing" holds by
-  // construction. See classFeedStudyGating for the exact rule.
-  const activeQuestionId = useMemo(
-    () =>
-      activeStudyQuestionId({
-        questionIds: questions.map((question) => question.id),
-        activeIndex,
-        isStudent,
-      }),
-    [questions, activeIndex, isStudent],
-  );
-  const study = useStudyQuestionState({ questionId: activeQuestionId, enabled: isStudent });
-
-  const listRef = useRef<FlatList<Question>>(null);
+  const listRef = useRef<FlatList<FeedItem>>(null);
 
   // Every page is exactly the window height, which is what makes both
   // getItemLayout and calculateActiveIndex exact rather than approximate.
   const pageHeight = windowHeight;
 
-  // Phase 18 — scroll-first self-assessment: shows a brief success flourish
-  // then auto-advances, same timing/primitive the Review Queue already uses
-  // (REVIEW_ADVANCE_DELAY_MS, StudyOutcomeSuccessFlourish) so the "feels
-  // like a confirmation" pause is consistent across both surfaces.
-  const [showFlourish, setShowFlourish] = useState(false);
-  const advanceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Session-local only (a plain ref, never persisted) — which questions
-  // already got their one "second chance" reshow THIS session. See
-  // classFeedStudyGating.ts's module doc for why this deliberately never
-  // touches Firestore.
-  const reshownThisSessionRef = useRef<Set<string>>(new Set());
-
-  useEffect(() => {
-    return () => {
-      if (advanceTimeoutRef.current) clearTimeout(advanceTimeoutRef.current);
-    };
-  }, []);
-
-  const handleOutcomeSelect = useCallback(
-    async (outcome: StudyOutcome) => {
-      const activeQuestion = questions[activeIndex];
-      if (!activeQuestion) return;
-      const succeeded = await study.submit(outcome);
-      // A failed write already surfaces via study.mutationError under the
-      // buttons (StudyOutcomeControls) — the card must stay put so the
-      // student can see the error and retry, not auto-advance past it.
-      if (!succeeded) return;
-
-      if (outcome === "struggled") {
-        const insertIndex = computeReshowInsertIndex({
-          currentIndex: activeIndex,
-          totalLength: questions.length,
-          offset: pickReshowOffset(),
-          alreadyReshownThisSession: reshownThisSessionRef.current.has(activeQuestion.id),
-        });
-        if (insertIndex !== null) {
-          reshownThisSessionRef.current.add(activeQuestion.id);
-          reinjectForSecondChance(activeQuestion, insertIndex);
-        }
-      }
-
-      setShowFlourish(true);
-      advanceTimeoutRef.current = setTimeout(() => {
-        advanceTimeoutRef.current = null;
-        setShowFlourish(false);
-        const nextIndex = activeIndex + 1;
-        onActiveIndexChange(nextIndex);
-        listRef.current?.scrollToOffset({ offset: pageHeight * nextIndex, animated: true });
-      }, REVIEW_ADVANCE_DELAY_MS);
+  const scrollToIndex = useCallback(
+    (index: number) => {
+      listRef.current?.scrollToOffset({ offset: pageHeight * index, animated: true });
     },
-    [questions, activeIndex, study, reinjectForSecondChance, onActiveIndexChange, pageHeight],
+    [pageHeight],
   );
+
+  // Phase 19.2 — the rating "screen" is a real item in the feed's own data
+  // array now (see feedItems.ts / useInterleavedStudyFeed's doc comments),
+  // not an overlay layered on a question card. Swiping from a question
+  // naturally lands on ITS OWN rating card — the very next item — so there
+  // is no gesture prediction, drag ref, or shared "which question is being
+  // rated" state left to race. Shared verbatim with FeedScreen.
+  const { items, handleOutcomeRecorded } = useInterleavedStudyFeed({
+    questions,
+    isStudent,
+    scrollToIndex,
+  });
 
   const className = classRoom?.name ?? "Sınıf";
 
+  // The interleaved list's own current position — purely for prefetch and
+  // the "n / total" display below, both of which need to talk about
+  // QUESTIONS (via the active item's `questionIndex`), not raw item
+  // position (a rating card must never count as its own numbered step).
+  const [activeItemIndex, setActiveItemIndex] = useState(0);
+  const activeQuestionIndex = items[activeItemIndex]?.questionIndex ?? 0;
+
   // Derived from scroll offset rather than from onViewableItemsChanged:
   // offset is exact for a full-screen paged list, and it cannot report a
-  // half-visible neighbour as active during a fast swipe.
+  // half-visible neighbour as active during a fast swipe. Purely
+  // bookkeeping (prefetch trigger + position display) — never gates
+  // anything about rating.
   const handleMomentumScrollEnd = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      const next = calculateActiveIndex(
-        event.nativeEvent.contentOffset.y,
-        pageHeight,
-        questions.length,
-      );
-      if (next !== activeIndex) onActiveIndexChange(next);
+      const next = calculateActiveIndex(event.nativeEvent.contentOffset.y, pageHeight, items.length);
+      if (next === activeItemIndex) return;
+      setActiveItemIndex(next);
+      const nextQuestionIndex = items[next]?.questionIndex ?? activeIndex;
+      if (nextQuestionIndex !== activeIndex) onActiveIndexChange(nextQuestionIndex);
     },
-    [pageHeight, questions.length, activeIndex, onActiveIndexChange],
+    [pageHeight, items, activeItemIndex, activeIndex, onActiveIndexChange],
   );
 
   const getItemLayout = useCallback(
-    (_: ArrayLike<Question> | null | undefined, index: number) => ({
+    (_: ArrayLike<FeedItem> | null | undefined, index: number) => ({
       length: pageHeight,
       offset: pageHeight * index,
       index,
@@ -180,60 +117,31 @@ export function ClassFeedScreen({ classId }: ClassFeedScreenProps) {
     [pageHeight],
   );
 
-  const keyExtractor = useCallback((item: Question) => item.id, []);
-
   const renderItem = useCallback(
-    ({ item, index }: { item: Question; index: number }) => {
-      const isActive = index === activeIndex;
-      const showStudy = shouldShowStudyControls({ index, activeIndex, isStudent });
+    ({ item, index }: { item: FeedItem; index: number }) => {
+      if (item.type === "rating") {
+        return (
+          <RatingCard
+            question={item.question}
+            height={pageHeight}
+            isStudent={isStudent}
+            onOutcomeRecorded={(outcome, question) =>
+              handleOutcomeRecorded(outcome, question, index, item.questionIndex)
+            }
+          />
+        );
+      }
       return (
         <ClassFeedCard
-          question={item}
+          question={item.question}
           className={className}
           height={pageHeight}
           topInset={insets.top}
           bottomInset={insets.bottom}
-          isActive={isActive}
-          // Only the ACTIVE card receives controls, and the element itself
-          // is built from state the screen already holds — an inactive card
-          // gets a stable `null`, so memo() still short-circuits it and no
-          // extra Firestore read is opened for it.
-          studyControls={
-            showStudy ? (
-              <>
-                <StudyOutcomeControls
-                  item={study.item}
-                  isHydrating={study.isHydrating}
-                  hydrationError={study.hydrationError}
-                  pendingOutcome={study.pendingOutcome}
-                  onSelect={handleOutcomeSelect}
-                  mutationError={study.mutationError}
-                  // This is the one surface that renders over a dark scrim
-                  // rather than a white sheet.
-                  onDarkSurface
-                  // Scroll-first: two outcomes only, one-handed reach. See
-                  // StudyOutcomeButtons's doc comment for why "again" isn't
-                  // offered here.
-                  visibleOutcomes={STUDY_VISIBLE_OUTCOMES}
-                />
-                <StudyOutcomeSuccessFlourish visible={showFlourish} />
-              </>
-            ) : null
-          }
         />
       );
     },
-    [
-      className,
-      pageHeight,
-      insets.top,
-      insets.bottom,
-      activeIndex,
-      isStudent,
-      study,
-      handleOutcomeSelect,
-      showFlourish,
-    ],
+    [className, pageHeight, insets.top, insets.bottom, isStudent, handleOutcomeRecorded],
   );
 
   // A pagination failure also sets hasMore=false (to stop auto-retrying),
@@ -244,8 +152,8 @@ export function ClassFeedScreen({ classId }: ClassFeedScreenProps) {
   const atEnd = useMemo(
     () =>
       !paginationFailed &&
-      isEndOfFeed({ activeIndex, loadedCount: questions.length, hasMore }),
-    [paginationFailed, activeIndex, questions.length, hasMore],
+      isEndOfFeed({ activeIndex: activeQuestionIndex, loadedCount: questions.length, hasMore }),
+    [paginationFailed, activeQuestionIndex, questions.length, hasMore],
   );
 
   function goBack() {
@@ -255,6 +163,7 @@ export function ClassFeedScreen({ classId }: ClassFeedScreenProps) {
 
   function restartFeed() {
     listRef.current?.scrollToOffset({ offset: 0, animated: true });
+    setActiveItemIndex(0);
     onActiveIndexChange(0);
   }
 
@@ -327,13 +236,13 @@ export function ClassFeedScreen({ classId }: ClassFeedScreenProps) {
     <View style={styles.flex}>
       <FlatList
         ref={listRef}
-        data={questions}
+        data={items}
         keyExtractor={keyExtractor}
         renderItem={renderItem}
         getItemLayout={getItemLayout}
         // pagingEnabled + a full-window item height is what guarantees one
-        // swipe == exactly one question, and that a card can never rest
-        // half-way between two questions.
+        // swipe == exactly one question OR rating card, and that a card can
+        // never rest half-way between two.
         pagingEnabled
         showsVerticalScrollIndicator={false}
         decelerationRate="fast"
@@ -363,9 +272,7 @@ export function ClassFeedScreen({ classId }: ClassFeedScreenProps) {
           {className}
         </Text>
         <View style={styles.progressPill}>
-          <Text style={styles.progressText}>
-            {formatFeedPosition(activeIndex, questions.length)}
-          </Text>
+          <Text style={styles.progressText}>{formatFeedPosition(activeQuestionIndex, questions.length)}</Text>
         </View>
       </View>
 

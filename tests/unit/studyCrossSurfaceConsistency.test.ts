@@ -63,14 +63,15 @@ describe("status vocabulary has one source", () => {
 });
 
 describe("every surface uses the one shared control", () => {
-  // Phase 18 — self-assessment moved OUT of Question Detail entirely (it's
-  // now a "çözüm ekranı" only): the class feed's active card and the
-  // review session are the inline, sequential surfaces; the study
-  // dashboard's queue list is the third. QuestionDetailScreen is
-  // deliberately absent from this list now — see the regression guard
-  // below for the other half of that assertion.
+  // Phase 19.2 — self-assessment for BOTH swipe feeds (the Akış tab's
+  // FeedScreen and a class's ClassFeedScreen) now renders through exactly
+  // one shared component, RatingCard — a real interleaved feed item, not an
+  // overlay — and neither screen source renders <StudyOutcomeControls>
+  // directly (that moved out of FeedCard/ClassFeedCard entirely, see the
+  // regression guards below). The review session and the study dashboard's
+  // queue list are the other two surfaces that still render it inline.
   const surfaces = [
-    "src/features/classes/screens/ClassFeedScreen.tsx",
+    "src/features/study/components/RatingCard.tsx",
     "src/features/study/screens/ReviewSessionScreen.tsx",
     "src/features/study/components/StudyQueueCard.tsx",
   ];
@@ -86,13 +87,27 @@ describe("every surface uses the one shared control", () => {
   // by accident, e.g. a copy-paste from ClassFeedCard) would resurrect the
   // exact "self-assessment lives in two places" duplication Phase 18
   // removed it to fix.
-  it("QuestionDetailScreen no longer renders self-assessment (moved to the inline study flow)", () => {
+  it("QuestionDetailScreen no longer renders self-assessment", () => {
     const source = clientSources.find(
       (file) => file.path === "src/features/questions/screens/QuestionDetailScreen.tsx",
     );
     expect(source).toBeDefined();
     expect(source?.text).not.toContain("StudyOutcomeControls");
     expect(source?.text).not.toContain("useStudyQuestionState");
+  });
+
+  // Phase 19 regression guard: self-assessment must not creep back into
+  // the question cards themselves (an inline block under the card is
+  // exactly the Phase 18 UX this phase replaced) — it belongs to its own
+  // interleaved feed item (RatingCard), never rendered inside a question
+  // card.
+  it.each([
+    "src/features/feed/components/FeedCard.tsx",
+    "src/features/classes/components/ClassFeedCard.tsx",
+  ])("%s no longer renders self-assessment inline", (path) => {
+    const source = clientSources.find((file) => file.path === path);
+    expect(source).toBeDefined();
+    expect(source?.text).not.toContain("StudyOutcomeControls");
   });
 
   it("leaves StudyOutcomeButtons with a single consumer", () => {

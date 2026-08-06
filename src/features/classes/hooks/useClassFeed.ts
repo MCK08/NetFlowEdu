@@ -8,7 +8,6 @@ import { Question } from "@/types/question";
 import {
   dedupeQuestionsById,
   mergeQuestionPages,
-  reinjectQuestionForSecondChance,
   restoreActiveIndex,
   shouldPrefetchNextPage,
 } from "../services/classFeedPagination";
@@ -193,16 +192,6 @@ export function useClassFeed(classId: string | undefined) {
     }
   }, [classId, activeIndex]);
 
-  // Phase 18 — splices a struggled question back into THIS session's local
-  // array for its one "second chance" reshow (see classFeedStudyGating.ts /
-  // classFeedPagination.ts's reinjectQuestionForSecondChance for the actual
-  // rule). Purely a local array mutation — no network call, no schema
-  // change, nothing persisted. `questionsRef` (not `questions`) is read so
-  // this stays referentially stable across renders like `loadMore` above.
-  const reinjectForSecondChance = useCallback((question: Question, insertIndex: number) => {
-    setQuestions((prev) => reinjectQuestionForSecondChance(prev, question, insertIndex));
-  }, []);
-
   return {
     questions,
     isLoading,
@@ -214,6 +203,5 @@ export function useClassFeed(classId: string | undefined) {
     loadMore,
     refresh,
     retry: load,
-    reinjectForSecondChance,
   };
 }

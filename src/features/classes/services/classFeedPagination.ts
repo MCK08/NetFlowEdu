@@ -125,21 +125,3 @@ export function formatFeedPosition(activeIndex: number, total: number): string {
   return `${position} / ${total}`;
 }
 
-// Phase 18 — splices `question` back into the feed at `insertIndex` for its
-// session-local "second chance" (see classFeedStudyGating.ts's
-// computeReshowInsertIndex for WHEN/WHERE this is called). Deliberately
-// does NOT dedupe against the question's existing earlier occurrence — the
-// whole point is the SAME question appearing twice in one session, which
-// mergeQuestionPages/dedupeQuestionsById would otherwise collapse. Clamps
-// the index defensively so an out-of-range value (e.g. stale offset after
-// other splices/loads shifted the array) can never throw.
-export function reinjectQuestionForSecondChance(
-  questions: Question[],
-  question: Question,
-  insertIndex: number,
-): Question[] {
-  const clamped = Math.max(0, Math.min(insertIndex, questions.length));
-  const next = questions.slice();
-  next.splice(clamped, 0, question);
-  return next;
-}

@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { memo, ReactNode } from "react";
+import { memo } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
 import {
@@ -32,12 +32,6 @@ interface ClassFeedCardProps {
   height: number;
   topInset: number;
   bottomInset: number;
-  // Phase 16C — study controls. Rendered ONLY for the active card, and the
-  // screen (not the card) owns the data fetching, so eight mounted cards
-  // never open eight Firestore reads. Inactive cards receive the stable
-  // `null`/`false` defaults below, which keeps memo() effective for them.
-  isActive?: boolean;
-  studyControls?: ReactNode;
 }
 
 // Space the bottom overlay needs before the action rail may start, so the
@@ -60,8 +54,6 @@ function ClassFeedCardComponent({
   height,
   topInset,
   bottomInset,
-  isActive = false,
-  studyControls = null,
 }: ClassFeedCardProps) {
   const { firebaseUser } = useAuth();
   const { primaryName, usernameHandle, photoURL } = useProfileHandle(question.ownerId);
@@ -164,14 +156,6 @@ function ClassFeedCardComponent({
           <Ionicons name="create-outline" size={18} color={darkColors.background} />
           <Text style={styles.answerButtonText}>Cevapla</Text>
         </AnimatedPressable>
-
-        {/* Rendered BELOW "Cevapla" and inside the same bottom bar, so it
-            shares the existing safe-area padding and can never overlap the
-            action rail, the caption, or the home indicator. Only ever
-            present for the active card. */}
-        {isActive && studyControls ? (
-          <View style={styles.studyControls}>{studyControls}</View>
-        ) : null}
       </View>
     </View>
   );
@@ -183,9 +167,6 @@ const styles = StyleSheet.create({
   card: {
     width: "100%",
     backgroundColor: darkColors.background,
-  },
-  studyControls: {
-    marginTop: spacing.sm,
   },
   actionRail: {
     position: "absolute",
