@@ -34,5 +34,6 @@ export {
   removeFriend,
 } from "./friends";
 export { markAllNotificationsRead, markNotificationRead } from "./notifications";
+export { recordStudyOutcome, setStudyDailyGoal, removeStudyItem } from "./study";
 
 // Later phases will export from ./questions and ./review.

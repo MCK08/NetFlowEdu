@@ -20,6 +20,19 @@ export default function StudentTabsLayout() {
           tabBarIcon: ({ color, size }) => <Ionicons name="home" color={color} size={size} />,
         }}
       />
+      {/* Phase 16 — the adaptive review queue. Placed second so the daily
+          study session sits beside the feed rather than buried behind the
+          profile; student-only by construction (this layout is the
+          (student) group's, and recordStudyOutcome rejects non-students). */}
+      <Tabs.Screen
+        name="study"
+        options={{
+          title: "Çalış",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="library" color={color} size={size} />
+          ),
+        }}
+      />
       <Tabs.Screen
         name="classes"
         options={{

@@ -2974,3 +2974,227 @@ describe("firestore.rules — users/{uid}/notifications and notificationMeta", (
     );
   });
 });
+
+// Phase 16 — users/{uid}/studyItems, studyMeta and studyDays. All three are
+// written exclusively by the recordStudyOutcome / setStudyDailyGoal
+// callables (Admin SDK, bypassing these rules). A client that could write
+// any of them could fabricate mastery, backdate a review to skip a wait, or
+// mint an unlimited streak by replaying the same day key.
+describe("firestore.rules — study collections (Phase 16)", () => {
+  let testEnv: RulesTestEnvironment;
+
+  beforeAll(async () => {
+    testEnv = await initializeTestEnvironment({
+      projectId: PROJECT_ID,
+      firestore: { rules: fs.readFileSync("firestore.rules", "utf8"), host: "127.0.0.1", port: 8080 },
+    });
+  });
+
+  afterAll(async () => testEnv.cleanup());
+  afterEach(async () => testEnv.clearFirestore());
+
+  function studentCtx(uid: string) {
+    return testEnv.authenticatedContext(uid, { role: "student", organizationId: null });
+  }
+
+  async function seedStudyItem(uid: string, questionId: string) {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "users", uid, "studyItems", questionId), {
+        questionId,
+        status: "review",
+        lastOutcome: "solved",
+        intervalDays: 4,
+        successfulReviews: 2,
+        attemptCount: 2,
+        nextReviewAt: 1760000000000,
+        source: "public",
+        sourceClassId: null,
+        questionOwnerId: "owner1",
+        schemaVersion: 1,
+      });
+    });
+  }
+
+  async function seedSummary(uid: string) {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "users", uid, "studyMeta", "summary"), {
+        totalReviewActions: 5,
+        masteredCount: 1,
+        currentStreak: 3,
+        longestStreak: 7,
+        dailyGoal: 10,
+        reviewedToday: 2,
+      });
+    });
+  }
+
+  async function seedDay(uid: string, dayKey: string) {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "users", uid, "studyDays", dayKey), {
+        dayKey,
+        reviewCount: 3,
+        solvedCount: 2,
+        goalCompleted: false,
+      });
+    });
+  }
+
+  // ---- studyItems -------------------------------------------------------
+
+  it("lets the owner read their own study item", async () => {
+    await seedStudyItem("student-1", "q1");
+    const owner = studentCtx("student-1");
+    await assertSucceeds(getDoc(doc(owner.firestore(), "users", "student-1", "studyItems", "q1")));
+  });
+
+  it("lets the owner LIST their own due-review queue (the real query shape)", async () => {
+    await seedStudyItem("student-1", "q1");
+    await seedStudyItem("student-1", "q2");
+    const owner = studentCtx("student-1");
+    const snap = await assertSucceeds(
+      getDocs(
+        query(
+          collection(owner.firestore(), "users", "student-1", "studyItems"),
+          where("nextReviewAt", "<=", 1760000000001),
+          orderBy("nextReviewAt", "asc"),
+        ),
+      ),
+    );
+    expect(snap.docs).toHaveLength(2);
+  });
+
+  it("denies reading another student's study item", async () => {
+    await seedStudyItem("student-1", "q1");
+    const outsider = studentCtx("student-2");
+    await assertFails(getDoc(doc(outsider.firestore(), "users", "student-1", "studyItems", "q1")));
+  });
+
+  it("denies another student's LIST query against this owner's queue", async () => {
+    await seedStudyItem("student-1", "q1");
+    const outsider = studentCtx("student-2");
+    await assertFails(getDocs(collection(outsider.firestore(), "users", "student-1", "studyItems")));
+  });
+
+  it("denies an unauthenticated read", async () => {
+    await seedStudyItem("student-1", "q1");
+    const unauthed = testEnv.unauthenticatedContext();
+    await assertFails(getDoc(doc(unauthed.firestore(), "users", "student-1", "studyItems", "q1")));
+  });
+
+  it("denies the owner CREATING a study item (would fabricate progress)", async () => {
+    const owner = studentCtx("student-1");
+    await assertFails(
+      setDoc(doc(owner.firestore(), "users", "student-1", "studyItems", "q-fake"), {
+        questionId: "q-fake",
+        status: "mastered",
+        intervalDays: 60,
+        successfulReviews: 99,
+      }),
+    );
+  });
+
+  it("denies the owner UPDATING nextReviewAt to skip the wait", async () => {
+    await seedStudyItem("student-1", "q1");
+    const owner = studentCtx("student-1");
+    await assertFails(
+      updateDoc(doc(owner.firestore(), "users", "student-1", "studyItems", "q1"), {
+        nextReviewAt: 0,
+      }),
+    );
+  });
+
+  it("denies the owner forging mastery", async () => {
+    await seedStudyItem("student-1", "q1");
+    const owner = studentCtx("student-1");
+    await assertFails(
+      updateDoc(doc(owner.firestore(), "users", "student-1", "studyItems", "q1"), {
+        status: "mastered",
+        successfulReviews: 99,
+      }),
+    );
+  });
+
+  it("denies the owner deleting a study item", async () => {
+    await seedStudyItem("student-1", "q1");
+    const owner = studentCtx("student-1");
+    await assertFails(deleteDoc(doc(owner.firestore(), "users", "student-1", "studyItems", "q1")));
+  });
+
+  // ---- studyMeta --------------------------------------------------------
+
+  it("lets the owner read their own study summary", async () => {
+    await seedSummary("student-1");
+    const owner = studentCtx("student-1");
+    await assertSucceeds(
+      getDoc(doc(owner.firestore(), "users", "student-1", "studyMeta", "summary")),
+    );
+  });
+
+  it("denies reading another student's summary", async () => {
+    await seedSummary("student-1");
+    const outsider = studentCtx("student-2");
+    await assertFails(
+      getDoc(doc(outsider.firestore(), "users", "student-1", "studyMeta", "summary")),
+    );
+  });
+
+  it("denies the owner writing their own streak or mastered count", async () => {
+    await seedSummary("student-1");
+    const owner = studentCtx("student-1");
+    await assertFails(
+      updateDoc(doc(owner.firestore(), "users", "student-1", "studyMeta", "summary"), {
+        currentStreak: 999,
+        masteredCount: 999,
+      }),
+    );
+  });
+
+  it("denies the owner setting the daily goal directly (must use the callable)", async () => {
+    await seedSummary("student-1");
+    const owner = studentCtx("student-1");
+    await assertFails(
+      updateDoc(doc(owner.firestore(), "users", "student-1", "studyMeta", "summary"), {
+        dailyGoal: 1,
+      }),
+    );
+  });
+
+  // ---- studyDays --------------------------------------------------------
+
+  it("lets the owner read their own daily stats", async () => {
+    await seedDay("student-1", "2026-08-06");
+    const owner = studentCtx("student-1");
+    await assertSucceeds(
+      getDoc(doc(owner.firestore(), "users", "student-1", "studyDays", "2026-08-06")),
+    );
+  });
+
+  it("denies reading another student's daily stats", async () => {
+    await seedDay("student-1", "2026-08-06");
+    const outsider = studentCtx("student-2");
+    await assertFails(
+      getDoc(doc(outsider.firestore(), "users", "student-1", "studyDays", "2026-08-06")),
+    );
+  });
+
+  it("denies the owner minting a day document (streak farming)", async () => {
+    const owner = studentCtx("student-1");
+    await assertFails(
+      setDoc(doc(owner.firestore(), "users", "student-1", "studyDays", "2026-08-07"), {
+        dayKey: "2026-08-07",
+        reviewCount: 100,
+        goalCompleted: true,
+      }),
+    );
+  });
+
+  it("denies the owner inflating an existing day's review count", async () => {
+    await seedDay("student-1", "2026-08-06");
+    const owner = studentCtx("student-1");
+    await assertFails(
+      updateDoc(doc(owner.firestore(), "users", "student-1", "studyDays", "2026-08-06"), {
+        reviewCount: 999,
+      }),
+    );
+  });
+});

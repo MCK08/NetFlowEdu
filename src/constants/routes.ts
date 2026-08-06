@@ -5,6 +5,8 @@ export const ROUTES = {
   verifyEmail: "/(auth)/verify-email",
   googleOnboarding: "/(auth)/google-onboarding",
   student: "/(student)/(tabs)",
+  studentStudy: "/(student)/(tabs)/study",
+  studentReviewSession: "/(student)/study/review",
   editProfile: "/(student)/edit-profile",
   studentNotifications: "/(student)/notifications",
   teacher: "/(teacher)/(tabs)",

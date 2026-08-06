@@ -14,6 +14,8 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { useAuth } from "@features/authentication";
+import { StudyOutcomeControls, useStudyQuestionState } from "@features/study";
 import { colors } from "@theme/colors";
 import { Question } from "@/types/question";
 
@@ -26,6 +28,7 @@ import {
   isEndOfFeed,
 } from "../services/classFeedPagination";
 import { isRecoverableFeedError, mapClassFeedErrorToMessage } from "../services/classErrorMapper";
+import { activeStudyQuestionId, shouldShowStudyControls } from "../services/classFeedStudyGating";
 
 interface ClassFeedScreenProps {
   classId: string;
@@ -40,6 +43,7 @@ interface ClassFeedScreenProps {
 export function ClassFeedScreen({ classId }: ClassFeedScreenProps) {
   const { height: windowHeight, width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
+  const { role } = useAuth();
   const { classRoom } = useStudentClassInfo(classId);
   const {
     questions,
@@ -52,6 +56,32 @@ export function ClassFeedScreen({ classId }: ClassFeedScreenProps) {
     loadMore,
     retry,
   } = useClassFeed(classId);
+
+  // Phase 16C — study controls for the ACTIVE card only.
+  //
+  // Architecture (Option A: screen owns the fetch, card stays presentational):
+  // a hook cannot be called conditionally, so putting useStudyQuestionState
+  // inside ClassFeedCard would instantiate it in every mounted card and rely
+  // on an internal `enabled` flag to stay quiet — one hook instance per card,
+  // and any future mistake there becomes N reads. Owning it here means there
+  // is exactly ONE instance for the whole feed, keyed to the active question,
+  // which makes "inactive cards never fetch" true by construction rather than
+  // by discipline. It also keeps the card memo-friendly (inactive cards get a
+  // stable null) and reuses the activeIndex the screen already tracks.
+  const isStudent = role === "student";
+  // Null for a teacher or an out-of-range index — and null means the hook
+  // opens no read at all, so "inactive cards cost nothing" holds by
+  // construction. See classFeedStudyGating for the exact rule.
+  const activeQuestionId = useMemo(
+    () =>
+      activeStudyQuestionId({
+        questionIds: questions.map((question) => question.id),
+        activeIndex,
+        isStudent,
+      }),
+    [questions, activeIndex, isStudent],
+  );
+  const study = useStudyQuestionState({ questionId: activeQuestionId, enabled: isStudent });
 
   const listRef = useRef<FlatList<Question>>(null);
 
@@ -88,16 +118,40 @@ export function ClassFeedScreen({ classId }: ClassFeedScreenProps) {
   const keyExtractor = useCallback((item: Question) => item.id, []);
 
   const renderItem = useCallback(
-    ({ item }: { item: Question }) => (
-      <ClassFeedCard
-        question={item}
-        className={className}
-        height={pageHeight}
-        topInset={insets.top}
-        bottomInset={insets.bottom}
-      />
-    ),
-    [className, pageHeight, insets.top, insets.bottom],
+    ({ item, index }: { item: Question; index: number }) => {
+      const isActive = index === activeIndex;
+      const showStudy = shouldShowStudyControls({ index, activeIndex, isStudent });
+      return (
+        <ClassFeedCard
+          question={item}
+          className={className}
+          height={pageHeight}
+          topInset={insets.top}
+          bottomInset={insets.bottom}
+          isActive={isActive}
+          // Only the ACTIVE card receives controls, and the element itself
+          // is built from state the screen already holds — an inactive card
+          // gets a stable `null`, so memo() still short-circuits it and no
+          // extra Firestore read is opened for it.
+          studyControls={
+            showStudy ? (
+              <StudyOutcomeControls
+                item={study.item}
+                isHydrating={study.isHydrating}
+                hydrationError={study.hydrationError}
+                pendingOutcome={study.pendingOutcome}
+                onSelect={study.submit}
+                mutationError={study.mutationError}
+                // This is the one surface that renders over a dark scrim
+                // rather than a white sheet.
+                onDarkSurface
+              />
+            ) : null
+          }
+        />
+      );
+    },
+    [className, pageHeight, insets.top, insets.bottom, activeIndex, isStudent, study],
   );
 
   // A pagination failure also sets hasMore=false (to stop auto-retrying),

@@ -619,6 +619,43 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ---- users/{uid}/studyItems/{questionId} -------------------------------
+    // Phase 16 — the adaptive review queue. Written exclusively by the
+    // recordStudyOutcome callable (Admin SDK, inside a two-phase
+    // transaction alongside the summary and the daily stats), so a client
+    // can never fabricate progress, backdate a review, forge a mastery
+    // count, or bring its own nextReviewAt forward to skip a wait.
+    //
+    // Read is owner-only. These documents deliberately contain NO question
+    // content (no image, no description) — only scheduling state plus the
+    // questionId — so reading one never leaks private/class material. The
+    // real question is re-fetched and re-authorized on every queue render.
+    match /users/{uid}/studyItems/{questionId} {
+      allow read: if isOwner(uid);
+      allow write: if false;
+    }
+
+    // ---- users/{uid}/studyMeta/{docId} -------------------------------------
+    // Server-owned progress summary (streak, mastered count, daily goal) —
+    // exactly the same owner-only-read / never-client-writable contract as
+    // users/{uid}/socialMeta and users/{uid}/notificationMeta. The daily
+    // goal is changed through the setStudyDailyGoal callable, which range-
+    // validates it, rather than by a direct client write.
+    match /users/{uid}/studyMeta/{docId} {
+      allow read: if isOwner(uid);
+      allow write: if false;
+    }
+
+    // ---- users/{uid}/studyDays/{dayKey} ------------------------------------
+    // Per-calendar-day counters. The day key itself is derived SERVER-side
+    // from server time plus a validated IANA timezone (see
+    // functions/src/study/dayKey.ts) — a client that could write these
+    // could mint an unlimited streak by replaying the same day.
+    match /users/{uid}/studyDays/{dayKey} {
+      allow read: if isOwner(uid);
+      allow write: if false;
+    }
+
     // ---- usernames/{username} ------------------------------------------
     // Written exclusively by the setUsername Cloud Function (Admin SDK,
     // bypasses these rules) as a uniqueness reservation. Never read or
