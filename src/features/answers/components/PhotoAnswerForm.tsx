@@ -7,27 +7,23 @@ import { colors } from "@theme/colors";
 import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
 import { iconSize } from "@theme/sizes";
-import { QuestionVisibility } from "@/types/question";
 
 import { usePhotoAnswer } from "../hooks/usePhotoAnswer";
 
 interface PhotoAnswerFormProps {
   questionId: string;
   uid: string | undefined;
-  questionVisibility: QuestionVisibility;
   onSubmitted: () => void;
 }
 
 export function PhotoAnswerForm({
   questionId,
   uid,
-  questionVisibility,
   onSubmitted,
 }: PhotoAnswerFormProps) {
   const { previewUri, isUploading, pickFromCamera, pickFromGallery, submit } = usePhotoAnswer({
     questionId,
     uid,
-    questionVisibility,
     onSubmitted,
   });
 

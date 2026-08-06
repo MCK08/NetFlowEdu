@@ -1,9 +1,17 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Alert, Keyboard } from "react-native";
 
-import { createComment, deleteComment, subscribeToQuestionComments } from "@services/questions/comments";
+import { deleteComment, subscribeToQuestionComments } from "@services/questions/comments";
 import { QuestionComment } from "@/types/comment";
 
+import {
+  createCommentOperationId,
+  submitCommentForModeration,
+} from "../services/commentSubmission";
+import {
+  commentStatusFeedback,
+  mapCommentSubmissionError,
+} from "../services/commentSubmissionMessages";
 import { normalizeCommentText, validateCommentText } from "../services/commentValidation";
 
 const PERMISSION_DENIED_MESSAGE = "Bu sorunun yorumlarını görüntüleme yetkiniz yok.";
@@ -23,6 +31,7 @@ export function useQuestionComments({ questionId, uid }: UseQuestionCommentsOpti
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const operationIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!questionId) {
@@ -61,16 +70,36 @@ export function useQuestionComments({ questionId, uid }: UseQuestionCommentsOpti
     }
 
     setIsSubmitting(true);
+    // Held for the LIFETIME of one gesture, so a retry after a lost response
+    // reuses it and the backend returns the original submission instead of
+    // creating a second one. Cleared on success, so a genuinely new press
+    // mints a new id. Same shape as the study feature's gesture identity.
+    const operationId = operationIdRef.current ?? createCommentOperationId();
+    operationIdRef.current = operationId;
+
     try {
-      await createComment({
+      const result = await submitCommentForModeration(
         questionId,
-        ownerId: uid,
-        text: normalizeCommentText(draft),
-      });
-      setDraft("");
-      Keyboard.dismiss();
-    } catch {
-      Alert.alert("Yorum gönderilemedi.", "Lütfen tekrar deneyin.");
+        normalizeCommentText(draft),
+        operationId,
+      );
+      operationIdRef.current = null;
+
+      const feedback = commentStatusFeedback(result.status);
+      if (feedback.clearDraft) {
+        setDraft("");
+        Keyboard.dismiss();
+      }
+      // An approved comment needs no announcement — it simply appears in the
+      // live list. Anything else does, because nothing visible happened, and
+      // a refusal keeps the draft so the student can edit rather than lose it.
+      if (result.status !== "published") {
+        Alert.alert(feedback.title, feedback.message);
+      }
+    } catch (error) {
+      // The id is deliberately kept: an explicit retry of THIS gesture must
+      // stay idempotent.
+      Alert.alert("Yorum gönderilemedi.", mapCommentSubmissionError(error));
     } finally {
       setIsSubmitting(false);
     }

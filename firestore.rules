@@ -461,15 +461,23 @@ service cloud.firestore {
                   && exists(/databases/$(database)/documents/questions/$(resource.data.questionId))
                   && canReadQuestionData(questionData(resource.data.questionId));
 
-      allow create: if isSignedIn()
-                    && request.resource.data.ownerId == uid()
-                    && request.resource.data.method in ['photo', 'drawing']
-                    && request.resource.data.createdAt == request.time
-                    && request.resource.data.imageUrl is string
-                    && request.resource.data.imageUrl.size() > 0
-                    && request.resource.data.likeCount == 0
-                    && exists(/databases/$(database)/documents/questions/$(request.resource.data.questionId))
-                    && canReadQuestionData(questionData(request.resource.data.questionId));
+      // Phase 17B: BACKEND-ONLY CREATION.
+      //
+      // An answer is an IMAGE — a photo or a drawing, with no text field at
+      // all — so nothing about it can be judged without actually looking at
+      // the picture. It is now created only by submitAnswerForModeration
+      // (Admin SDK), after Vision SafeSearch has cleared the image AND the
+      // OCR text has cleared the same Turkish deterministic layer that
+      // guards comments.
+      //
+      // Denying the client here is what makes that unbypassable. Previously
+      // a modified client could write this document directly, and
+      // onAnswerCreate would then increment answerCount and notify the
+      // question owner for content nothing had inspected. The trigger is
+      // deliberately unchanged: an answer document now only ever exists if
+      // it was approved, so the counter and the notification are gated by
+      // construction rather than by adding checks inside the trigger.
+      allow create: if false;
 
       // likeCount is maintained only by toggleAnswerLike (Admin SDK). No
       // other edit-answer feature exists, so nothing else may ever change.
@@ -526,18 +534,62 @@ service cloud.firestore {
                   && exists(/databases/$(database)/documents/questions/$(resource.data.questionId))
                   && canReadQuestionData(questionData(resource.data.questionId));
 
-      allow create: if isSignedIn()
-                    && request.resource.data.ownerId == uid()
-                    && request.resource.data.status == 'active'
-                    && request.resource.data.createdAt == request.time
-                    && request.resource.data.text is string
-                    && request.resource.data.text.size() > 0
-                    && request.resource.data.text.size() <= 500
-                    && exists(/databases/$(database)/documents/questions/$(request.resource.data.questionId))
-                    && canReadQuestionData(questionData(request.resource.data.questionId));
+      // Phase 17: BACKEND-ONLY CREATION.
+      //
+      // A comment used to be written straight from the client and was live
+      // to every reader of the question the instant it landed — the comment
+      // counter and the question-owner notification both fire off the
+      // resulting onDocumentCreated trigger, so abusive text was counted and
+      // announced before anything looked at it.
+      //
+      // The only writer now is submitQuestionCommentForModeration (Admin
+      // SDK, bypasses these rules), which publishes a comment ONLY after the
+      // text has passed the moderation decision layer. Denying the client
+      // here is what makes that gate unbypassable: a modified client cannot
+      // skip the callable and write the document itself.
+      //
+      // The counter/notification triggers are deliberately unchanged — a
+      // comment document now only ever exists if it was approved, so
+      // "pending content must not trigger counters" holds by construction.
+      allow create: if false;
 
       allow update: if false;
       allow delete: if isOwner(resource.data.ownerId);
+    }
+
+    // ---- moderationSubmissions/{submissionId} ----------------------------
+    // Phase 17. Content awaiting a publication decision.
+    //
+    // Written EXCLUSIVELY by the moderation callables (Admin SDK). Every
+    // client write is denied — not narrowed, denied — because every field
+    // here is a trusted field: a client that could set status='approved' or
+    // publishedEntityId would have defeated the entire gate, and one that
+    // could set reviewedBy would forge an audit trail.
+    //
+    // Read is author-only and deliberately narrow. The author may see their
+    // own submission (the client maps status onto a neutral message); no
+    // other student may read it, so pending and rejected content is never
+    // visible to anyone but its author. Reviewer access is NOT granted here:
+    // the review queue is a server-side callable, so a reviewer never needs
+    // a direct client read, and granting one would mean choosing between a
+    // teacher-wide or org-wide read rule that could not be scoped to a
+    // single class without a get() per document.
+    match /moderationSubmissions/{submissionId} {
+      allow read: if isSignedIn() && resource.data.authorId == uid();
+      allow write: if false;
+    }
+
+    // ---- users/{uid}/moderationMeta/{docId} -------------------------------
+    // Server-owned submission throttle and (future) abuse summary. Same
+    // owner-only-read / never-client-writable contract as socialMeta,
+    // notificationMeta and studyMeta.
+    //
+    // lastSubmissionAt is written from SERVER time inside the submission
+    // transaction, never from a client-supplied timestamp — a device with a
+    // rewound clock cannot widen its own rate limit.
+    match /users/{uid}/moderationMeta/{docId} {
+      allow read: if isOwner(uid);
+      allow write: if false;
     }
 
     // ---- friendships/{pairId} --------------------------------------------

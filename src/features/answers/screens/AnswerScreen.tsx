@@ -9,7 +9,6 @@ import { useAuth } from "@features/authentication";
 import { colors } from "@theme/colors";
 import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
-import { QuestionVisibility } from "@/types/question";
 
 import { DrawingBoard } from "../components/DrawingBoard";
 import { PhotoAnswerForm } from "../components/PhotoAnswerForm";
@@ -19,12 +18,11 @@ type AnswerMethodChoice = "photo" | "drawing";
 
 interface AnswerScreenProps {
   questionId: string;
-  questionVisibility: QuestionVisibility;
 }
 
 const UNSAVED_DRAWING_MESSAGE = "Kaydedilmemiş çiziminiz var. Çıkmak istediğinize emin misiniz?";
 
-export function AnswerScreen({ questionId, questionVisibility }: AnswerScreenProps) {
+export function AnswerScreen({ questionId }: AnswerScreenProps) {
   const { firebaseUser } = useAuth();
   const navigation = useNavigation();
   const [method, setMethod] = useState<AnswerMethodChoice>("photo");
@@ -54,7 +52,6 @@ export function AnswerScreen({ questionId, questionVisibility }: AnswerScreenPro
   const { save, isUploading } = useDrawingAnswer({
     questionId,
     uid: firebaseUser?.uid,
-    questionVisibility,
     onSubmitted: handleSubmitted,
   });
 
@@ -123,7 +120,6 @@ export function AnswerScreen({ questionId, questionVisibility }: AnswerScreenPro
           <PhotoAnswerForm
             questionId={questionId}
             uid={firebaseUser?.uid}
-            questionVisibility={questionVisibility}
             onSubmitted={handleSubmitted}
           />
         ) : (

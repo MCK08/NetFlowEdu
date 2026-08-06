@@ -1,11 +1,9 @@
 import {
-  addDoc,
   collection,
   DocumentData,
   onSnapshot,
   orderBy,
   query,
-  serverTimestamp,
   Timestamp,
   Unsubscribe,
   where,
@@ -14,18 +12,13 @@ import {
 import { db } from "@services/firebase/config";
 import { Answer } from "@/types/answer";
 
-import { buildAnswerDocument, CreateAnswerInput } from "./answerDocument";
-
-export type { CreateAnswerInput } from "./answerDocument";
-export { buildAnswerDocument } from "./answerDocument";
-
-export async function createAnswer(input: CreateAnswerInput): Promise<void> {
-  await addDoc(collection(db, "answers"), {
-    ...buildAnswerDocument(input),
-    likeCount: 0,
-    createdAt: serverTimestamp(),
-  });
-}
+// Phase 17B: there is deliberately no createAnswer here any more.
+//
+// An answer is published only by submitAnswerForModeration (Admin SDK) once
+// Vision SafeSearch has cleared the image and its OCR text has cleared the
+// Turkish deterministic layer. firestore.rules denies client creates on
+// answers outright, so a client-side helper would always fail — leaving one
+// would just be a trap for the next person to wire up.
 
 function toAnswer(id: string, data: DocumentData): Answer {
   return {

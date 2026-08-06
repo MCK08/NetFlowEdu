@@ -112,16 +112,60 @@ service firebase.storage {
     // cross-reference Firestore. The client already has the parent
     // Question (Question Detail screen) when uploading an answer, so it
     // can supply this segment directly — see uploadAnswerImage.
+    // ---- Phase 17B: answer images are now SERVER-PUBLISHED ---------------
+    //
+    // READ rules are unchanged, so every answer image already published
+    // keeps working and the answer UI needs no change.
+    //
+    // WRITE is now denied to clients. An answer image is uploaded to the
+    // private quarantine path below, analysed (Vision SafeSearch + OCR, with
+    // the OCR text run through the Turkish text layer), and only then copied
+    // here by submitAnswerForModeration using the Admin SDK, which bypasses
+    // these rules entirely.
+    //
+    // Leaving the old client write open would have defeated the whole gate
+    // in the most direct way available: upload straight to the readable
+    // path, and the object is served to every classmate without any analysis
+    // ever running on it.
     match /answers/public/{questionId}/{ownerId}/{fileName} {
       allow read: if isSignedIn();
-      allow write: if isSignedIn() && uid() == ownerId
-                   && isImageOrPdf() && isUnder10MB();
+      allow write: if false;
     }
 
     match /answers/private/{questionId}/{ownerId}/{fileName} {
       allow read: if isSignedIn() && uid() == ownerId;
+      allow write: if false;
+    }
+
+    // ---- Phase 17B: moderation quarantine --------------------------------
+    //
+    // Where unmoderated answer images live until a decision is made.
+    //
+    // {uid} is a path segment and the write rule pins it to the caller, so a
+    // student can only ever write under their own uid — there is no way to
+    // drop a file into someone else's quarantine and have it attributed to
+    // them. {submissionId} is minted by the client per gesture and re-checked
+    // server-side against the submission it claims to belong to, so a file
+    // cannot be smuggled from one submission into another.
+    //
+    // READ is owner-only, and that is the whole privacy story for pending
+    // content: no classmate, no teacher and no unauthenticated request can
+    // fetch a quarantined image. The owner may read their own back (upload
+    // retry, and they already have the bytes on their device anyway).
+    //
+    // The client can never write to the approved path, and the server never
+    // publishes without a decision, so there is no state in which an
+    // unmoderated image is readable by another user.
+    //
+    // Content type is restricted to real images — narrower than the
+    // isImageOrPdf() used elsewhere, because an answer is a photo or a
+    // drawing and a PDF is neither. Vision cannot analyse a PDF here either,
+    // so accepting one would create content that could never be cleared.
+    match /moderation/pending/{ownerId}/{submissionId}/{fileName} {
+      allow read: if isSignedIn() && uid() == ownerId;
       allow write: if isSignedIn() && uid() == ownerId
-                   && isImageOrPdf() && isUnder10MB();
+                   && request.resource.contentType in ['image/png', 'image/jpeg']
+                   && request.resource.size < 10 * 1024 * 1024;
     }
 
     match /users/{userId}/avatar/{fileName} {

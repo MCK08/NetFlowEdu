@@ -515,11 +515,22 @@ describe("firestore.rules — answers/{answerId}", () => {
     );
   });
 
-  it("allows the question owner to create a valid photo answer", async () => {
+  // Phase 17B CHANGED THIS TEST from assertSucceeds to assertFails.
+  //
+  // An answer is an IMAGE, so nothing about it can be judged without looking
+  // at the picture. It is now created only by submitAnswerForModeration
+  // (Admin SDK) after Vision SafeSearch has cleared the image AND its OCR
+  // text has cleared the Turkish deterministic layer.
+  //
+  // Denying even a perfectly valid answer from its rightful owner is the
+  // point: if this ever passes again, a modified client can write the
+  // document directly, and onAnswerCreate will increment answerCount and
+  // notify the question owner for content nothing has inspected.
+  it("denies even a valid client answer create — publication is backend-only", async () => {
     await seedQuestion("q1", privateQuestionDoc({ ownerId: "student-1" }));
     const student = studentContext("student-1");
 
-    await assertSucceeds(
+    await assertFails(
       addDoc(collection(student.firestore(), "answers"), {
         ...answerDoc({ questionId: "q1", ownerId: "student-1", method: "drawing" }),
         createdAt: serverTimestamp(),
@@ -587,13 +598,17 @@ describe("firestore.rules — answers/{answerId}", () => {
       });
     });
 
-    // Written through the same client instance the listener is attached
-    // to (rather than a separate withSecurityRulesDisabled admin context)
-    // — this is also the realistic case: a real client creates an answer
-    // and expects its own active listener to pick it up.
-    await addDoc(collection(student.firestore(), "answers"), {
-      ...answerDoc({ questionId: "q1", ownerId: "student-1" }),
-      createdAt: serverTimestamp(),
+    // Phase 17B: written through a rules-disabled context, because that is
+    // now the realistic case — an answer is created by
+    // submitAnswerForModeration with the Admin SDK, which bypasses rules,
+    // and never by the client. What this test actually pins down is
+    // unchanged and still the point: once an answer IS published, an
+    // already-attached client listener receives it.
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await addDoc(collection(context.firestore(), "answers"), {
+        ...answerDoc({ questionId: "q1", ownerId: "student-1" }),
+        createdAt: serverTimestamp(),
+      });
     });
     await gotUpdateWithOneAnswer;
 
@@ -935,10 +950,19 @@ describe("firestore.rules — questionComments/{commentId}", () => {
     );
   });
 
-  it("allows an authenticated user to create their own comment on a public question", async () => {
+  // Phase 17 CHANGED THIS TEST from assertSucceeds to assertFails.
+  //
+  // A well-formed comment from a legitimately authorized user is now denied
+  // at the rules layer, on purpose: comments are published only by
+  // submitQuestionCommentForModeration, after the text has passed the
+  // moderation decision layer. Denying even the happy path here is what
+  // makes the gate unbypassable — if this ever passes again, a modified
+  // client can skip moderation entirely and its comment will still fire the
+  // counter and the question-owner notification.
+  it("denies even a well-formed client comment create — publication is backend-only", async () => {
     await seedQuestion("q1", publicQuestionDoc({ ownerId: "student-1" }));
     const commenter = studentContext("student-2");
-    await assertSucceeds(
+    await assertFails(
       addDoc(collection(commenter.firestore(), "questionComments"), {
         ...commentDoc({ questionId: "q1", ownerId: "student-2" }),
         createdAt: serverTimestamp(),
@@ -982,10 +1006,15 @@ describe("firestore.rules — questionComments/{commentId}", () => {
     );
   });
 
-  it("allows exactly 500 characters", async () => {
+  // Phase 17 CHANGED THIS TEST from assertSucceeds to assertFails, same
+  // reason as above. The 500-character boundary itself did not move — it is
+  // now enforced by isValidCommentText inside the callable and covered by
+  // tests/unit/submitQuestionComment.test.ts, because the rules layer no
+  // longer sees a client comment create at all.
+  it("denies a client comment create at exactly 500 characters too", async () => {
     await seedQuestion("q1", publicQuestionDoc({ ownerId: "student-1" }));
     const student = studentContext("student-1");
-    await assertSucceeds(
+    await assertFails(
       addDoc(collection(student.firestore(), "questionComments"), {
         ...commentDoc({ questionId: "q1", ownerId: "student-1", text: "a".repeat(500) }),
         createdAt: serverTimestamp(),
@@ -3195,6 +3224,320 @@ describe("firestore.rules — study collections (Phase 16)", () => {
       updateDoc(doc(owner.firestore(), "users", "student-1", "studyDays", "2026-08-06"), {
         reviewCount: 999,
       }),
+    );
+  });
+});
+
+// ---- Phase 17: content safety, moderation & abuse prevention -----------
+//
+// The guarantee under test: no user-generated content becomes visible to
+// another user before it passes the server-side publication gate, and no
+// client can reach into the machinery that makes that decision.
+describe("firestore.rules — moderationSubmissions/{submissionId}", () => {
+  let testEnv: RulesTestEnvironment;
+
+  beforeAll(async () => {
+    testEnv = await initializeTestEnvironment({
+      projectId: PROJECT_ID,
+      firestore: { rules: fs.readFileSync("firestore.rules", "utf8"), host: "127.0.0.1", port: 8080 },
+    });
+  });
+
+  afterAll(async () => testEnv.cleanup());
+  afterEach(async () => testEnv.clearFirestore());
+
+  function studentContext(uid: string) {
+    return testEnv.authenticatedContext(uid, { role: "student", organizationId: null });
+  }
+
+  function teacherContext(uid: string, organizationId: string | null = "org-1") {
+    return testEnv.authenticatedContext(uid, { role: "teacher", organizationId });
+  }
+
+  function submissionDoc(overrides: Record<string, unknown> = {}) {
+    return {
+      submissionId: "student-1_op-abcdefgh",
+      authorId: "student-1",
+      targetType: "question_comment",
+      questionId: "q1",
+      classId: null,
+      organizationId: "org-1",
+      text: "merhaba",
+      status: "manual_review",
+      riskCategories: ["possible_insult"],
+      decisionReason: "uncertain",
+      operationId: "op-abcdefgh",
+      publishedEntityId: null,
+      createdAt: 1,
+      updatedAt: 1,
+      reviewedAt: null,
+      reviewedBy: null,
+      schemaVersion: 1,
+      ...overrides,
+    };
+  }
+
+  async function seedSubmission(id: string, data: Record<string, unknown>) {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "moderationSubmissions", id), data);
+    });
+  }
+
+  it("denies a signed-out user reading a submission", async () => {
+    await seedSubmission("s1", submissionDoc());
+    await assertFails(
+      getDoc(doc(testEnv.unauthenticatedContext().firestore(), "moderationSubmissions", "s1")),
+    );
+  });
+
+  it("denies a signed-out user creating a submission", async () => {
+    await assertFails(
+      setDoc(
+        doc(testEnv.unauthenticatedContext().firestore(), "moderationSubmissions", "s1"),
+        submissionDoc(),
+      ),
+    );
+  });
+
+  it("lets the author read their own submission", async () => {
+    await seedSubmission("s1", submissionDoc());
+    await assertSucceeds(
+      getDoc(doc(studentContext("student-1").firestore(), "moderationSubmissions", "s1")),
+    );
+  });
+
+  it("denies another student reading a pending submission that is not theirs", async () => {
+    // Pending content must never be visible to anyone but its author.
+    await seedSubmission("s1", submissionDoc({ status: "manual_review" }));
+    await assertFails(
+      getDoc(doc(studentContext("student-2").firestore(), "moderationSubmissions", "s1")),
+    );
+  });
+
+  it("denies another student reading a REJECTED submission that is not theirs", async () => {
+    await seedSubmission("s1", submissionDoc({ status: "rejected" }));
+    await assertFails(
+      getDoc(doc(studentContext("student-2").firestore(), "moderationSubmissions", "s1")),
+    );
+  });
+
+  it("denies a student listing the moderation queue", async () => {
+    // A query is a different operation from a get; prove the real shape.
+    await seedSubmission("s1", submissionDoc());
+    await seedSubmission("s2", submissionDoc({ authorId: "student-2", submissionId: "s2" }));
+    await assertFails(
+      getDocs(query(collection(studentContext("student-1").firestore(), "moderationSubmissions"))),
+    );
+  });
+
+  it("denies a student querying another author's submissions", async () => {
+    await seedSubmission("s1", submissionDoc({ authorId: "student-2" }));
+    await assertFails(
+      getDocs(
+        query(
+          collection(studentContext("student-1").firestore(), "moderationSubmissions"),
+          where("authorId", "==", "student-2"),
+        ),
+      ),
+    );
+  });
+
+  it("denies a teacher reading a submission they did not author", async () => {
+    // Reviewer access is a server-side callable, not a client read — a
+    // teacher-wide read rule here could not be scoped to one class.
+    await seedSubmission("s1", submissionDoc());
+    await assertFails(
+      getDoc(doc(teacherContext("teacher-1").firestore(), "moderationSubmissions", "s1")),
+    );
+  });
+
+  it("denies a teacher from another organization reading the queue", async () => {
+    await seedSubmission("s1", submissionDoc({ organizationId: "org-1" }));
+    await assertFails(
+      getDoc(doc(teacherContext("teacher-2", "org-2").firestore(), "moderationSubmissions", "s1")),
+    );
+  });
+
+  it("denies the author creating their own submission", async () => {
+    // Only the callable may create one; a client-created submission could
+    // carry any status it liked.
+    await assertFails(
+      setDoc(
+        doc(studentContext("student-1").firestore(), "moderationSubmissions", "s1"),
+        submissionDoc(),
+      ),
+    );
+  });
+
+  it("denies the author setting status to approved", async () => {
+    await seedSubmission("s1", submissionDoc());
+    await assertFails(
+      updateDoc(doc(studentContext("student-1").firestore(), "moderationSubmissions", "s1"), {
+        status: "approved",
+      }),
+    );
+  });
+
+  it("denies the author setting status to rejected or manual_review", async () => {
+    await seedSubmission("s1", submissionDoc());
+    const author = studentContext("student-1").firestore();
+    await assertFails(updateDoc(doc(author, "moderationSubmissions", "s1"), { status: "rejected" }));
+    await assertFails(
+      updateDoc(doc(author, "moderationSubmissions", "s1"), { status: "manual_review" }),
+    );
+  });
+
+  it("denies the author setting publishedEntityId", async () => {
+    // Forging this would make a replay return a comment id that the gate
+    // never created.
+    await seedSubmission("s1", submissionDoc());
+    await assertFails(
+      updateDoc(doc(studentContext("student-1").firestore(), "moderationSubmissions", "s1"), {
+        publishedEntityId: "forged-comment",
+      }),
+    );
+  });
+
+  it("denies the author writing reviewer fields", async () => {
+    await seedSubmission("s1", submissionDoc());
+    const author = studentContext("student-1").firestore();
+    await assertFails(
+      updateDoc(doc(author, "moderationSubmissions", "s1"), { reviewedBy: "student-1" }),
+    );
+    await assertFails(updateDoc(doc(author, "moderationSubmissions", "s1"), { reviewedAt: 999 }));
+  });
+
+  it("denies the author editing the submitted text after the decision", async () => {
+    await seedSubmission("s1", submissionDoc());
+    await assertFails(
+      updateDoc(doc(studentContext("student-1").firestore(), "moderationSubmissions", "s1"), {
+        text: "rewritten after the fact",
+      }),
+    );
+  });
+
+  it("denies the author deleting their submission", async () => {
+    // The audit trail is not the author's to erase.
+    await seedSubmission("s1", submissionDoc());
+    await assertFails(
+      deleteDoc(doc(studentContext("student-1").firestore(), "moderationSubmissions", "s1")),
+    );
+  });
+});
+
+describe("firestore.rules — users/{uid}/moderationMeta/{docId}", () => {
+  let testEnv: RulesTestEnvironment;
+
+  beforeAll(async () => {
+    testEnv = await initializeTestEnvironment({
+      projectId: PROJECT_ID,
+      firestore: { rules: fs.readFileSync("firestore.rules", "utf8"), host: "127.0.0.1", port: 8080 },
+    });
+  });
+
+  afterAll(async () => testEnv.cleanup());
+  afterEach(async () => testEnv.clearFirestore());
+
+  function studentContext(uid: string) {
+    return testEnv.authenticatedContext(uid, { role: "student", organizationId: null });
+  }
+
+  async function seedThrottle(uid: string, data: Record<string, unknown>) {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "users", uid, "moderationMeta", "throttle"), data);
+    });
+  }
+
+  it("lets the owner read their own throttle record", async () => {
+    await seedThrottle("student-1", { lastSubmissionAt: 100, updatedAt: 100 });
+    await assertSucceeds(
+      getDoc(
+        doc(
+          studentContext("student-1").firestore(),
+          "users",
+          "student-1",
+          "moderationMeta",
+          "throttle",
+        ),
+      ),
+    );
+  });
+
+  it("denies another user reading it", async () => {
+    await seedThrottle("student-1", { lastSubmissionAt: 100, updatedAt: 100 });
+    await assertFails(
+      getDoc(
+        doc(
+          studentContext("student-2").firestore(),
+          "users",
+          "student-1",
+          "moderationMeta",
+          "throttle",
+        ),
+      ),
+    );
+  });
+
+  it("denies the owner rewinding their own rate limit", async () => {
+    // The whole point of a server-owned throttle: a client that could write
+    // lastSubmissionAt would grant itself unlimited submissions.
+    await seedThrottle("student-1", { lastSubmissionAt: 100, updatedAt: 100 });
+    await assertFails(
+      updateDoc(
+        doc(
+          studentContext("student-1").firestore(),
+          "users",
+          "student-1",
+          "moderationMeta",
+          "throttle",
+        ),
+        { lastSubmissionAt: 0 },
+      ),
+    );
+  });
+
+  it("denies the owner creating a throttle record", async () => {
+    await assertFails(
+      setDoc(
+        doc(
+          studentContext("student-1").firestore(),
+          "users",
+          "student-1",
+          "moderationMeta",
+          "throttle",
+        ),
+        { lastSubmissionAt: 0, updatedAt: 0 },
+      ),
+    );
+  });
+
+  it("denies the owner deleting it to reset the limit", async () => {
+    await seedThrottle("student-1", { lastSubmissionAt: 100, updatedAt: 100 });
+    await assertFails(
+      deleteDoc(
+        doc(
+          studentContext("student-1").firestore(),
+          "users",
+          "student-1",
+          "moderationMeta",
+          "throttle",
+        ),
+      ),
+    );
+  });
+
+  it("denies writing to another user's moderation meta", async () => {
+    await assertFails(
+      setDoc(
+        doc(
+          studentContext("student-2").firestore(),
+          "users",
+          "student-1",
+          "moderationMeta",
+          "throttle",
+        ),
+        { lastSubmissionAt: 0 },
+      ),
     );
   });
 });

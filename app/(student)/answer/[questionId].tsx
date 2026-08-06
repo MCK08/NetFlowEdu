@@ -1,26 +1,20 @@
 import { useLocalSearchParams } from "expo-router";
 
 import { AnswerScreen } from "@features/answers";
-import { QuestionVisibility } from "@/types/question";
-
-const VALID_VISIBILITIES: readonly QuestionVisibility[] = ["private", "public", "class"];
 
 export default function Answer() {
-  const { questionId, visibility } = useLocalSearchParams<{
-    questionId: string;
-    visibility?: string;
-  }>();
+  const { questionId } = useLocalSearchParams<{ questionId: string }>();
 
-  // Defaults to the strictest option (private) if the param is missing or
-  // unrecognized, so a malformed/omitted param can never accidentally
-  // widen Storage access — see app/(student)/question/[questionId].tsx's
-  // QuestionDetailCard, the only place this param is ever set, from the
-  // already-loaded Question it has in hand.
-  const questionVisibility: QuestionVisibility = VALID_VISIBILITIES.includes(
-    visibility as QuestionVisibility,
-  )
-    ? (visibility as QuestionVisibility)
-    : "private";
-
-  return <AnswerScreen questionId={questionId} questionVisibility={questionVisibility} />;
+  // Phase 17B removed the `visibility` param that used to be threaded through
+  // here. It existed so the CLIENT could pick the Storage access-level
+  // segment for its upload path — but the client no longer chooses where an
+  // answer image lands. It uploads to a private quarantine path, and
+  // submitAnswerForModeration reads the question document itself to decide
+  // the approved path once the image has been cleared.
+  //
+  // That is strictly safer: a client-supplied visibility could previously
+  // widen the destination (a "private" question answered into
+  // answers/public/...). Deriving it server-side from the question makes that
+  // unrepresentable rather than merely validated.
+  return <AnswerScreen questionId={questionId} />;
 }

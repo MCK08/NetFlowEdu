@@ -1,5 +1,4 @@
 import {
-  addDoc,
   collection,
   deleteDoc,
   doc,
@@ -7,7 +6,6 @@ import {
   onSnapshot,
   orderBy,
   query,
-  serverTimestamp,
   Timestamp,
   Unsubscribe,
   where,
@@ -16,25 +14,15 @@ import {
 import { db } from "@services/firebase/config";
 import { QuestionComment } from "@/types/comment";
 
-export interface CreateCommentInput {
-  questionId: string;
-  ownerId: string;
-  text: string;
-}
-
-// Matches firestore.rules `questionComments/{commentId}` create rule
-// exactly: ownerId == caller, status == 'active', createdAt == server
-// time, text already trimmed/length-checked by validateCommentText before
-// this is ever called.
-export async function createComment(input: CreateCommentInput): Promise<void> {
-  await addDoc(collection(db, "questionComments"), {
-    questionId: input.questionId,
-    ownerId: input.ownerId,
-    text: input.text,
-    status: "active",
-    createdAt: serverTimestamp(),
-  });
-}
+// Phase 17: there is deliberately no createComment here any more.
+//
+// A comment is now published only by submitQuestionCommentForModeration
+// (Admin SDK) after its text has passed the moderation decision layer, and
+// firestore.rules denies client creates on questionComments outright. A
+// client-side create helper would therefore always fail with
+// permission-denied — leaving one in place would just be a trap for the next
+// person to wire up. See src/features/social/comments/services/
+// commentSubmission.ts for the replacement.
 
 export async function deleteComment(commentId: string): Promise<void> {
   await deleteDoc(doc(db, "questionComments", commentId));

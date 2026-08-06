@@ -54,10 +54,31 @@ function storageFor(uid: string | null) {
   return context.storage(`gs://${PROJECT_ID}.appspot.com`);
 }
 
+// Seeds an object bypassing rules — the SERVER publishes approved answer
+// images with the Admin SDK, which bypasses these rules, so this is what the
+// real production write looks like from the rules' point of view.
+async function seedApproved(path: string): Promise<void> {
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    await context
+      .storage(`gs://${PROJECT_ID}.appspot.com`)
+      .ref(path)
+      .put(SMALL_JPEG_BYTES, { contentType: "image/jpeg" })
+      .then(() => undefined);
+  });
+}
+
 describe("storage.rules — answers/private/{questionId}/{ownerId}/{fileName}", () => {
-  describe("write", () => {
-    it("allows the question owner to upload their own photo answer", async () => {
-      await assertSucceeds(put(storageFor(OWNER_UID).ref(PRIVATE_ANSWER_PATH)));
+  // Phase 17B: every client write to the approved answer tree is denied.
+  // These tests CHANGED from assertSucceeds to assertFails, deliberately —
+  // an answer image is now uploaded to quarantine and copied here by
+  // submitAnswerForModeration only after Vision SafeSearch and OCR have
+  // cleared it. Leaving the client write open would have defeated the whole
+  // gate in the most direct way available: upload straight to the readable
+  // path and the object is served to classmates with nothing ever analysing
+  // it.
+  describe("write is backend-only", () => {
+    it("denies even the rightful owner uploading here directly", async () => {
+      await assertFails(put(storageFor(OWNER_UID).ref(PRIVATE_ANSWER_PATH)));
     });
 
     it("denies the upload when unauthenticated", async () => {
@@ -68,7 +89,7 @@ describe("storage.rules — answers/private/{questionId}/{ownerId}/{fileName}", 
       await assertFails(put(storageFor("someone-else-uid").ref(PRIVATE_ANSWER_PATH)));
     });
 
-    it("denies the upload when contentType is not image/* or application/pdf", async () => {
+    it("denies a non-image content type", async () => {
       await assertFails(
         storageFor(OWNER_UID)
           .ref(PRIVATE_ANSWER_PATH)
@@ -78,51 +99,114 @@ describe("storage.rules — answers/private/{questionId}/{ownerId}/{fileName}", 
     });
   });
 
-  // The read rule is intentionally owner-only via the ownerId path segment
-  // alone — no firestore.get() cross-service call. See the comment above
-  // this match block in storage.rules for why: an earlier version that
-  // called firestore.get(/databases/(default)/documents/questions/$(questionId))
-  // threw `EvaluationException: Null value error` on real requests (with
-  // this exact path/uid/contentType), which made getDownloadURL() fail with
-  // storage/unauthorized even for the image's own owner. These tests prove
-  // the replacement rule can no longer produce that exception — it never
-  // touches Firestore, and no Firestore emulator is configured for this
-  // suite at all, so a get() call here would fail outright if one existed.
+  // READ rules are UNCHANGED by Phase 17B, so every already-published answer
+  // image keeps working exactly as before. The read rule is owner-only via
+  // the ownerId path segment alone — no firestore.get() cross-service call.
+  // See the comment above this match block in storage.rules: an earlier
+  // version that called firestore.get() threw `EvaluationException: Null
+  // value error` on real requests, making getDownloadURL() fail with
+  // storage/unauthorized even for the image's own owner.
   describe("read (getDownloadURL)", () => {
-    it("allows the owner to read their own answer image right after uploading it", async () => {
-      const fileRef = storageFor(OWNER_UID).ref(PRIVATE_ANSWER_PATH);
-      await assertSucceeds(put(fileRef));
-      await assertSucceeds(fileRef.getDownloadURL());
+    it("allows the owner to read their own published answer image", async () => {
+      await seedApproved(PRIVATE_ANSWER_PATH);
+      await assertSucceeds(storageFor(OWNER_UID).ref(PRIVATE_ANSWER_PATH).getDownloadURL());
     });
 
     it("denies a different user from reading someone else's private answer image", async () => {
-      await assertSucceeds(put(storageFor(OWNER_UID).ref(PRIVATE_ANSWER_PATH)));
-      const otherUsersView = storageFor("someone-else-uid").ref(PRIVATE_ANSWER_PATH);
-      await assertFails(otherUsersView.getDownloadURL());
+      await seedApproved(PRIVATE_ANSWER_PATH);
+      await assertFails(storageFor("someone-else-uid").ref(PRIVATE_ANSWER_PATH).getDownloadURL());
     });
 
     it("denies an unauthenticated read", async () => {
-      await assertSucceeds(put(storageFor(OWNER_UID).ref(PRIVATE_ANSWER_PATH)));
-      const unauthedView = storageFor(null).ref(PRIVATE_ANSWER_PATH);
-      await assertFails(unauthedView.getDownloadURL());
+      await seedApproved(PRIVATE_ANSWER_PATH);
+      await assertFails(storageFor(null).ref(PRIVATE_ANSWER_PATH).getDownloadURL());
     });
   });
 });
 
 describe("storage.rules — answers/public/{questionId}/{ownerId}/{fileName}", () => {
-  it("allows any authenticated user to read a public-question answer image", async () => {
-    await assertSucceeds(put(storageFor(OWNER_UID).ref(PUBLIC_ANSWER_PATH)));
-    const otherUser = storageFor("someone-else-uid").ref(PUBLIC_ANSWER_PATH);
-    await assertSucceeds(otherUser.getDownloadURL());
+  it("allows any authenticated user to read a published public-question answer", async () => {
+    await seedApproved(PUBLIC_ANSWER_PATH);
+    await assertSucceeds(storageFor("someone-else-uid").ref(PUBLIC_ANSWER_PATH).getDownloadURL());
   });
 
-  it("still restricts writes to the answer's own owner", async () => {
+  it("denies a client write, including from the answer's own owner", async () => {
+    await assertFails(put(storageFor(OWNER_UID).ref(PUBLIC_ANSWER_PATH)));
     await assertFails(put(storageFor("someone-else-uid").ref(PUBLIC_ANSWER_PATH)));
   });
 
   it("denies an unauthenticated read even for a public-question answer", async () => {
-    await assertSucceeds(put(storageFor(OWNER_UID).ref(PUBLIC_ANSWER_PATH)));
+    await seedApproved(PUBLIC_ANSWER_PATH);
     await assertFails(storageFor(null).ref(PUBLIC_ANSWER_PATH).getDownloadURL());
+  });
+});
+
+// ---- Phase 17B: moderation quarantine -----------------------------------
+//
+// Where unmoderated answer images live until a decision is made. The single
+// most important property below is that NOBODY except the uploader can read
+// one — that is what "pending content is never visible to another user"
+// means at the Storage layer.
+describe("storage.rules — moderation/pending/{ownerId}/{submissionId}/{fileName}", () => {
+  const SUBMISSION_ID = `${OWNER_UID}_op-abcdefgh`;
+  const QUARANTINE_PATH = `moderation/pending/${OWNER_UID}/${SUBMISSION_ID}/upload.jpg`;
+
+  function putPng(storageRef: ReturnType<ReturnType<typeof storageFor>["ref"]>) {
+    return storageRef.put(SMALL_JPEG_BYTES, { contentType: "image/png" }).then(() => undefined);
+  }
+
+  it("allows the owner to upload into their own quarantine folder", async () => {
+    await assertSucceeds(put(storageFor(OWNER_UID).ref(QUARANTINE_PATH)));
+  });
+
+  it("accepts image/png as well as image/jpeg", async () => {
+    await assertSucceeds(putPng(storageFor(OWNER_UID).ref(QUARANTINE_PATH)));
+  });
+
+  it("denies an unauthenticated upload", async () => {
+    await assertFails(put(storageFor(null).ref(QUARANTINE_PATH)));
+  });
+
+  it("denies uploading under another user's uid segment", async () => {
+    // The attack this pins down: writing into someone else's quarantine so
+    // the file is attributed to them.
+    await assertFails(put(storageFor("attacker-uid").ref(QUARANTINE_PATH)));
+  });
+
+  it("denies a PDF, which Vision could never clear here", async () => {
+    await assertFails(
+      storageFor(OWNER_UID)
+        .ref(QUARANTINE_PATH)
+        .put(SMALL_JPEG_BYTES, { contentType: "application/pdf" })
+        .then(() => undefined),
+    );
+  });
+
+  it("denies an arbitrary binary content type", async () => {
+    await assertFails(
+      storageFor(OWNER_UID)
+        .ref(QUARANTINE_PATH)
+        .put(SMALL_JPEG_BYTES, { contentType: "application/octet-stream" })
+        .then(() => undefined),
+    );
+  });
+
+  it("lets the owner read their own pending upload back", async () => {
+    // Explicitly defined behaviour: the uploader may re-read their own
+    // pending object (retry), and they already hold the bytes anyway.
+    await assertSucceeds(put(storageFor(OWNER_UID).ref(QUARANTINE_PATH)));
+    await assertSucceeds(storageFor(OWNER_UID).ref(QUARANTINE_PATH).getDownloadURL());
+  });
+
+  it("denies ANOTHER STUDENT reading pending content", async () => {
+    // The core privacy guarantee of the quarantine.
+    await assertSucceeds(put(storageFor(OWNER_UID).ref(QUARANTINE_PATH)));
+    await assertFails(storageFor("classmate-uid").ref(QUARANTINE_PATH).getDownloadURL());
+  });
+
+  it("denies an unauthenticated read of pending content", async () => {
+    await assertSucceeds(put(storageFor(OWNER_UID).ref(QUARANTINE_PATH)));
+    await assertFails(storageFor(null).ref(QUARANTINE_PATH).getDownloadURL());
   });
 });
 

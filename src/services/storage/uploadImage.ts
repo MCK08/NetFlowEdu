@@ -41,6 +41,13 @@ function isDataUri(uri: string): boolean {
 // used (and proven working on-device) for file:// URIs (camera/gallery
 // picks) — fetch() on a real file produces a native Blob via RN's bridge,
 // which is not subject to this limitation.
+/** Normalizes any local URI into one fetch() can turn into a real Blob.
+ *  Exported so the answer quarantine upload reuses this exact conversion
+ *  instead of re-deriving the React Native Blob workaround. */
+export async function toUploadableUri(localUri: string): Promise<string> {
+  return isDataUri(localUri) ? dataUriToTempFileUri(localUri) : localUri;
+}
+
 async function dataUriToTempFileUri(dataUri: string): Promise<string> {
   const commaIndex = dataUri.indexOf(",");
   const base64Payload = commaIndex >= 0 ? dataUri.slice(commaIndex + 1) : dataUri;
