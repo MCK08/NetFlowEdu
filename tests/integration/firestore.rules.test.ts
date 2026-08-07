@@ -588,15 +588,33 @@ describe("firestore.rules — answers/{answerId}", () => {
     );
 
     const receivedCounts: number[] = [];
-    const gotUpdateWithOneAnswer = new Promise<void>((resolve) => {
-      const unsubscribe = onSnapshot(q, (snapshot) => {
-        receivedCounts.push(snapshot.size);
-        if (snapshot.size >= 1) {
-          unsubscribe();
-          resolve();
-        }
-      });
+    let resolveListenerReady: () => void;
+    const listenerReady = new Promise<void>((resolve) => {
+      resolveListenerReady = resolve;
     });
+    let resolveGotUpdateWithOneAnswer: () => void;
+    const gotUpdateWithOneAnswer = new Promise<void>((resolve) => {
+      resolveGotUpdateWithOneAnswer = resolve;
+    });
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      receivedCounts.push(snapshot.size);
+      // The listener's own first callback — whatever its contents — is
+      // proof the client has actually subscribed to the backend, which is
+      // the one thing "attach a listener, then onSnapshot(q, ...) returns"
+      // does NOT guarantee: subscribing is a round trip, so writing right
+      // after the call returns (the old version of this test) could
+      // outrace the subscribe request itself, especially since the write
+      // below travels over a separate withSecurityRulesDisabled connection.
+      resolveListenerReady();
+      if (snapshot.size >= 1) {
+        unsubscribe();
+        resolveGotUpdateWithOneAnswer();
+      }
+    });
+
+    // Deterministic readiness gate, not a timer — waits for the SDK's own
+    // proof of subscription instead of guessing how long that takes.
+    await listenerReady;
 
     // Phase 17B: written through a rules-disabled context, because that is
     // now the realistic case — an answer is created by
