@@ -6,6 +6,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { AnimatedPressable } from "@components/ui/AnimatedPressable";
 import { EmptyState } from "@components/ui/EmptyState";
 import { useAuth } from "@features/authentication";
+import { QuestionMetadataModal } from "@features/questions/components/QuestionMetadataModal";
 import { QuestionGridItem } from "@features/profile/components/QuestionGridItem";
 import { colors, darkColors } from "@theme/colors";
 import { radius } from "@theme/radius";
@@ -14,7 +15,6 @@ import { typography } from "@theme/typography";
 import { Question } from "@/types/question";
 
 import { ImageSourcePicker } from "../components/ImageSourcePicker";
-import { StudentQuestionDetailsModal } from "../components/StudentQuestionDetailsModal";
 import { useClassQuestions } from "../hooks/useClassQuestions";
 import { useLeaveClass } from "../hooks/useLeaveClass";
 import { useStudentClassInfo } from "../hooks/useStudentClassInfo";
@@ -185,7 +185,7 @@ export function StudentClassDetailScreen({ classId }: StudentClassDetailScreenPr
         onCancel={cancelSourcePicker}
       />
 
-      <StudentQuestionDetailsModal
+      <QuestionMetadataModal
         visible={pickedImageUri !== null}
         imageUri={pickedImageUri}
         isUploading={isUploading}

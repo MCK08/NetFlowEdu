@@ -27,7 +27,9 @@ import { typography } from "@theme/typography";
 
 import { QuestionDetailCard } from "../components/QuestionDetailCard";
 import { QuestionHeader } from "../components/QuestionHeader";
+import { MultipleChoiceAnswer } from "../components/MultipleChoiceAnswer";
 import { useQuestionDetail } from "../hooks/useQuestionDetail";
+import { hasMultipleChoice } from "../services/multipleChoice";
 
 interface QuestionDetailScreenProps {
   questionId: string;
@@ -102,6 +104,14 @@ export function QuestionDetailScreen({ questionId }: QuestionDetailScreenProps) 
               answerCount={answers.length}
               onPressImage={setPreviewUri}
             />
+
+            {/* Phase 21 — only ever rendered when the question actually has
+                a valid multiple-choice answer; every question without one
+                (which is every question before this phase, and most after
+                it) renders exactly as it always has. */}
+            {hasMultipleChoice(question.choices) ? (
+              <MultipleChoiceAnswer choices={question.choices} correctChoice={question.correctChoice} />
+            ) : null}
 
             <PrimaryButton
               label="Cevapla"

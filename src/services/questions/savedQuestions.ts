@@ -16,6 +16,7 @@ import {
   Timestamp,
 } from "firebase/firestore";
 
+import { parseChoicesFromUnknown, parseCorrectChoiceFromUnknown } from "@features/questions/services/multipleChoice";
 import { db } from "@services/firebase/config";
 import { Question } from "@/types/question";
 
@@ -35,12 +36,16 @@ export async function saveQuestion(uid: string, question: Question): Promise<voi
     imageUrl: question.imageUrl,
     classId: question.classId,
     subject: question.subject,
+    topic: question.topic,
+    gradeLevel: question.gradeLevel,
     description: question.description,
     posterRole: question.posterRole,
     likeCount: question.likeCount,
     commentCount: question.commentCount,
     answerCount: question.answerCount,
     createdAt: question.createdAt,
+    choices: question.choices,
+    correctChoice: question.correctChoice,
     savedAt: serverTimestamp(),
   });
 }
@@ -55,6 +60,7 @@ export async function isQuestionSaved(uid: string, questionId: string): Promise<
 }
 
 function toQuestion(id: string, data: DocumentData): Question {
+  const choices = parseChoicesFromUnknown(data.choices);
   return {
     id,
     ownerId: data.ownerId ?? "",
@@ -63,6 +69,8 @@ function toQuestion(id: string, data: DocumentData): Question {
     imageUrl: data.imageUrl ?? "",
     classId: data.classId ?? null,
     subject: data.subject ?? "",
+    topic: typeof data.topic === "string" ? data.topic : "",
+    gradeLevel: typeof data.gradeLevel === "string" ? data.gradeLevel : "",
     description: data.description ?? null,
     posterRole: data.posterRole === "student" ? "student" : "teacher",
     likeCount: data.likeCount ?? 0,
@@ -74,6 +82,8 @@ function toQuestion(id: string, data: DocumentData): Question {
         : data.createdAt instanceof Timestamp
           ? data.createdAt.toMillis()
           : 0,
+    choices,
+    correctChoice: parseCorrectChoiceFromUnknown(data.correctChoice, choices),
   };
 }
 

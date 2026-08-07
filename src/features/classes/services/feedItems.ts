@@ -50,6 +50,13 @@ function buildPair(question: Question, questionIndex: number, isReshow: boolean)
   ];
 }
 
+// Reshow pairs that were never anchored to a preceding question item (in
+// practice: never happens, since reinjectPairForSecondChance always splices
+// after some struggled question's own pair — but grouping needs SOME key
+// for that theoretical case, so it gets its own bucket instead of being
+// silently dropped).
+const START_ANCHOR = "\0start";
+
 // Interleaves a fresh slice of source questions into [Q, R, Q, R, ...]
 // pairs, tagged with their ORIGINAL index (`baseIndexOffset` lets this be
 // called again for a newly-loaded page and get correct, continuing
@@ -99,4 +106,88 @@ export function reinjectPairForSecondChance(
   const next = items.slice();
   next.splice(clamped, 0, ...buildPair(question, questionIndex, true));
   return next;
+}
+
+// Phase 20 — replaces the old length-comparison diff that useInterleavedStudyFeed
+// used to grow `items` (it assumed `questions` only ever gained items at the
+// END, which pagination does — but a new upload prepending to the FRONT, or
+// a pull-to-refresh reordering the whole list, broke that assumption: the
+// old code would mistake an existing question for new, mint it a duplicate
+// key, and leave the actually-new question with no feed item at all).
+//
+// `questions`' current order is the single source of truth. Every normal
+// (non-reshow) pair is rebuilt fresh from it on every call — cheap (plain
+// objects, matched by `key` for React's reconciliation, not by identity)
+// and correct by construction for append, prepend, reorder, and removal
+// alike, since it never has to GUESS what changed.
+//
+// The only state that can't be rebuilt from `questions` is a session-local
+// reshow pair (there is no server record of it) — those are carried over
+// from `prevItems` UNCHANGED, anchored to the id of whichever question
+// they immediately followed, so they keep surfacing near the same
+// neighbor after a reconciliation instead of being recomputed or, worse,
+// silently dropped.
+export function reconcileFeedItems(
+  prevItems: FeedItem[],
+  questions: Question[],
+  includeRating: boolean,
+): FeedItem[] {
+  const reshowByAnchor = new Map<string, FeedItem[]>();
+  let anchor: string | null = null;
+  for (let i = 0; i < prevItems.length; i++) {
+    const item = prevItems[i];
+    if (!item) continue;
+    if (!item.isReshow) {
+      if (item.type === "question") anchor = item.question.id;
+      continue;
+    }
+    // Reshow pairs are always emitted contiguously by buildPair (question
+    // immediately followed by its rating) — process the pair once, at its
+    // "question" half, and skip the "rating" half since it was already
+    // absorbed into the same block.
+    if (item.type !== "question") continue;
+    const ratingItem = prevItems[i + 1];
+    const block: FeedItem[] =
+      ratingItem && ratingItem.isReshow && ratingItem.type === "rating"
+        ? [item, ratingItem]
+        : [item];
+    const anchorKey = anchor ?? START_ANCHOR;
+    const existing = reshowByAnchor.get(anchorKey);
+    reshowByAnchor.set(anchorKey, existing ? [...existing, ...block] : block);
+  }
+
+  const result: FeedItem[] = [];
+  function appendReshowBlocksFor(key: string) {
+    const blocks = reshowByAnchor.get(key);
+    if (!blocks) return;
+    result.push(...blocks);
+    reshowByAnchor.delete(key);
+  }
+
+  appendReshowBlocksFor(START_ANCHOR);
+  questions.forEach((question, index) => {
+    if (includeRating) {
+      result.push(...buildPair(question, index, false));
+    } else {
+      result.push({
+        type: "question",
+        question,
+        questionIndex: index,
+        isReshow: false,
+        key: questionKey(question, false),
+      });
+    }
+    appendReshowBlocksFor(question.id);
+  });
+
+  // Any reshow blocks whose anchor question no longer exists in `questions`
+  // (its normal pair was dropped by a refresh/removal) are still preserved
+  // — appended at the end rather than discarded. A struggled question's
+  // second chance is a promise to the student that must outlive its old
+  // neighbor's disappearance.
+  for (const blocks of reshowByAnchor.values()) {
+    result.push(...blocks);
+  }
+
+  return result;
 }

@@ -16,8 +16,9 @@ import {
   where,
 } from "firebase/firestore";
 
+import { parseChoicesFromUnknown, parseCorrectChoiceFromUnknown } from "@features/questions/services/multipleChoice";
 import { db } from "@services/firebase/config";
-import { Question, QuestionPosterRole, QuestionVisibility } from "@/types/question";
+import { ChoiceLabel, Question, QuestionChoices, QuestionPosterRole, QuestionVisibility } from "@/types/question";
 
 export interface CreateQuestionInput {
   ownerId: string;
@@ -34,10 +35,20 @@ export interface CreateQuestionInput {
   // for private/public questions it's whatever the caller's own claims say
   // (never independently checked, same trust level as ownerId==uid()).
   posterRole: QuestionPosterRole;
-  // Both optional, only ever meaningful for class questions today — see
-  // Question's own doc comment.
+  // All optional — every caller that omits them keeps writing exactly the
+  // "" / null legacy shape this collection already had before Phase 21
+  // (e.g. the teacher's one-tap class-question flow, which shows no
+  // metadata form and never will in this phase).
   subject?: string;
   description?: string | null;
+  topic?: string;
+  gradeLevel?: string;
+  // Callers MUST already have run these through multipleChoice.ts's
+  // buildChoicesPayload — this function does not re-validate the
+  // choices/correctChoice pairing itself, exactly like it doesn't
+  // re-validate subject's length here either (that's the composer's job).
+  choices?: QuestionChoices | null;
+  correctChoice?: ChoiceLabel | null;
 }
 
 // Matches firestore.rules `allow create` exactly: ownerId must be the
@@ -58,6 +69,10 @@ export async function createQuestion(input: CreateQuestionInput): Promise<string
     subject: input.subject ?? "",
     description: input.description ?? null,
     posterRole: input.posterRole,
+    topic: input.topic ?? "",
+    gradeLevel: input.gradeLevel ?? "",
+    choices: input.choices ?? null,
+    correctChoice: input.correctChoice ?? null,
     likeCount: 0,
     commentCount: 0,
     answerCount: 0,
@@ -67,6 +82,7 @@ export async function createQuestion(input: CreateQuestionInput): Promise<string
 }
 
 function toQuestion(id: string, data: DocumentData): Question {
+  const choices = parseChoicesFromUnknown(data.choices);
   return {
     id,
     ownerId: data.ownerId ?? "",
@@ -75,6 +91,8 @@ function toQuestion(id: string, data: DocumentData): Question {
     imageUrl: data.imageUrl ?? "",
     classId: data.classId ?? null,
     subject: data.subject ?? "",
+    topic: typeof data.topic === "string" ? data.topic : "",
+    gradeLevel: typeof data.gradeLevel === "string" ? data.gradeLevel : "",
     description: data.description ?? null,
     // Missing on any question created before Phase 9.1 — always "teacher"
     // for those, since a student could never create one until now.
@@ -83,6 +101,8 @@ function toQuestion(id: string, data: DocumentData): Question {
     commentCount: data.commentCount ?? 0,
     answerCount: data.answerCount ?? 0,
     createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toMillis() : 0,
+    choices,
+    correctChoice: parseCorrectChoiceFromUnknown(data.correctChoice, choices),
   };
 }
 

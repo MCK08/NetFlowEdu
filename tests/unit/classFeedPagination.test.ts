@@ -18,12 +18,16 @@ function q(id: string, createdAt = 0): Question {
     imageUrl: `https://example.com/${id}.jpg`,
     classId: "class-1",
     subject: "",
+    topic: "",
+    gradeLevel: "",
     description: null,
     posterRole: "teacher",
     createdAt,
     likeCount: 0,
     commentCount: 0,
     answerCount: 0,
+    choices: null,
+    correctChoice: null,
   };
 }
 

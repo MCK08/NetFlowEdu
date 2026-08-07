@@ -23,12 +23,16 @@ function makeQuestion(id: string, overrides: Partial<Question> = {}): Question {
     imageUrl: `https://example.com/${id}.jpg`,
     classId: null,
     subject: "",
+    topic: "",
+    gradeLevel: "",
     description: null,
     posterRole: "teacher",
     likeCount: 0,
     commentCount: 0,
     answerCount: 0,
     createdAt: 1,
+    choices: null,
+    correctChoice: null,
     ...overrides,
   };
 }

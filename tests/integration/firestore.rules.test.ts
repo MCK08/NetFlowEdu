@@ -725,6 +725,32 @@ describe("firestore.rules — questions/{questionId} visibility model", () => {
     );
   });
 
+  // Phase 21 — topic/gradeLevel/choices/correctChoice are new fields with
+  // no dedicated allowlist entry in the create rule (same trust level as
+  // subject/description already had): this proves they pass straight
+  // through rather than silently causing the whole create to be denied,
+  // AND that they read back exactly as written — the create rule has no
+  // `hasOnly()` restricting the document to a fixed field set.
+  it("allows creating and reading back a public question with Phase 21 metadata", async () => {
+    const student = studentContext("student-1");
+    const ref = await assertSucceeds(
+      addDoc(collection(student.firestore(), "questions"), {
+        ...publicQuestionDoc({ ownerId: "student-1" }),
+        topic: "Denklemler",
+        gradeLevel: "9",
+        choices: { A: "Paris", B: "London" },
+        correctChoice: "A",
+        createdAt: serverTimestamp(),
+      }),
+    );
+
+    const snapshot = await getDoc(doc(student.firestore(), "questions", ref.id));
+    expect(snapshot.data()?.topic).toBe("Denklemler");
+    expect(snapshot.data()?.gradeLevel).toBe("9");
+    expect(snapshot.data()?.choices).toEqual({ A: "Paris", B: "London" });
+    expect(snapshot.data()?.correctChoice).toBe("A");
+  });
+
   // A student (not a teacher, and no real class behind classId: null) can
   // never create a 'class'-visibility question — full teacher+class-owner
   // coverage lives in the dedicated "classes" describe block below.

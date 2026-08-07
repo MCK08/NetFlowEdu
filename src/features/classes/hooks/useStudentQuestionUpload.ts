@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Alert } from "react-native";
 
+import { QuestionMetadataDetails } from "@features/questions/components/QuestionMetadataModal";
 import {
   CameraPermissionDeniedError,
   GalleryPermissionDeniedError,
@@ -10,8 +11,6 @@ import {
 } from "@features/upload/services/uploadService";
 import { mapQuestionUploadErrorToMessage } from "@features/upload/services/questionUploadErrorMapper";
 import { Question } from "@/types/question";
-
-import { StudentQuestionDetails } from "../components/StudentQuestionDetailsModal";
 
 interface UseStudentQuestionUploadOptions {
   uid: string | undefined;
@@ -79,7 +78,7 @@ export function useStudentQuestionUpload({
     setErrorMessage(null);
   }
 
-  async function submitDetails(details: StudentQuestionDetails) {
+  async function submitDetails(details: QuestionMetadataDetails) {
     if (!uid || !organizationId || !pickedImageUri || isUploading) return;
     setErrorMessage(null);
     setIsUploading(true);
@@ -99,6 +98,10 @@ export function useStudentQuestionUpload({
         localUri: pickedImageUri,
         subject: details.subject,
         description: details.description,
+        gradeLevel: details.gradeLevel,
+        topic: details.topic,
+        choices: details.choices,
+        correctChoice: details.correctChoice,
       });
       if (__DEV__) console.log("[QUESTION_UPLOAD] details submit succeeded", { classId, uid6: uid.slice(0, 6) });
       onUploaded(question);

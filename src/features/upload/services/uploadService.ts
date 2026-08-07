@@ -2,7 +2,7 @@ import * as ImagePicker from "expo-image-picker";
 
 import { createQuestion } from "@services/questions/questions";
 import { uploadQuestionImage } from "@services/storage/questionImages";
-import { Question, QuestionPosterRole, QuestionVisibility } from "@/types/question";
+import { ChoiceLabel, Question, QuestionChoices, QuestionPosterRole, QuestionVisibility } from "@/types/question";
 
 export class CameraPermissionDeniedError extends Error {
   constructor() {
@@ -16,13 +16,7 @@ export class GalleryPermissionDeniedError extends Error {
   }
 }
 
-interface CaptureAndUploadInput {
-  uid: string;
-  organizationId: string | null;
-  visibility: QuestionVisibility;
-}
-
-// Shared by captureAndUploadQuestion and captureAndUploadClassQuestion —
+// Shared by captureAndUploadClassQuestion and pickQuestionImage("camera") —
 // the camera permission/launch dance is identical for every visibility, so
 // it's factored out once rather than duplicated. Returns null on
 // cancel/no-asset (not an error), throws CameraPermissionDeniedError
@@ -87,14 +81,32 @@ export async function pickQuestionImage(source: QuestionImageSource): Promise<st
 // Returns null when the user cancels the camera without taking a photo —
 // that's not an error, just a no-op. Throws CameraPermissionDeniedError or
 // a generic Error (upload/Firestore failure) for the caller to map to UI.
-export async function captureAndUploadQuestion(
-  input: CaptureAndUploadInput,
-): Promise<Question | null> {
-  const localUri = await captureImage();
-  if (!localUri) return null;
+export interface QuestionMetadataInput {
+  subject: string;
+  topic: string;
+  gradeLevel: string;
+  description?: string | null;
+  choices?: QuestionChoices | null;
+  correctChoice?: ChoiceLabel | null;
+}
 
+interface UploadQuestionInput extends QuestionMetadataInput {
+  uid: string;
+  organizationId: string | null;
+  visibility: QuestionVisibility;
+  localUri: string;
+}
+
+// Phase 21 — the upload+create half of the main "Akış" tab's composer, now
+// a two-stage flow (pick image → fill in mandatory subject/grade/topic +
+// optional multiple choice → THEN upload) exactly like the class composer
+// already was (uploadClassQuestionImage below), instead of the old
+// captureAndUploadQuestion's single-stage "capture and immediately upload
+// with no metadata at all". Every caller (useUpload) already has the local
+// image URI by the time this runs — see pickQuestionImage.
+export async function uploadQuestionWithMetadata(input: UploadQuestionInput): Promise<Question> {
   if (__DEV__) console.log("[QUESTION_UPLOAD] uploadQuestionImage started");
-  const imageUrl = await uploadQuestionImage(input.uid, localUri, input.visibility);
+  const imageUrl = await uploadQuestionImage(input.uid, input.localUri, input.visibility);
   if (__DEV__) console.log("[QUESTION_UPLOAD] uploadQuestionImage completed");
   const id = await createQuestion({
     ownerId: input.uid,
@@ -106,6 +118,12 @@ export async function captureAndUploadQuestion(
     // If a teacher-facing private/public upload entry point is ever added,
     // this needs to become a real parameter like captureAndUploadClassQuestion's.
     posterRole: "student",
+    subject: input.subject,
+    topic: input.topic,
+    gradeLevel: input.gradeLevel,
+    description: input.description ?? null,
+    choices: input.choices ?? null,
+    correctChoice: input.correctChoice ?? null,
   });
 
   return {
@@ -115,13 +133,17 @@ export async function captureAndUploadQuestion(
     visibility: input.visibility,
     imageUrl,
     classId: null,
-    subject: "",
-    description: null,
+    subject: input.subject,
+    topic: input.topic,
+    gradeLevel: input.gradeLevel,
+    description: input.description ?? null,
     posterRole: "student",
     likeCount: 0,
     commentCount: 0,
     answerCount: 0,
     createdAt: Date.now(),
+    choices: input.choices ?? null,
+    correctChoice: input.correctChoice ?? null,
   };
 }
 
@@ -140,6 +162,10 @@ interface CaptureAndUploadClassInput {
   imageSource?: QuestionImageSource;
   subject?: string;
   description?: string | null;
+  topic?: string;
+  gradeLevel?: string;
+  choices?: QuestionChoices | null;
+  correctChoice?: ChoiceLabel | null;
 }
 
 interface UploadClassQuestionInput {
@@ -150,6 +176,10 @@ interface UploadClassQuestionInput {
   localUri: string;
   subject?: string;
   description?: string | null;
+  topic?: string;
+  gradeLevel?: string;
+  choices?: QuestionChoices | null;
+  correctChoice?: ChoiceLabel | null;
 }
 
 // The upload+create half of captureAndUploadClassQuestion, split out so a
@@ -176,6 +206,10 @@ export async function uploadClassQuestionImage(
     posterRole: input.posterRole,
     subject: input.subject,
     description: input.description,
+    topic: input.topic,
+    gradeLevel: input.gradeLevel,
+    choices: input.choices ?? null,
+    correctChoice: input.correctChoice ?? null,
   });
   if (__DEV__) console.log("[QUESTION_UPLOAD] firestore create succeeded");
 
@@ -188,11 +222,15 @@ export async function uploadClassQuestionImage(
     classId: input.classId,
     subject: input.subject ?? "",
     description: input.description ?? null,
+    topic: input.topic ?? "",
+    gradeLevel: input.gradeLevel ?? "",
     posterRole: input.posterRole,
     likeCount: 0,
     commentCount: 0,
     answerCount: 0,
     createdAt: Date.now(),
+    choices: input.choices ?? null,
+    correctChoice: input.correctChoice ?? null,
   };
 }
 
