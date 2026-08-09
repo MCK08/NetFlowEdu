@@ -17,11 +17,11 @@ import {
 import { httpsCallable } from "firebase/functions";
 
 import { auth, db, functions } from "@services/firebase/config";
-import { getQuestionById } from "@services/questions/questions";
 import { Question } from "@/types/question";
 
 import { StudyOutcome, StudyStatus } from "../domain/studyTypes";
 import { createOperationId } from "./gestureOperationId";
+import { resolveQuestionMetadata } from "./studyMetadataCache";
 
 // Review sessions load 10 at a time and fetch the next page with a REAL
 // Firestore cursor (startAfter) — never a client-side slice of a big array.
@@ -87,6 +87,38 @@ export interface StudyItemPage {
   // when the page was empty (nothing left to page from).
   cursor: QueryDocumentSnapshot<DocumentData> | null;
   hasMore: boolean;
+}
+
+// Phase 22 — every study item for the caller, unordered, for the Learning
+// Hub's subject/topic breakdown. Deliberately a SEPARATE query from
+// getDueStudyItemsPage below rather than a variant of it: that one is
+// intentionally narrow (due-only, cursor-paginated, small pages) for the
+// review queue's working set, and reusing it here would mean either losing
+// the due filter (defeating its purpose there) or threading a new
+// "unfiltered" mode through code that has no other reason to support one.
+//
+// No `where` clause, so this needs no COMPOSITE index — but it does
+// orderBy nextReviewAt, which is a single-field range/sort Firestore
+// indexes automatically (the exact same field getDueStudyItemsPage already
+// orders by), so this still deploys nothing new. The ordering matters
+// specifically because of MAX_ALL_STUDY_ITEMS below: bounded by a defensive
+// ceiling, not a real pagination scheme (a single student's studyItems
+// subcollection is expected to stay well under this for the foreseeable
+// future) — but IF that ceiling is ever hit, ordering by nextReviewAt means
+// the items kept are the ones soonest due, i.e. the most relevant ones for
+// "what needs attention", rather than an arbitrary Firestore-decided subset
+// that could just as easily drop exactly the due items the Hub most needs.
+export const MAX_ALL_STUDY_ITEMS = 500;
+
+export async function getAllStudyItems(uid: string): Promise<StudyItem[]> {
+  const snapshot = await getDocs(
+    query(
+      collection(db, "users", uid, "studyItems"),
+      orderBy("nextReviewAt", "asc"),
+      limit(MAX_ALL_STUDY_ITEMS),
+    ),
+  );
+  return snapshot.docs.map((d) => toStudyItem(d.id, d.data()));
 }
 
 // One CURSOR-PAGINATED page of due items, soonest first.
@@ -176,19 +208,18 @@ export interface ResolvedQueueEntry {
 // This is what makes it safe for studyItems to carry no content: access is
 // re-authorized by Firestore on every single queue render, so revoked
 // access takes effect immediately.
+//
+// Routed through the SAME shared cache the Learning Hub's insight builder
+// uses (studyMetadataCache), not a bare getQuestionById — a due item the
+// queue resolves here is very often the SAME question the Hub already
+// fetched metadata for in this session (or is about to), and before this
+// the two paths fetched it twice with no cache between them. permission-
+// denied (lost access) and not-found both still resolve to `null` — that
+// mapping now lives in the cache module itself, one layer down, but the
+// behavior at this call site is unchanged.
 export async function resolveQueueEntries(items: StudyItem[]): Promise<ResolvedQueueEntry[]> {
-  return Promise.all(
-    items.map(async (item) => {
-      try {
-        const question = await getQuestionById(item.questionId);
-        return { item, question };
-      } catch {
-        // permission-denied (lost access) and not-found both land here and
-        // both mean the same thing to the student: it's gone.
-        return { item, question: null };
-      }
-    }),
-  );
+  const metadata = await resolveQuestionMetadata(items.map((item) => item.questionId));
+  return items.map((item) => ({ item, question: metadata.get(item.questionId) ?? null }));
 }
 
 export interface RecordOutcomeResult {

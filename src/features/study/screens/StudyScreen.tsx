@@ -18,7 +18,11 @@ import { StudyOutcome } from "../domain/studyTypes";
 import { DailyGoalEditor } from "../components/DailyGoalEditor";
 import { StudyProgressCard } from "../components/StudyProgressCard";
 import { StudyQueueCard } from "../components/StudyQueueCard";
+import { SubjectBreakdownSection } from "../components/SubjectBreakdownSection";
+import { WeakTopicsSection } from "../components/WeakTopicsSection";
+import { useLearningInsights } from "../hooks/useLearningInsights";
 import { useStudyQueue } from "../hooks/useStudyQueue";
+import { TopicInsight } from "../services/learningInsights";
 import { mapStudyErrorToMessage } from "../services/studyErrorMapper";
 import { queueEmptyCopy } from "../services/studyPresentation";
 import { recordStudyOutcome } from "../services/studyService";
@@ -45,6 +49,7 @@ export function StudyScreen() {
   const { firebaseUser } = useAuth();
   const uid = firebaseUser?.uid;
   const { entries, summary, isLoading, isRefreshing, error, refresh, dismiss } = useStudyQueue(uid);
+  const { insights, refresh: refreshInsights } = useLearningInsights(uid, summary);
   const guardedNavigate = useNavigationGuard();
 
   // Per-card busy/error state, keyed by questionId — a failure on one card
@@ -60,7 +65,8 @@ export function StudyScreen() {
   useFocusEffect(
     useCallback(() => {
       refresh();
-    }, [refresh]),
+      refreshInsights();
+    }, [refresh, refreshInsights]),
   );
 
   const startSession = useCallback(() => {
@@ -78,6 +84,21 @@ export function StudyScreen() {
     [guardedNavigate],
   );
 
+  // A weak/strong topic card opens the same, already-existing Question
+  // Detail route StudyQueueCard's own "open" action uses (handleOpen above)
+  // — reusing it here rather than wiring a topic-filtered Feed keeps this
+  // to the smallest safe navigation change: zero new routes, and zero risk
+  // to Phase 21's Feed filter state (which lives only in FeedScreen).
+  const handleSelectTopic = useCallback(
+    (topic: TopicInsight) => handleOpen(topic.sampleQuestionId),
+    [handleOpen],
+  );
+
+  const handleRefresh = useCallback(() => {
+    refresh();
+    refreshInsights();
+  }, [refresh, refreshInsights]);
+
   const handleOutcome = useCallback(
     async (questionId: string, outcome: StudyOutcome) => {
       // Ref-free double-tap guard: a card already in flight is ignored.
@@ -94,6 +115,11 @@ export function StudyScreen() {
         await recordStudyOutcome(questionId, outcome);
         // Server has rescheduled it; drop it from this session's working set.
         dismiss(questionId);
+        // The outcome just recorded can change which topics are "weak"
+        // (a struggled outcome) or "strong" (a fresh mastery) — re-derive
+        // the Hub's insights from a fresh read rather than leaving them
+        // stale until the next focus event.
+        refreshInsights();
       } catch (err) {
         setCardErrors((prev) => ({ ...prev, [questionId]: mapStudyErrorToMessage(err) }));
       } finally {
@@ -104,7 +130,7 @@ export function StudyScreen() {
         });
       }
     },
-    [pending, dismiss],
+    [pending, dismiss, refreshInsights],
   );
 
   const renderItem = useCallback(
@@ -132,16 +158,16 @@ export function StudyScreen() {
         ItemSeparatorComponent={Separator}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={isRefreshing} onRefresh={refresh} tintColor={colors.primary} />
+          <RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} tintColor={colors.primary} />
         }
         ListHeaderComponent={
           <View style={styles.header}>
-            <Text style={styles.title}>Çalış</Text>
-            <StudyProgressCard summary={summary} dueCount={entries.length} />
-            <DailyGoalEditor currentGoal={summary.dailyGoal} onSaved={refresh} />
-            {entries.length > 0 ? (
+            <Text style={styles.title}>Öğrenme Merkezi</Text>
+            <StudyProgressCard summary={summary} dueCount={insights.dueCount} />
+            <DailyGoalEditor currentGoal={summary.dailyGoal} onSaved={handleRefresh} />
+            {insights.dueCount > 0 ? (
               <PrimaryButton
-                label="Tekrara Başla"
+                label="Bugünkü Tekrara Başla"
                 onPress={startSession}
                 accessibilityHint="Tekrar oturumunu açar"
               />
@@ -151,6 +177,8 @@ export function StudyScreen() {
                 <Text style={styles.errorText}>{error}</Text>
               </View>
             ) : null}
+            <WeakTopicsSection topics={insights.weakTopics} onSelectTopic={handleSelectTopic} />
+            <SubjectBreakdownSection subjects={insights.subjectSummaries} />
           </View>
         }
         ListEmptyComponent={
