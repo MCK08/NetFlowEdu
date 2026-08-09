@@ -15,6 +15,9 @@ interface TeacherDashboardHeaderProps {
   photoURL: string | null;
   onSignOut: () => void;
   // Optional so any existing/future caller that omits it renders exactly
+  // as before — the icon simply stays enabled with no busy state.
+  isSigningOut?: boolean;
+  // Optional so any existing/future caller that omits it renders exactly
   // as before — the bell simply doesn't appear without a uid to subscribe
   // its badge to.
   notificationUid?: string;
@@ -36,6 +39,7 @@ export function TeacherDashboardHeader({
   displayName,
   photoURL,
   onSignOut,
+  isSigningOut = false,
   notificationUid,
 }: TeacherDashboardHeaderProps) {
   return (
@@ -64,6 +68,7 @@ export function TeacherDashboardHeader({
       <IconButton
         icon="log-out-outline"
         onPress={onSignOut}
+        disabled={isSigningOut}
         accessibilityLabel="Çıkış yap"
       />
     </View>

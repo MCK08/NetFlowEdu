@@ -4,6 +4,7 @@ import {
   FeedCursorState,
   INITIAL_FEED_CURSOR_STATE,
   loadNextFeedPage,
+  shouldApplyFeedPageResult,
 } from "../services/socialFeedService";
 import { Question } from "../types";
 
@@ -65,15 +66,26 @@ export function useSocialFeed(uid: string | undefined) {
     setIsLoadingMore(true);
     try {
       const result = await loadNextFeedPage(uid, cursorRef.current, seenIdsRef.current);
-      if (generation !== generationRef.current) return;
-      cursorRef.current = result.nextState;
-      if (result.questions.length > 0) {
-        setQuestions((prev) => [...prev, ...result.questions]);
+      if (shouldApplyFeedPageResult(generation, generationRef.current)) {
+        cursorRef.current = result.nextState;
+        if (result.questions.length > 0) {
+          setQuestions((prev) => [...prev, ...result.questions]);
+        }
       }
     } catch {
       if (generation === generationRef.current) setError("Akış yüklenemedi.");
     } finally {
-      if (generation === generationRef.current) setIsLoadingMore(false);
+      // Unconditional, unlike the two generation-gated writes above: a
+      // refresh() firing while this loadMore() is in flight bumps
+      // generationRef, and gating this reset the same way left
+      // isLoadingMore stuck true forever once that happened — the guard at
+      // the top of this function then blocked every future loadMore call
+      // (onEndReached, the pagination-retry button) for the rest of the
+      // session. Resetting the flag is always correct regardless of
+      // generation: this call's own fetch is done either way, and nothing
+      // else can have set isLoadingMore true in the meantime (loadMore
+      // itself was blocked from starting a second time by this same flag).
+      setIsLoadingMore(false);
     }
   }, [uid, isLoadingMore]);
 

@@ -8,6 +8,7 @@ import { Question } from "@/types/question";
 import {
   dedupeQuestionsById,
   mergeQuestionPages,
+  nextHasMoreAfterPage,
   restoreActiveIndex,
   shouldPrefetchNextPage,
 } from "../services/classFeedPagination";
@@ -118,7 +119,7 @@ export function useClassFeed(classId: string | undefined) {
       // same question twice or corrupt the "n / total" counter.
       setQuestions((prev) => mergeQuestionPages(prev, page.questions));
       cursorRef.current = page.cursor;
-      setHasMore(page.hasMore);
+      setHasMore(nextHasMoreAfterPage(hasMoreRef.current, { status: "success", serverHasMore: page.hasMore }));
     } catch (error) {
       if (generation !== generationRef.current) return;
       const code = errorCodeOf(error);
@@ -129,10 +130,12 @@ export function useClassFeed(classId: string | undefined) {
           code,
         });
       }
-      // Pagination failure never blanks the questions already on screen —
-      // it only stops further auto-fetching, and surfaces a retryable error.
+      // Pagination failure never blanks the questions already on screen, and
+      // (via nextHasMoreAfterPage) never touches `hasMore` either — see that
+      // function's doc comment for why an inline `setHasMore(false)` here
+      // used to make the retry button a permanent no-op.
       setErrorCode(code);
-      setHasMore(false);
+      setHasMore(nextHasMoreAfterPage(hasMoreRef.current, { status: "error" }));
     } finally {
       if (generation === generationRef.current) setIsLoadingMore(false);
       fetchingRef.current = false;

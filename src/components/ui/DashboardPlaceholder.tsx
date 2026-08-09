@@ -7,12 +7,14 @@ interface DashboardPlaceholderProps {
   panelTitle: string;
   displayName: string;
   onLogout: () => void;
+  isLoggingOut?: boolean;
 }
 
 export function DashboardPlaceholder({
   panelTitle,
   displayName,
   onLogout,
+  isLoggingOut = false,
 }: DashboardPlaceholderProps) {
   return (
     <SafeAreaView style={styles.flex}>
@@ -20,7 +22,12 @@ export function DashboardPlaceholder({
         <Text style={styles.title}>NetFlow Edu</Text>
         <Text style={styles.subtitle}>{panelTitle}</Text>
         <Text style={styles.name}>{displayName}</Text>
-        <PrimaryButton label="Çıkış Yap" onPress={onLogout} variant="secondary" />
+        <PrimaryButton
+          label="Çıkış Yap"
+          onPress={onLogout}
+          variant="secondary"
+          isLoading={isLoggingOut}
+        />
       </View>
     </SafeAreaView>
   );

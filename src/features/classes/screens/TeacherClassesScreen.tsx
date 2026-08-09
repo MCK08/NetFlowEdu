@@ -9,6 +9,7 @@ import { LoadingSkeleton } from "@components/ui/LoadingSkeleton";
 import { PrimaryButton } from "@components/ui/PrimaryButton";
 import { SectionHeader } from "@components/ui/SectionHeader";
 import { useAuth } from "@features/authentication";
+import { useSignOut } from "@features/authentication/hooks/useSignOut";
 import {
   deriveTeacherDashboardStats,
   resolveGreeting,
@@ -51,7 +52,8 @@ function Separator() {
 }
 
 export function TeacherClassesScreen() {
-  const { firebaseUser, profile, signOut } = useAuth();
+  const { firebaseUser, profile } = useAuth();
+  const { signOut, isSigningOut } = useSignOut();
   const { classes, isLoading, isCreating, errorMessage, createClass, refresh } = useTeacherClasses(
     firebaseUser?.uid,
   );
@@ -75,11 +77,6 @@ export function TeacherClassesScreen() {
   // single class to fall back on.
   const showLoadError = !isLoading && !isModalOpen && classes.length === 0 && errorMessage !== null;
 
-  async function handleLogout() {
-    await signOut();
-    router.replace("/");
-  }
-
   async function handleCreate(name: string) {
     const success = await createClass(name);
     if (success) setIsModalOpen(false);
@@ -100,7 +97,8 @@ export function TeacherClassesScreen() {
               greeting={greeting}
               displayName={identity.primaryName}
               photoURL={profile?.photoURL ?? null}
-              onSignOut={handleLogout}
+              onSignOut={signOut}
+              isSigningOut={isSigningOut}
               notificationUid={firebaseUser?.uid}
             />
 

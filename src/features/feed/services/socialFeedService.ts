@@ -78,3 +78,20 @@ export async function loadNextFeedPage(
 
   return { questions: [], nextState: state };
 }
+
+// Whether a settled loadMore() page result may be applied to the feed's
+// data (cursor + appended questions). Gated by generation: a refresh()
+// bumps the caller's generation counter, and a page that started loading
+// under the OLD generation must never overwrite the fresh state refresh()
+// just loaded.
+//
+// Deliberately NOT used to gate resetting the caller's in-flight flag
+// (isLoadingMore) — that reset must always happen once this call settles,
+// success or failure, regardless of generation. Gating it the same way
+// left isLoadingMore stuck true forever whenever a refresh() raced an
+// in-flight loadMore(), which permanently blocked every future loadMore
+// call (onEndReached, the pagination-retry button) for the rest of the
+// session. See useSocialFeed.ts's loadMore.
+export function shouldApplyFeedPageResult(generation: number, currentGeneration: number): boolean {
+  return generation === currentGeneration;
+}

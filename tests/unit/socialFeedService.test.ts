@@ -12,6 +12,7 @@ jest.mock("@services/questions/questions", () => ({
 import {
   INITIAL_FEED_CURSOR_STATE,
   loadNextFeedPage,
+  shouldApplyFeedPageResult,
 } from "@features/feed/services/socialFeedService";
 
 function makeQuestion(id: string, overrides: Partial<Question> = {}): Question {
@@ -128,5 +129,28 @@ describe("loadNextFeedPage", () => {
     expect(mockGetOwnQuestionsPage).not.toHaveBeenCalled();
     expect(mockGetPublicQuestionsPage).not.toHaveBeenCalled();
     expect(result.questions).toEqual([]);
+  });
+});
+
+// Phase 24 regression — useSocialFeed.loadMore's `finally` block used to
+// reset `isLoadingMore` only when this predicate was true, which meant a
+// refresh() racing an in-flight loadMore() (bumping generationRef in the
+// meantime) left isLoadingMore stuck true forever: the guard at the top of
+// loadMore then blocked every future call — onEndReached, the
+// pagination-retry button — for the rest of the session, with no recovery
+// short of remounting the hook. The fix keeps this predicate gating ONLY
+// whether the fetched page's data (cursor/questions) may be applied; the
+// isLoadingMore reset in useSocialFeed.ts is now unconditional.
+describe("shouldApplyFeedPageResult", () => {
+  it("applies a result whose generation still matches the current one", () => {
+    expect(shouldApplyFeedPageResult(3, 3)).toBe(true);
+  });
+
+  it("rejects a stale result whose generation has since been superseded by a refresh", () => {
+    expect(shouldApplyFeedPageResult(3, 4)).toBe(false);
+  });
+
+  it("rejects a result whose generation is somehow ahead of the current one", () => {
+    expect(shouldApplyFeedPageResult(5, 4)).toBe(false);
   });
 });

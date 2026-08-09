@@ -13,6 +13,7 @@ import { spacing } from "@theme/spacing";
 import { DrawingBoard } from "../components/DrawingBoard";
 import { PhotoAnswerForm } from "../components/PhotoAnswerForm";
 import { useDrawingAnswer } from "../hooks/useDrawingAnswer";
+import { AnswerExitGuardResult, resolveAnswerExitGuard } from "../services/answerExitGuard";
 
 type AnswerMethodChoice = "photo" | "drawing";
 
@@ -20,32 +21,37 @@ interface AnswerScreenProps {
   questionId: string;
 }
 
-const UNSAVED_DRAWING_MESSAGE = "Kaydedilmemiş çiziminiz var. Çıkmak istediğinize emin misiniz?";
-
 export function AnswerScreen({ questionId }: AnswerScreenProps) {
   const { firebaseUser } = useAuth();
   const navigation = useNavigation();
   const [method, setMethod] = useState<AnswerMethodChoice>("photo");
   const [hasUnsavedDrawing, setHasUnsavedDrawing] = useState(false);
+  const [isPhotoUploading, setIsPhotoUploading] = useState(false);
 
   // Read inside the beforeRemove listener below, which is registered once
-  // and would otherwise close over stale `method`/`hasUnsavedDrawing`
-  // values. Also doubles as the "user just switched away from drawing"
-  // reset: once method !== "drawing" the effective value is always false,
-  // regardless of whatever DrawingBoard last reported before unmounting.
-  const shouldConfirmExitRef = useRef(false);
-  useEffect(() => {
-    shouldConfirmExitRef.current = method === "drawing" && hasUnsavedDrawing;
-  }, [method, hasUnsavedDrawing]);
+  // and would otherwise close over stale values. An upload in flight (either
+  // method) always blocks exit — leaving mid-submit was previously
+  // unguarded, which let the submission's own delayed router.back() (see
+  // handleSubmitted) fire onto whatever screen the student had since
+  // navigated to. Drawing's unsaved-content check is unchanged; it resets to
+  // false the moment method !== "drawing", same as before.
+  const exitGuardRef = useRef<AnswerExitGuardResult>({ blocked: false, message: "" });
 
   // Set right before a successful save navigates back, so that same
-  // navigation doesn't trip the "unsaved changes" prompt it's no longer
+  // navigation doesn't trip the exit-confirmation prompt it's no longer
   // relevant for (DrawingBoard's local `paths` state is still non-empty at
   // that instant — the upload succeeded, not the local state clearing).
   const suppressExitConfirmRef = useRef(false);
 
   function handleSubmitted() {
     suppressExitConfirmRef.current = true;
+    // The submission that triggered this may resolve well after the student
+    // already left this screen by another path (uploads/moderation can take
+    // several seconds). Firing router.back() unconditionally here would pop
+    // whatever screen the student is CURRENTLY on, not this one — an
+    // unexpected, unrelated navigation. Only act while this screen is still
+    // the one in focus.
+    if (!navigation.isFocused()) return;
     router.back();
   }
 
@@ -56,11 +62,20 @@ export function AnswerScreen({ questionId }: AnswerScreenProps) {
   });
 
   useEffect(() => {
+    exitGuardRef.current = resolveAnswerExitGuard({
+      method,
+      hasUnsavedDrawing,
+      isPhotoUploading,
+      isDrawingUploading: isUploading,
+    });
+  }, [method, hasUnsavedDrawing, isPhotoUploading, isUploading]);
+
+  useEffect(() => {
     const unsubscribe = navigation.addListener("beforeRemove", (event) => {
-      if (suppressExitConfirmRef.current || !shouldConfirmExitRef.current) return;
+      if (suppressExitConfirmRef.current || !exitGuardRef.current.blocked) return;
 
       event.preventDefault();
-      Alert.alert("Kaydedilmemiş çizim", UNSAVED_DRAWING_MESSAGE, [
+      Alert.alert("Emin misiniz?", exitGuardRef.current.message, [
         { text: "İptal", style: "cancel" },
         {
           text: "Çık",
@@ -121,6 +136,7 @@ export function AnswerScreen({ questionId }: AnswerScreenProps) {
             questionId={questionId}
             uid={firebaseUser?.uid}
             onSubmitted={handleSubmitted}
+            onUploadingChange={setIsPhotoUploading}
           />
         ) : (
           <DrawingBoard onSave={save} isSaving={isUploading} onDirtyChange={setHasUnsavedDrawing} />

@@ -117,6 +117,24 @@ export function isEndOfFeed(params: {
   return activeIndex >= loadedCount - 1;
 }
 
+// What `hasMore` becomes after one page-fetch attempt settles. A FAILED
+// fetch never changes it — hasMore reflects only what the server's own
+// page.hasMore last said, never an inference from an error. Encoding both
+// branches in one function (rather than a `setHasMore(...)` call inline in
+// each of the hook's try/catch branches) is what makes this invariant
+// impossible to accidentally violate in just one of them — which is
+// exactly how useClassFeed's own pagination-retry button went permanently
+// dead: its error branch had a second, wrong, inline `setHasMore(false)`,
+// so `loadMore`'s own `!hasMoreRef.current` guard blocked every future
+// call — including the retry button's — after the first failure.
+export function nextHasMoreAfterPage(
+  previousHasMore: boolean,
+  outcome: { status: "error" } | { status: "success"; serverHasMore: boolean },
+): boolean {
+  if (outcome.status === "error") return previousHasMore;
+  return outcome.serverHasMore;
+}
+
 // "3 / 18" — 1-based for display. Clamped so an empty list renders "0 / 0"
 // rather than "1 / 0".
 export function formatFeedPosition(activeIndex: number, total: number): string {

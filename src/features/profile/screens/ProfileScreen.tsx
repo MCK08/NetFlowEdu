@@ -20,6 +20,7 @@ import { PrimaryButton } from "@components/ui/PrimaryButton";
 import { SectionHeader } from "@components/ui/SectionHeader";
 import { useAuth } from "@features/authentication";
 import { GoogleSignInButton } from "@features/authentication/components/GoogleSignInButton";
+import { useSignOut } from "@features/authentication/hooks/useSignOut";
 import { useSocialMeta } from "@features/friends";
 import { useNavigationGuard } from "@hooks/useNavigationGuard";
 import { ROUTES } from "@constants/routes";
@@ -56,8 +57,8 @@ const EMPTY_CONTENT: Record<ArchiveMode, { title: string; description: string }>
 };
 
 export function ProfileScreen() {
-  const { profile, firebaseUser, signOut, knownAccounts, openAccountSwitcher, linkGoogleAccount } =
-    useAuth();
+  const { profile, firebaseUser, knownAccounts, openAccountSwitcher, linkGoogleAccount } = useAuth();
+  const { signOut, isSigningOut } = useSignOut();
   const { width } = useWindowDimensions();
   const tabBarHeight = useBottomTabBarHeight();
   const [mode, setMode] = useState<ArchiveMode>("own");
@@ -106,11 +107,6 @@ export function ProfileScreen() {
     ),
     [itemSize],
   );
-
-  async function handleLogout() {
-    await signOut();
-    router.replace("/");
-  }
 
   function go(key: string, href: string) {
     guardedNavigate(key, () => router.push(href as never));
@@ -217,7 +213,12 @@ export function ProfileScreen() {
                 and never competing with the primary actions above. */}
             <Divider style={styles.logoutDivider} />
             <View style={styles.logoutWrapper}>
-              <PrimaryButton label="Çıkış Yap" onPress={handleLogout} variant="secondary" />
+              <PrimaryButton
+                label="Çıkış Yap"
+                onPress={signOut}
+                variant="secondary"
+                isLoading={isSigningOut}
+              />
             </View>
 
             <View style={styles.tabRow}>

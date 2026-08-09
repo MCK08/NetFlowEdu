@@ -4,6 +4,7 @@ import {
   formatFeedPosition,
   isEndOfFeed,
   mergeQuestionPages,
+  nextHasMoreAfterPage,
   restoreActiveIndex,
   shouldPrefetchNextPage,
 } from "@features/classes/services/classFeedPagination";
@@ -239,6 +240,28 @@ describe("formatFeedPosition", () => {
   it("clamps an out-of-range index rather than showing 19 / 18", () => {
     expect(formatFeedPosition(99, 18)).toBe("18 / 18");
     expect(formatFeedPosition(-3, 18)).toBe("1 / 18");
+  });
+});
+
+// Phase 24 regression — useClassFeed.loadMore's error branch used to call
+// `setHasMore(false)` directly, which made the "Tekrar dene" pagination
+// retry button a permanent no-op: loadMore's own `!hasMoreRef.current`
+// guard short-circuited every subsequent call (including the retry
+// button's own) once any single page fetch failed, with no recovery short
+// of leaving and re-entering the screen. hasMore must reflect only the
+// server's own page.hasMore, never an inference from a failed fetch.
+describe("nextHasMoreAfterPage — hasMore survives a failed page fetch", () => {
+  it("leaves hasMore=true unchanged after an error, so a retry is still possible", () => {
+    expect(nextHasMoreAfterPage(true, { status: "error" })).toBe(true);
+  });
+
+  it("leaves hasMore=false unchanged after an error (an already-exhausted feed stays exhausted)", () => {
+    expect(nextHasMoreAfterPage(false, { status: "error" })).toBe(false);
+  });
+
+  it("adopts the server's page.hasMore on a successful fetch, regardless of the previous value", () => {
+    expect(nextHasMoreAfterPage(true, { status: "success", serverHasMore: false })).toBe(false);
+    expect(nextHasMoreAfterPage(false, { status: "success", serverHasMore: true })).toBe(true);
   });
 });
 

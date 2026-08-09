@@ -1,5 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
+import { useEffect } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
 import { PrimaryButton } from "@components/ui/PrimaryButton";
@@ -14,18 +15,27 @@ interface PhotoAnswerFormProps {
   questionId: string;
   uid: string | undefined;
   onSubmitted: () => void;
+  // Mirrors DrawingBoard's onDirtyChange: lets the host screen know a
+  // submission is in flight, so it can gate an exit confirmation without
+  // this component knowing anything about navigation itself.
+  onUploadingChange?: (isUploading: boolean) => void;
 }
 
 export function PhotoAnswerForm({
   questionId,
   uid,
   onSubmitted,
+  onUploadingChange,
 }: PhotoAnswerFormProps) {
   const { previewUri, isUploading, pickFromCamera, pickFromGallery, submit } = usePhotoAnswer({
     questionId,
     uid,
     onSubmitted,
   });
+
+  useEffect(() => {
+    onUploadingChange?.(isUploading);
+  }, [isUploading, onUploadingChange]);
 
   return (
     <View style={styles.container}>
