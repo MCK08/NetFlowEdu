@@ -5,7 +5,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { EmptyState } from "@components/ui/EmptyState";
 import { LoadingSkeleton } from "@components/ui/LoadingSkeleton";
-import { PrimaryButton } from "@components/ui/PrimaryButton";
 import { ROUTES } from "@constants/routes";
 import { useAuth } from "@features/authentication";
 import { useNavigationGuard } from "@hooks/useNavigationGuard";
@@ -16,6 +15,7 @@ import { typography } from "@theme/typography";
 
 import { StudyOutcome } from "../domain/studyTypes";
 import { DailyGoalEditor } from "../components/DailyGoalEditor";
+import { DailyPracticePlanSection } from "../components/DailyPracticePlanSection";
 import { StudyProgressCard } from "../components/StudyProgressCard";
 import { StudyQueueCard } from "../components/StudyQueueCard";
 import { SubjectBreakdownSection } from "../components/SubjectBreakdownSection";
@@ -49,7 +49,7 @@ export function StudyScreen() {
   const { firebaseUser } = useAuth();
   const uid = firebaseUser?.uid;
   const { entries, summary, isLoading, isRefreshing, error, refresh, dismiss } = useStudyQueue(uid);
-  const { insights, refresh: refreshInsights } = useLearningInsights(uid, summary);
+  const { insights, plan, refresh: refreshInsights } = useLearningInsights(uid, summary);
   const guardedNavigate = useNavigationGuard();
 
   // Per-card busy/error state, keyed by questionId — a failure on one card
@@ -163,15 +163,9 @@ export function StudyScreen() {
         ListHeaderComponent={
           <View style={styles.header}>
             <Text style={styles.title}>Öğrenme Merkezi</Text>
+            <DailyPracticePlanSection plan={plan} onStartDue={startSession} onOpenQuestion={handleOpen} />
             <StudyProgressCard summary={summary} dueCount={insights.dueCount} />
             <DailyGoalEditor currentGoal={summary.dailyGoal} onSaved={handleRefresh} />
-            {insights.dueCount > 0 ? (
-              <PrimaryButton
-                label="Bugünkü Tekrara Başla"
-                onPress={startSession}
-                accessibilityHint="Tekrar oturumunu açar"
-              />
-            ) : null}
             {error ? (
               <View style={styles.errorBanner} accessibilityRole="alert">
                 <Text style={styles.errorText}>{error}</Text>

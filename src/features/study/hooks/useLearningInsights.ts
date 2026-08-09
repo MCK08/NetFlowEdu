@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { buildDailyPracticePlan } from "../services/dailyPracticePlan";
 import { buildLearningInsights, LearningInsightItem } from "../services/learningInsights";
 import { mapStudyErrorToMessage } from "../services/studyErrorMapper";
 import { getAllStudyItems, StudySummary } from "../services/studyService";
@@ -77,5 +78,20 @@ export function useLearningInsights(uid: string | undefined, summary: StudySumma
     [items, summary.reviewedToday, summary.dailyGoal],
   );
 
-  return { insights, isLoading, error, refresh: load };
+  // Phase 23 — derived from the SAME `items` and the insights' own
+  // weakTopics, so a plan is never a second fetch: it refreshes on exactly
+  // the triggers insights already refreshes on (focus, outcome recorded).
+  const plan = useMemo(
+    () =>
+      buildDailyPracticePlan({
+        items,
+        weakTopics: insights.weakTopics,
+        now: Date.now(),
+        reviewedToday: summary.reviewedToday,
+        dailyGoal: summary.dailyGoal,
+      }),
+    [items, insights.weakTopics, summary.reviewedToday, summary.dailyGoal],
+  );
+
+  return { insights, plan, isLoading, error, refresh: load };
 }

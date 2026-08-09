@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 
 import { StudyOutcome, StudyStatus } from "../domain/studyTypes";
+import { PlanReason } from "./dailyPracticePlan";
 
 // Pure presentation mapping — no React, no Firebase, directly unit-testable.
 
@@ -88,6 +89,21 @@ export function streakLabel(currentStreak: number): string {
   const safe = Number.isFinite(currentStreak) && currentStreak > 0 ? Math.floor(currentStreak) : 0;
   if (safe === 0) return "Seri yok";
   return `${safe} günlük seri`;
+}
+
+// Phase 23 — why a question is in today's plan. Every string here is
+// metadata-independent and describes real recorded history (a due
+// timestamp, a recorded outcome) — never a projection or invented
+// probability (§16).
+const PLAN_REASON_LABELS: Record<PlanReason, string> = {
+  due: "Tekrar zamanı geldi",
+  struggled: "Bu soruda zorlandın",
+  weak_topic: "Bu konuda zorlanıyorsun",
+  goal_fill: "Günlük hedefini tamamlamak için",
+};
+
+export function planReasonLabel(reason: PlanReason): string {
+  return PLAN_REASON_LABELS[reason];
 }
 
 export function queueEmptyCopy(hasAnyStudyItem: boolean): { title: string; description: string } {
