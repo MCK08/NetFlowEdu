@@ -1,4 +1,6 @@
 import { buildDailyProgress, LearningInsightItem, TopicInsight } from "./learningInsights";
+import { masteryBandPriorityIndex } from "./topicMastery";
+import { buildRecencySignal, recencyPriorityIndex } from "./recencySignal";
 
 // Phase 23 — "what should I study right now", answered deterministically
 // from data the app already has. This is a SELECTION + ORDERING +
@@ -96,24 +98,43 @@ function isActive(item: LearningInsightItem): boolean {
 // — so a later tier can never re-select a question an earlier tier already
 // placed. This IS the duplicate-protection mechanism (§8): priority order
 // alone decides which single category a question lands in.
+//
+// Phase 25 — `comparator` is an injection point (default: the original
+// Phase 23 compareByReviewOrder), not a behavior change: buildDailyPracticePlan
+// below still calls this with no third argument, so its output is
+// byte-identical to before. buildAdaptivePracticePlan passes an
+// mastery/recency-aware comparator instead — the tier MEMBERSHIP rules
+// (the predicate) are completely untouched either way; only the ORDER
+// within a tier can differ, which only matters for which items survive
+// the MAX_PLAN_ITEMS cap.
 function takeTier(
   items: readonly LearningInsightItem[],
   claimed: Set<string>,
   predicate: (item: LearningInsightItem) => boolean,
+  comparator: (a: LearningInsightItem, b: LearningInsightItem) => number = compareByReviewOrder,
 ): LearningInsightItem[] {
   const matched = items.filter((item) => !claimed.has(item.questionId) && predicate(item));
-  matched.sort(compareByReviewOrder);
+  matched.sort(comparator);
   for (const item of matched) claimed.add(item.questionId);
   return matched;
 }
 
-// The single entry point: raw study items + the Hub's own weak-topic
-// ranking in, the day's practice plan out. Deterministic and side-effect
-// free — the same input always produces byte-identical output.
-export function buildDailyPracticePlan(params: BuildDailyPracticePlanParams): DailyPracticePlan {
-  const items = dedupeByQuestionId(params.items);
-  const now = Number.isFinite(params.now) ? params.now : Date.now();
-  const progress = buildDailyProgress(params.reviewedToday, params.dailyGoal);
+interface BuildTieredPlanOptions {
+  items: readonly LearningInsightItem[];
+  weakTopics: readonly TopicInsight[];
+  now: number;
+  reviewedToday: number;
+  dailyGoal: number;
+  comparator: (a: LearningInsightItem, b: LearningInsightItem) => number;
+}
+
+// The shared core both buildDailyPracticePlan and buildAdaptivePracticePlan
+// run — identical tier predicates and claim mechanism either way; only the
+// within-tier `comparator` differs between the two public entry points.
+function buildTieredPlan(options: BuildTieredPlanOptions): DailyPracticePlan {
+  const items = dedupeByQuestionId(options.items);
+  const now = Number.isFinite(options.now) ? options.now : Date.now();
+  const progress = buildDailyProgress(options.reviewedToday, options.dailyGoal);
   const remainingGoal = Math.max(0, progress.dailyGoal - progress.reviewedToday);
 
   const claimed = new Set<string>();
@@ -129,22 +150,24 @@ export function buildDailyPracticePlan(params: BuildDailyPracticePlanParams): Da
     items,
     claimed,
     (item) => isActive(item) && item.lastOutcome === "struggled",
+    options.comparator,
   );
 
   // Tier 3 — the Hub's own top-ranked weak topic, not already claimed.
-  const topFocus = params.weakTopics[0] ?? null;
+  const topFocus = options.weakTopics[0] ?? null;
   const weakTopicItems = topFocus
     ? takeTier(
         items,
         claimed,
         (item) => isActive(item) && item.subject === topFocus.subject && item.topic === topFocus.topic,
+        options.comparator,
       )
     : [];
 
   // Tier 4 — anything else still active, to round the plan out toward the
   // daily goal. Deliberately no subject/topic requirement — a legacy item
   // is exactly as eligible here as a fully-tagged one.
-  const fillerItems = takeTier(items, claimed, isActive);
+  const fillerItems = takeTier(items, claimed, isActive, options.comparator);
 
   const reasonOf = new Map<string, PlanReason>();
   for (const item of struggledItems) reasonOf.set(item.questionId, "struggled");
@@ -181,4 +204,74 @@ export function buildDailyPracticePlan(params: BuildDailyPracticePlanParams): Da
     planItems,
     reasonByQuestionId,
   };
+}
+
+// The single entry point: raw study items + the Hub's own weak-topic
+// ranking in, the day's practice plan out. Deterministic and side-effect
+// free — the same input always produces byte-identical output.
+export function buildDailyPracticePlan(params: BuildDailyPracticePlanParams): DailyPracticePlan {
+  return buildTieredPlan({ ...params, comparator: compareByReviewOrder });
+}
+
+export interface BuildAdaptivePracticePlanParams extends BuildDailyPracticePlanParams {
+  // The Hub's FULL topic breakdown (learningInsights.ts's `allTopics`), not
+  // just the capped top-5 weakTopics — an item's own topic may not be one
+  // of the top-5 weakest and still deserves mastery/recency-aware ordering
+  // relative to its tier-mates. Already computed in-memory by the same
+  // buildLearningInsights call; zero additional Firestore reads.
+  topicInsights: readonly TopicInsight[];
+}
+
+// Phase 25 §5 — SAME four tiers, SAME predicates, SAME claim/dedupe
+// mechanism as buildDailyPracticePlan (both run through buildTieredPlan) —
+// this NEVER changes which tier a question lands in or reorders across
+// tiers (due always beats struggled always beats weak_topic always beats
+// goal_fill, exactly as §14 requires). The only difference is the order
+// WITHIN a tier: mastery band (worse first) and recency (staler first)
+// now break ties before falling back to the original nextReviewAt/id
+// order — so when a tier has more matches than MAX_PLAN_ITEMS lets
+// through, the ones that actually surface are the least-mastered and
+// least-recently-practiced first, not an arbitrary due-time ordering.
+export function buildAdaptivePracticePlan(params: BuildAdaptivePracticePlanParams): DailyPracticePlan {
+  const topicByKey = new Map<string, TopicInsight>();
+  for (const topic of params.topicInsights) {
+    topicByKey.set(`${topic.subject} ${topic.topic}`, topic);
+  }
+
+  const now = Number.isFinite(params.now) ? params.now : Date.now();
+
+  function adaptiveComparator(a: LearningInsightItem, b: LearningInsightItem): number {
+    const topicA = topicByKey.get(`${a.subject} ${a.topic}`) ?? null;
+    const topicB = topicByKey.get(`${b.subject} ${b.topic}`) ?? null;
+
+    // A legacy item with no resolvable topic (subject/topic === "", or a
+    // topic never bucketed — see learningInsights.ts's own bucketByTopic
+    // doc comment) has no mastery/recency signal to rank by at all; it
+    // falls back to the exact same ordering buildDailyPracticePlan already
+    // used, so §21 backward-compatibility holds for legacy data too.
+    const masteryDelta = masteryRankOf(topicA) - masteryRankOf(topicB);
+    if (masteryDelta !== 0) return masteryDelta;
+
+    const recencyDelta = recencyRankOf(a, topicA, now) - recencyRankOf(b, topicB, now);
+    if (recencyDelta !== 0) return recencyDelta;
+
+    return compareByReviewOrder(a, b);
+  }
+
+  return buildTieredPlan({ ...params, comparator: adaptiveComparator });
+}
+
+// Lower index = worse (needs attention sooner) = sorts first. A topic with
+// no bucket at all (legacy/unmatched) is treated as neutral — after every
+// real mastery signal but before nothing, i.e. it never artificially wins
+// or loses a tiebreak against a topic that actually has data.
+function masteryRankOf(topic: TopicInsight | null): number {
+  return topic ? masteryBandPriorityIndex(topic.masteryBand) : masteryBandPriorityIndex("developing");
+}
+
+function recencyRankOf(item: LearningInsightItem, topic: TopicInsight | null, now: number): number {
+  if (topic) return recencyPriorityIndex(topic.recency);
+  // No topic bucket for this item — fall back to the ITEM's own
+  // lastReviewedAt (still real data, just not topic-aggregated).
+  return recencyPriorityIndex(buildRecencySignal(item.lastReviewedAt, now));
 }

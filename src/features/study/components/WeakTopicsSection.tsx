@@ -4,6 +4,7 @@ import { StyleSheet, Text, View } from "react-native";
 import { AnimatedPressable } from "@components/ui/AnimatedPressable";
 import { Badge } from "@components/ui/Badge";
 import { Card } from "@components/ui/Card";
+import { Chip } from "@components/ui/Chip";
 import { SectionHeader } from "@components/ui/SectionHeader";
 import { colors } from "@theme/colors";
 import { spacing } from "@theme/spacing";
@@ -47,6 +48,12 @@ export const WeakTopicsSection = memo(function WeakTopicsSection({
                   <Text style={styles.subject} numberOfLines={1}>
                     {topic.subject}
                   </Text>
+                  {/* Phase 25 — only the single most actionable recency
+                      signal (genuinely stale), not every band, to keep this
+                      card from turning into a badge farm. */}
+                  {topic.recency === "stale" ? (
+                    <Chip label="Uzun süredir çalışılmadı" />
+                  ) : null}
                 </View>
                 <Badge label={`${topic.struggledCount} zorlandın`} variant="danger" />
               </View>

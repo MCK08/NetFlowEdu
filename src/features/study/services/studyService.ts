@@ -121,6 +121,65 @@ export async function getAllStudyItems(uid: string): Promise<StudyItem[]> {
   return snapshot.docs.map((d) => toStudyItem(d.id, d.data()));
 }
 
+// Phase 25 — one calendar day's real review counters, exactly as written by
+// recordStudyOutcome's transaction (see functions/src/study/
+// recordStudyOutcome.ts's `studyDayRef` write) — reviewCount/solvedCount/
+// struggledCount are genuine server-computed numbers, never estimated here.
+export interface StudyDay {
+  // "YYYY-MM-DD" in the student's own timezone at the time it was recorded
+  // (see functions/src/study/dayKey.ts) — the document id itself, which is
+  // also what makes it lexicographically sortable without a stored field.
+  dayKey: string;
+  reviewCount: number;
+  solvedCount: number;
+  struggledCount: number;
+}
+
+function toStudyDay(id: string, data: DocumentData): StudyDay {
+  return {
+    dayKey: id,
+    reviewCount: num(data.reviewCount),
+    solvedCount: num(data.solvedCount),
+    struggledCount: num(data.struggledCount),
+  };
+}
+
+// How many recent calendar days the trend engine looks at. Not a magic
+// percentage — a fixed, small window chosen so buildLearningTrend always has
+// enough real days to split into a "recent half" vs an "earlier half" (see
+// learningTrend.ts) while staying a single cheap, uncapped-by-cursor read.
+export const RECENT_STUDY_DAYS_WINDOW = 14;
+
+// users/{uid}/studyDays/{dayKey} — firestore.rules already allows
+// `isOwner(uid)` to read this (no rule change needed; it simply had no
+// client reader before this phase).
+//
+// Orders by the `dayKey` FIELD (also written verbatim onto the document by
+// recordStudyOutcome's transaction — see functions/src/study/
+// recordStudyOutcome.ts's `dayKey,` write), NOT documentId() even though
+// the two hold the same value: `orderBy(documentId(), "desc")` (and even
+// the ascending + limitToLast workaround, which the SDK implements via an
+// internal descending scan anyway) are BOTH rejected outright by the
+// Firestore JS SDK — "Firestore does not support descending key scans" —
+// reproduced against the real rules emulator before this settled on the
+// field-based query, not just assumed. A normal indexed field has no such
+// restriction: single-field orderBy+limit, the exact same shape
+// getAllStudyItems/getDueStudyItemsPage already use for `nextReviewAt`, so
+// this needs no composite index either.
+export async function getRecentStudyDays(
+  uid: string,
+  limitCount: number = RECENT_STUDY_DAYS_WINDOW,
+): Promise<StudyDay[]> {
+  const snapshot = await getDocs(
+    query(
+      collection(db, "users", uid, "studyDays"),
+      orderBy("dayKey", "desc"),
+      limit(limitCount),
+    ),
+  );
+  return snapshot.docs.map((d) => toStudyDay(d.id, d.data()));
+}
+
 // One CURSOR-PAGINATED page of due items, soonest first.
 //
 // Single-field range + orderBy on the SAME field, which Firestore indexes

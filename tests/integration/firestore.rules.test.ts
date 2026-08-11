@@ -12,6 +12,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  limit,
   onSnapshot,
   orderBy,
   query,
@@ -3268,6 +3269,45 @@ describe("firestore.rules — study collections (Phase 16)", () => {
       updateDoc(doc(owner.firestore(), "users", "student-1", "studyDays", "2026-08-06"), {
         reviewCount: 999,
       }),
+    );
+  });
+
+  // Phase 25 — the exact query shape getRecentStudyDays (studyService.ts)
+  // uses for the Learning Hub's trend engine. `orderBy(documentId(), desc)`
+  // (and even the ascending + limitToLast workaround) were tried FIRST and
+  // are BOTH rejected outright by the Firestore JS SDK ("Firestore does
+  // not support descending key scans") — reproduced against the real rules
+  // emulator before studyService.ts settled on ordering by the `dayKey`
+  // FIELD instead (also written onto every day doc by recordStudyOutcome),
+  // which has no such restriction.
+  it("lets the owner LIST their own recent daily stats, newest dayKey first", async () => {
+    await seedDay("student-1", "2026-08-05");
+    await seedDay("student-1", "2026-08-06");
+    await seedDay("student-1", "2026-08-07");
+    const owner = studentCtx("student-1");
+    const snapshot = await assertSucceeds(
+      getDocs(
+        query(
+          collection(owner.firestore(), "users", "student-1", "studyDays"),
+          orderBy("dayKey", "desc"),
+          limit(14),
+        ),
+      ),
+    );
+    expect(snapshot.docs.map((d) => d.id)).toEqual(["2026-08-07", "2026-08-06", "2026-08-05"]);
+  });
+
+  it("denies another student LISTing someone else's daily stats", async () => {
+    await seedDay("student-1", "2026-08-06");
+    const outsider = studentCtx("student-2");
+    await assertFails(
+      getDocs(
+        query(
+          collection(outsider.firestore(), "users", "student-1", "studyDays"),
+          orderBy("dayKey", "desc"),
+          limit(14),
+        ),
+      ),
     );
   });
 });

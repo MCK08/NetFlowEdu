@@ -15,6 +15,8 @@ function item(overrides: Partial<LearningInsightItem> = {}): LearningInsightItem
     nextReviewAt: NOW + DAY_MS,
     subject: "Matematik",
     topic: "Türev",
+    successfulReviews: 1,
+    lastReviewedAt: NOW - DAY_MS,
     ...overrides,
   };
 }
@@ -309,5 +311,58 @@ describe("buildLearningInsights — robustness", () => {
     const a = buildLearningInsights({ items, now: NOW, reviewedToday: 3, dailyGoal: 10 });
     const b = buildLearningInsights({ items, now: NOW, reviewedToday: 3, dailyGoal: 10 });
     expect(a).toEqual(b);
+  });
+});
+
+// Phase 25 — allTopics/masteryBand/recency are ADDITIVE: every test above
+// this point (Phase 22 contract) still passes unmodified, proving the
+// extension is backward-compatible per §6/§21.
+describe("buildLearningInsights — allTopics (Phase 25)", () => {
+  it("includes every real topic, not just the top-5 weak/strong ones", () => {
+    const items = Array.from({ length: 8 }, (_, i) =>
+      item({ questionId: `q${i}`, subject: "Matematik", topic: `Konu${i}`, lastOutcome: "struggled" }),
+    );
+    const insights = buildLearningInsights({ items, now: NOW, reviewedToday: 0, dailyGoal: 10 });
+    expect(insights.allTopics).toHaveLength(8);
+    expect(insights.weakTopics.length).toBeLessThanOrEqual(5);
+  });
+
+  it("excludes items with no subject or no topic, same as the existing bucketing rule", () => {
+    const items = [item({ questionId: "q1", subject: "", topic: "" })];
+    const insights = buildLearningInsights({ items, now: NOW, reviewedToday: 0, dailyGoal: 10 });
+    expect(insights.allTopics).toEqual([]);
+  });
+
+  it("is sorted by subject then topic, independent of any score", () => {
+    const items = [
+      item({ questionId: "q1", subject: "Fizik", topic: "Optik" }),
+      item({ questionId: "q2", subject: "Fizik", topic: "Elektrik" }),
+      item({ questionId: "q3", subject: "Biyoloji", topic: "Hücre" }),
+    ];
+    const insights = buildLearningInsights({ items, now: NOW, reviewedToday: 0, dailyGoal: 10 });
+    expect(insights.allTopics.map((t) => `${t.subject}/${t.topic}`)).toEqual([
+      "Biyoloji/Hücre",
+      "Fizik/Elektrik",
+      "Fizik/Optik",
+    ]);
+  });
+
+  it("gives each topic a masteryBand and a recency computed from its items", () => {
+    const items = [
+      item({ questionId: "q1", subject: "Matematik", topic: "Türev", status: "mastered", successfulReviews: 5 }),
+    ];
+    const insights = buildLearningInsights({ items, now: NOW, reviewedToday: 0, dailyGoal: 10 });
+    expect(insights.allTopics[0]?.masteryBand).toBe("mastered");
+    expect(insights.allTopics[0]?.recency).toBe("recently_practiced");
+  });
+
+  it("uses the MOST recently reviewed item in a topic for that topic's recency", () => {
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const items = [
+      item({ questionId: "old", subject: "Matematik", topic: "Türev", lastReviewedAt: NOW - 30 * DAY_MS }),
+      item({ questionId: "fresh", subject: "Matematik", topic: "Türev", lastReviewedAt: NOW - 1 * DAY_MS }),
+    ];
+    const insights = buildLearningInsights({ items, now: NOW, reviewedToday: 0, dailyGoal: 10 });
+    expect(insights.allTopics[0]?.recency).toBe("recently_practiced");
   });
 });

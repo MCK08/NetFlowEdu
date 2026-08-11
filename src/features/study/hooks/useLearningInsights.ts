@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { buildDailyPracticePlan } from "../services/dailyPracticePlan";
+import { buildAdaptivePracticePlan } from "../services/dailyPracticePlan";
 import { buildLearningInsights, LearningInsightItem } from "../services/learningInsights";
+import { buildLearningMoment } from "../services/learningMoment";
+import { buildLearningTrend, LearningTrend } from "../services/learningTrend";
 import { mapStudyErrorToMessage } from "../services/studyErrorMapper";
-import { getAllStudyItems, StudySummary } from "../services/studyService";
+import { getAllStudyItems, getRecentStudyDays, StudyDay, StudySummary } from "../services/studyService";
 import { resolveQuestionMetadata } from "../services/studyMetadataCache";
 
 // Phase 22 — loads every study item once, joins it with its question's
@@ -18,8 +20,17 @@ import { resolveQuestionMetadata } from "../services/studyMetadataCache";
 // EITHER the loaded items OR the live summary changes, so a review
 // completing updates dailyProgress instantly without a re-fetch, and a
 // re-fetch (refresh()) never has to know or care that the summary exists.
+//
+// Phase 25 — ONE additional bounded read per load() (getRecentStudyDays,
+// limit 14 — see studyService.ts's own doc comment) fetched in the SAME
+// Promise.all as the existing metadata resolution, so `load` still makes
+// exactly one round trip's worth of latency, not a second sequential
+// fetch. Everything else (mastery/recency/trend/adaptive plan/moment) is
+// derived via useMemo from data already in state — no new listeners, no
+// new fetch triggers beyond the ones this hook already had.
 export function useLearningInsights(uid: string | undefined, summary: StudySummary) {
   const [items, setItems] = useState<LearningInsightItem[]>([]);
+  const [recentDays, setRecentDays] = useState<StudyDay[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -30,6 +41,7 @@ export function useLearningInsights(uid: string | undefined, summary: StudySumma
   const load = useCallback(async () => {
     if (!uid) {
       setItems([]);
+      setRecentDays([]);
       setIsLoading(false);
       return;
     }
@@ -39,7 +51,10 @@ export function useLearningInsights(uid: string | undefined, summary: StudySumma
 
     try {
       const studyItems = await getAllStudyItems(uid);
-      const metadata = await resolveQuestionMetadata(studyItems.map((item) => item.questionId));
+      const [metadata, days] = await Promise.all([
+        resolveQuestionMetadata(studyItems.map((item) => item.questionId)),
+        getRecentStudyDays(uid),
+      ]);
       if (requestIdRef.current !== requestId || activeUidRef.current !== uid) return;
 
       setItems(
@@ -52,9 +67,12 @@ export function useLearningInsights(uid: string | undefined, summary: StudySumma
             nextReviewAt: item.nextReviewAt,
             subject: question?.subject ?? "",
             topic: question?.topic ?? "",
+            successfulReviews: item.successfulReviews,
+            lastReviewedAt: item.lastReviewedAt,
           };
         }),
       );
+      setRecentDays(days);
     } catch (err) {
       if (requestIdRef.current !== requestId || activeUidRef.current !== uid) return;
       setError(mapStudyErrorToMessage(err));
@@ -79,19 +97,32 @@ export function useLearningInsights(uid: string | undefined, summary: StudySumma
   );
 
   // Phase 23 — derived from the SAME `items` and the insights' own
-  // weakTopics, so a plan is never a second fetch: it refreshes on exactly
-  // the triggers insights already refreshes on (focus, outcome recorded).
+  // weakTopics/allTopics, so a plan is never a second fetch: it refreshes
+  // on exactly the triggers insights already refreshes on (focus, outcome
+  // recorded). Phase 25: buildAdaptivePracticePlan (not the plain
+  // buildDailyPracticePlan) — same 4 tiers, same claim/dedupe, mastery- and
+  // recency-aware ordering WITHIN each tier only (see its own doc comment).
   const plan = useMemo(
     () =>
-      buildDailyPracticePlan({
+      buildAdaptivePracticePlan({
         items,
         weakTopics: insights.weakTopics,
+        topicInsights: insights.allTopics,
         now: Date.now(),
         reviewedToday: summary.reviewedToday,
         dailyGoal: summary.dailyGoal,
       }),
-    [items, insights.weakTopics, summary.reviewedToday, summary.dailyGoal],
+    [items, insights.weakTopics, insights.allTopics, summary.reviewedToday, summary.dailyGoal],
   );
 
-  return { insights, plan, isLoading, error, refresh: load };
+  // Phase 25 — real per-day server counters in, an honest trend out (see
+  // learningTrend.ts: "insufficient_data" rather than a guess whenever the
+  // sample is too thin or too short a span).
+  const trend: LearningTrend = useMemo(() => buildLearningTrend(recentDays), [recentDays]);
+
+  // A single deterministic sentence built from the SAME trend + weakTopics
+  // already computed above — no new data, no invented text.
+  const moment = useMemo(() => buildLearningMoment(trend, insights.weakTopics), [trend, insights.weakTopics]);
+
+  return { insights, plan, trend, moment, isLoading, error, refresh: load };
 }

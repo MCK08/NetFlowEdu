@@ -36,7 +36,8 @@ interface QuestionDetailScreenProps {
 }
 
 export function QuestionDetailScreen({ questionId }: QuestionDetailScreenProps) {
-  const { firebaseUser } = useAuth();
+  const { firebaseUser, role } = useAuth();
+  const isStudent = role === "student";
   const { question, isLoading, errorMessage } = useQuestionDetail(questionId);
   const { answers, isLoading: answersLoading, error: answersError } = useQuestionAnswers(
     question ? questionId : undefined,
@@ -110,7 +111,12 @@ export function QuestionDetailScreen({ questionId }: QuestionDetailScreenProps) 
                 (which is every question before this phase, and most after
                 it) renders exactly as it always has. */}
             {hasMultipleChoice(question.choices) ? (
-              <MultipleChoiceAnswer choices={question.choices} correctChoice={question.correctChoice} />
+              <MultipleChoiceAnswer
+                choices={question.choices}
+                correctChoice={question.correctChoice}
+                questionId={question.id}
+                isStudent={isStudent}
+              />
             ) : null}
 
             <PrimaryButton

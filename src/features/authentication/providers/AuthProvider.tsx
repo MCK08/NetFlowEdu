@@ -1,6 +1,7 @@
 import { onAuthStateChanged, User } from "firebase/auth";
 import { createContext, ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 
+import { clearStudyMetadataCache } from "@features/study/services/studyMetadataCache";
 import { UserProfile, UserRole } from "@/types/user";
 import { auth } from "@services/firebase/config";
 import { subscribeToUserProfile } from "@services/firebase/firestore";
@@ -296,6 +297,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async (uid: string): Promise<boolean> => {
       const user = await switchToStoredAccount(uid);
       if (!user) return false;
+      // Phase 25 §15/§9 — studyMetadataCache is module-level and keyed only
+      // by questionId, with no per-user namespace: without this, a private
+      // question the PREVIOUS account could read (and had cached) could
+      // leak its subject/topic into the NEW account's Learning Hub before
+      // that account's own rules-enforced read of it ever happens. Cleared
+      // on every switch, not just sign-out, since switching accounts is
+      // exactly as much an identity change as signing out and back in.
+      clearStudyMetadataCache();
       await touchKnownAccount(uid);
       await refreshKnownAccounts();
       return true;
@@ -436,6 +445,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     await logout();
+    // Same account-isolation reasoning as switchAccount above — a full
+    // sign-out is the other identity-changing path this cache must not
+    // survive across.
+    clearStudyMetadataCache();
   }, []);
 
   const sendPasswordReset = useCallback(async (input: ForgotPasswordInput) => {

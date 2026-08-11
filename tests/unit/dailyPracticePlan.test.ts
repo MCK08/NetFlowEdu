@@ -1,4 +1,5 @@
 import {
+  buildAdaptivePracticePlan,
   buildDailyPracticePlan,
   MAX_PLAN_ITEMS,
 } from "../../src/features/study/services/dailyPracticePlan";
@@ -19,6 +20,8 @@ function item(overrides: Partial<LearningInsightItem> = {}): LearningInsightItem
     nextReviewAt: NOW + DAY_MS,
     subject: "Matematik",
     topic: "Türev",
+    successfulReviews: 1,
+    lastReviewedAt: NOW - DAY_MS,
     ...overrides,
   };
 }
@@ -28,6 +31,12 @@ function item(overrides: Partial<LearningInsightItem> = {}): LearningInsightItem
 // weakness ranking on its own.
 function weakTopicsFor(items: LearningInsightItem[], now = NOW): readonly TopicInsight[] {
   return buildLearningInsights({ items, now, reviewedToday: 0, dailyGoal: 10 }).weakTopics;
+}
+
+// Same reasoning as weakTopicsFor — buildAdaptivePracticePlan consumes the
+// Hub's own real allTopics output, never a second topic-ranking pass.
+function topicInsightsFor(items: LearningInsightItem[], now = NOW): readonly TopicInsight[] {
+  return buildLearningInsights({ items, now, reviewedToday: 0, dailyGoal: 10 }).allTopics;
 }
 
 describe("buildDailyPracticePlan — empty input", () => {
@@ -186,6 +195,8 @@ describe("buildDailyPracticePlan — duplicate protection across all three categ
       dueCount: 1,
       totalCount: 1,
       sampleQuestionId: "q1",
+      masteryBand: "shaky",
+      recency: "aging",
     };
     const items = [
       item({
@@ -460,5 +471,203 @@ describe("buildDailyPracticePlan — refresh after outcome", () => {
     });
     expect(before.reasonByQuestionId.q1).toBe("struggled");
     expect(after.reasonByQuestionId.q1).toBe("due");
+  });
+});
+
+// Phase 25 §5/§14 — buildAdaptivePracticePlan must select and categorize
+// EXACTLY like buildDailyPracticePlan (same tiers, same predicates, same
+// dedupe) — mastery/recency may only reorder WITHIN a tier, never move a
+// question across tiers or change its PlanReason.
+describe("buildAdaptivePracticePlan — tier priority is unchanged (§14)", () => {
+  it("due always beats everything, exactly as buildDailyPracticePlan", () => {
+    const items = [
+      item({ questionId: "due1", nextReviewAt: NOW - 1000 }),
+      item({ questionId: "struggled1", lastOutcome: "struggled", nextReviewAt: NOW + DAY_MS }),
+    ];
+    const plan = buildAdaptivePracticePlan({
+      items,
+      weakTopics: [],
+      topicInsights: topicInsightsFor(items),
+      now: NOW,
+      reviewedToday: 0,
+      dailyGoal: 10,
+    });
+    expect(plan.dueCount).toBe(1);
+    expect(plan.reasonByQuestionId.due1).toBe("due");
+    expect(plan.reasonByQuestionId.struggled1).toBe("struggled");
+  });
+
+  it("struggled beats weak_topic, weak_topic beats goal_fill — same as the base plan", () => {
+    const items = [
+      item({ questionId: "s1", lastOutcome: "struggled", subject: "Fizik", topic: "Optik", nextReviewAt: NOW + DAY_MS }),
+      item({ questionId: "w1", subject: "Matematik", topic: "Türev", nextReviewAt: NOW + DAY_MS }),
+      item({ questionId: "f1", subject: "Kimya", topic: "Asitler", nextReviewAt: NOW + DAY_MS }),
+    ];
+    const weakTopics = weakTopicsFor([
+      item({ questionId: "w1", subject: "Matematik", topic: "Türev", lastOutcome: "struggled" }),
+    ]);
+    const plan = buildAdaptivePracticePlan({
+      items,
+      weakTopics,
+      topicInsights: topicInsightsFor(items),
+      now: NOW,
+      reviewedToday: 0,
+      dailyGoal: 10,
+    });
+    expect(plan.reasonByQuestionId.s1).toBe("struggled");
+    expect(plan.reasonByQuestionId.w1).toBe("weak_topic");
+    expect(plan.reasonByQuestionId.f1).toBe("goal_fill");
+  });
+
+  it("excludes mastered items exactly like buildDailyPracticePlan", () => {
+    const items = [
+      item({ questionId: "m1", status: "mastered", lastOutcome: "struggled", nextReviewAt: NOW + DAY_MS }),
+    ];
+    const plan = buildAdaptivePracticePlan({
+      items,
+      weakTopics: [],
+      topicInsights: topicInsightsFor(items),
+      now: NOW,
+      reviewedToday: 0,
+      dailyGoal: 10,
+    });
+    expect(plan.planItems).toHaveLength(0);
+    expect(plan.reasonByQuestionId.m1).toBeUndefined();
+  });
+
+  it("never produces a duplicate question across categories", () => {
+    const items = [
+      item({ questionId: "q1", subject: "Matematik", topic: "Türev", lastOutcome: "struggled", nextReviewAt: NOW + DAY_MS }),
+    ];
+    const weakTopics = weakTopicsFor(items);
+    const plan = buildAdaptivePracticePlan({
+      items,
+      weakTopics,
+      topicInsights: topicInsightsFor(items),
+      now: NOW,
+      reviewedToday: 0,
+      dailyGoal: 10,
+    });
+    const ids = plan.planItems.map((p) => p.questionId);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(Object.keys(plan.reasonByQuestionId)).toHaveLength(1);
+  });
+});
+
+describe("buildAdaptivePracticePlan — mastery/recency reorder WITHIN a tier (§5)", () => {
+  it("surfaces the weaker-mastery struggled question first when the tier exceeds MAX_PLAN_ITEMS", () => {
+    // Two struggled items in two DIFFERENT topics: one topic has never
+    // succeeded (shaky), the other already has a mastered sibling
+    // question (strong) — the shaky one should be prioritized.
+    const shakyItem = item({
+      questionId: "shaky1",
+      subject: "Fizik",
+      topic: "Optik",
+      lastOutcome: "struggled",
+      successfulReviews: 0,
+      nextReviewAt: NOW + DAY_MS,
+    });
+    const strongSibling = item({
+      questionId: "strong-sibling",
+      subject: "Kimya",
+      topic: "Asitler",
+      status: "mastered",
+      lastOutcome: "solved",
+      successfulReviews: 5,
+      nextReviewAt: NOW + 30 * DAY_MS,
+    });
+    const strongStruggled = item({
+      questionId: "strong1",
+      subject: "Kimya",
+      topic: "Asitler",
+      lastOutcome: "struggled",
+      successfulReviews: 3,
+      nextReviewAt: NOW + DAY_MS,
+    });
+    const items = [strongStruggled, shakyItem, strongSibling];
+    const topicInsights = topicInsightsFor(items);
+
+    const plan = buildAdaptivePracticePlan({
+      items,
+      weakTopics: [],
+      topicInsights,
+      now: NOW,
+      reviewedToday: 0,
+      dailyGoal: 10,
+    });
+
+    const struggledOrder = plan.planItems
+      .filter((p) => p.reason === "struggled")
+      .map((p) => p.questionId);
+    expect(struggledOrder[0]).toBe("shaky1");
+  });
+
+  it("falls back to the base nextReviewAt/id order for a legacy item with no resolvable topic (§21)", () => {
+    const legacyA = item({ questionId: "legacyA", subject: "", topic: "", lastOutcome: "struggled" });
+    const legacyB = item({ questionId: "legacyB", subject: "", topic: "", lastOutcome: "struggled" });
+    const items = [legacyB, legacyA];
+    const basePlan = buildDailyPracticePlan({ items, weakTopics: [], now: NOW, reviewedToday: 0, dailyGoal: 10 });
+    const adaptivePlan = buildAdaptivePracticePlan({
+      items,
+      weakTopics: [],
+      topicInsights: topicInsightsFor(items),
+      now: NOW,
+      reviewedToday: 0,
+      dailyGoal: 10,
+    });
+    expect(adaptivePlan.planItems.map((p) => p.questionId)).toEqual(
+      basePlan.planItems.map((p) => p.questionId),
+    );
+  });
+
+  it("is deterministic — same input always produces the same order", () => {
+    const items = [
+      item({ questionId: "a", subject: "Matematik", topic: "Türev", lastOutcome: "struggled" }),
+      item({ questionId: "b", subject: "Fizik", topic: "Optik", lastOutcome: "struggled" }),
+    ];
+    const params = {
+      items,
+      weakTopics: [],
+      topicInsights: topicInsightsFor(items),
+      now: NOW,
+      reviewedToday: 0,
+      dailyGoal: 10,
+    };
+    const first = buildAdaptivePracticePlan(params).planItems.map((p) => p.questionId);
+    const second = buildAdaptivePracticePlan(params).planItems.map((p) => p.questionId);
+    expect(first).toEqual(second);
+  });
+
+  it("does not mutate its inputs", () => {
+    const items = [item({ questionId: "a", lastOutcome: "struggled" })];
+    const topicInsights = topicInsightsFor(items);
+    const itemsCopy = items.map((i) => ({ ...i }));
+    const topicsCopy = topicInsights.map((t) => ({ ...t }));
+
+    buildAdaptivePracticePlan({
+      items,
+      weakTopics: [],
+      topicInsights,
+      now: NOW,
+      reviewedToday: 0,
+      dailyGoal: 10,
+    });
+
+    expect(items).toEqual(itemsCopy);
+    expect(topicInsights).toEqual(topicsCopy);
+  });
+
+  it("handles an empty topicInsights list without throwing (legacy-only feed)", () => {
+    const items = [item({ questionId: "a", subject: "", topic: "", lastOutcome: "struggled" })];
+    expect(() =>
+      buildAdaptivePracticePlan({
+        items,
+        weakTopics: [],
+        topicInsights: [],
+        now: NOW,
+        reviewedToday: 0,
+        dailyGoal: 10,
+      }),
+    ).not.toThrow();
   });
 });

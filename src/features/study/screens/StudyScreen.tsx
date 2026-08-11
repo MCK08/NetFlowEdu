@@ -49,7 +49,7 @@ export function StudyScreen() {
   const { firebaseUser } = useAuth();
   const uid = firebaseUser?.uid;
   const { entries, summary, isLoading, isRefreshing, error, refresh, dismiss } = useStudyQueue(uid);
-  const { insights, plan, refresh: refreshInsights } = useLearningInsights(uid, summary);
+  const { insights, plan, moment, refresh: refreshInsights } = useLearningInsights(uid, summary);
   const guardedNavigate = useNavigationGuard();
 
   // Per-card busy/error state, keyed by questionId — a failure on one card
@@ -163,6 +163,9 @@ export function StudyScreen() {
         ListHeaderComponent={
           <View style={styles.header}>
             <Text style={styles.title}>Öğrenme Merkezi</Text>
+            {/* Phase 25 §10 — one deterministic sentence, real trend data,
+                no invented text. See learningMoment.ts. */}
+            {moment ? <Text style={styles.moment}>{moment}</Text> : null}
             <DailyPracticePlanSection plan={plan} onStartDue={startSession} onOpenQuestion={handleOpen} />
             <StudyProgressCard summary={summary} dueCount={insights.dueCount} />
             <DailyGoalEditor currentGoal={summary.dailyGoal} onSaved={handleRefresh} />
@@ -213,6 +216,10 @@ const styles = StyleSheet.create({
     ...typography.displayLg,
     fontSize: 26,
     color: colors.textPrimary,
+  },
+  moment: {
+    ...typography.body,
+    color: colors.textSecondary,
   },
   separator: {
     height: spacing.md,

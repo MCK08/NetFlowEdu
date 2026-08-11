@@ -124,3 +124,65 @@ describe("resolveQuestionMetadata", () => {
     expect(mockGetQuestionById).not.toHaveBeenCalled();
   });
 });
+
+// Phase 25 §9/§15/§18 — the exact account-switch/sign-out leak this cache's
+// own module doc warned about (never actually wired up before this phase —
+// see AuthProvider.tsx's signOut/switchAccount, which now call
+// clearStudyMetadataCache). These tests pin down the cache's OWN behavior
+// that fix relies on: a clear must genuinely force a re-fetch, not merely
+// appear to (e.g. because the in-flight dedupe map was left stale).
+describe("clearStudyMetadataCache — account isolation (§9/§15/§18)", () => {
+  it("forces a real re-fetch for a questionId that was already cached", async () => {
+    mockGetQuestionById.mockResolvedValue(makeQuestion({ subject: "Matematik" }));
+
+    await resolveQuestionMetadata(["q1"]);
+    expect(mockGetQuestionById).toHaveBeenCalledTimes(1);
+
+    clearStudyMetadataCache();
+
+    await resolveQuestionMetadata(["q1"]);
+    expect(mockGetQuestionById).toHaveBeenCalledTimes(2);
+  });
+
+  it("never lets the PREVIOUS account's resolved question leak into the NEXT account's read", async () => {
+    // Account A can read a private question (e.g. their own) and it gets
+    // cached under its bare questionId, with no per-user namespace.
+    mockGetQuestionById.mockResolvedValueOnce(
+      makeQuestion({ id: "private-q", subject: "Account A's subject", visibility: "private" }),
+    );
+    const asAccountA = await resolveQuestionMetadata(["private-q"]);
+    expect(asAccountA.get("private-q")?.subject).toBe("Account A's subject");
+
+    // Account switch happens — AuthProvider calls this.
+    clearStudyMetadataCache();
+
+    // Account B's own rules-enforced read of the SAME id now correctly
+    // fails (they don't own it) — the cache must reflect THAT, not replay
+    // account A's cached success.
+    mockGetQuestionById.mockRejectedValueOnce(
+      Object.assign(new Error("Missing or insufficient permissions"), { code: "permission-denied" }),
+    );
+    const asAccountB = await resolveQuestionMetadata(["private-q"]);
+    expect(asAccountB.get("private-q")).toBeNull();
+  });
+
+  it("also clears in-flight request de-dup state, not just resolved entries", async () => {
+    let resolveFirst: (value: unknown) => void = () => {};
+    mockGetQuestionById.mockImplementationOnce(
+      () => new Promise((resolve) => { resolveFirst = resolve; }),
+    );
+
+    const pending = resolveQuestionMetadata(["q1"]);
+    clearStudyMetadataCache();
+    resolveFirst(makeQuestion({ id: "q1" }));
+    await pending;
+
+    mockGetQuestionById.mockResolvedValueOnce(makeQuestion({ id: "q1", subject: "Refetched" }));
+    const after = await resolveQuestionMetadata(["q1"]);
+    expect(after.get("q1")?.subject).toBe("Refetched");
+  });
+
+  it("is safe to call with nothing cached yet", () => {
+    expect(() => clearStudyMetadataCache()).not.toThrow();
+  });
+});

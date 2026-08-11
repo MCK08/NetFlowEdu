@@ -30,24 +30,39 @@ import { Question } from "@/types/question";
 const cache = new Map<string, Question | null>();
 const pending = new Map<string, Promise<Question | null>>();
 
+// Phase 25 §9/§15 — bumped on every clearStudyMetadataCache() call (account
+// switch / sign-out, see AuthProvider.tsx). A fetch already in flight when
+// the clear happens still resolves eventually — without this guard, its
+// `.then`/`.catch` handler would write the PREVIOUS account's result back
+// into the freshly-cleared cache after the fact, defeating the very point
+// of clearing it. Each fetch captures the generation it started in and
+// only writes if that generation is still current.
+let generation = 0;
+
 async function fetchAndCache(questionId: string): Promise<Question | null> {
   const existing = pending.get(questionId);
   if (existing) return existing;
 
+  const startedInGeneration = generation;
+
   const fetchPromise = getQuestionById(questionId)
     .then((question) => {
-      // Cached even when null: a question that's gone (deleted, or access
-      // revoked) stays gone for the rest of this session — matches
-      // resolveQueueEntries's "permission-denied and not-found both mean
-      // gone" treatment, and avoids retrying a fetch that can only fail
-      // the same way again.
-      cache.set(questionId, question);
-      pending.delete(questionId);
+      if (generation === startedInGeneration) {
+        // Cached even when null: a question that's gone (deleted, or
+        // access revoked) stays gone for the rest of this session —
+        // matches resolveQueueEntries's "permission-denied and not-found
+        // both mean gone" treatment, and avoids retrying a fetch that can
+        // only fail the same way again.
+        cache.set(questionId, question);
+      }
+      if (generation === startedInGeneration) pending.delete(questionId);
       return question;
     })
     .catch(() => {
-      cache.set(questionId, null);
-      pending.delete(questionId);
+      if (generation === startedInGeneration) {
+        cache.set(questionId, null);
+        pending.delete(questionId);
+      }
       return null;
     });
 
@@ -73,10 +88,14 @@ export async function resolveQuestionMetadata(
   return new Map(results);
 }
 
-// Test-only escape hatch — the module-level cache would otherwise leak
-// state between test cases. Mirrors profileCacheService.ts's
-// clearProfileCache for the same reason.
+// Called on sign-out and account switch (see AuthProvider.tsx) so the
+// previous account's resolved (and any still-in-flight) question metadata
+// can never leak into the next account's session — see the `generation`
+// guard above for the in-flight half of that guarantee. Also the
+// test-only reset the module-level cache needs between test cases, same
+// role profileCacheService.ts's clearProfileCache plays for its own cache.
 export function clearStudyMetadataCache(): void {
+  generation += 1;
   cache.clear();
   pending.clear();
 }
