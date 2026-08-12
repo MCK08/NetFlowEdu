@@ -68,11 +68,15 @@ describe("every surface uses the one shared control", () => {
   // one shared component, RatingCard — a real interleaved feed item, not an
   // overlay — and neither screen source renders <StudyOutcomeControls>
   // directly (that moved out of FeedCard/ClassFeedCard entirely, see the
-  // regression guards below). The review session and the study dashboard's
-  // queue list are the other two surfaces that still render it inline.
+  // regression guards below). Phase 28 replaced the single-card
+  // ReviewSessionScreen with StudySessionScreen's vertical swipe feed —
+  // its two per-mode cards (mandatory queue, adaptive round) are the ones
+  // that now render the control inline, alongside the study dashboard's
+  // queue list.
   const surfaces = [
     "src/features/study/components/RatingCard.tsx",
-    "src/features/study/screens/ReviewSessionScreen.tsx",
+    "src/features/study/components/StudySessionMandatoryCard.tsx",
+    "src/features/study/components/StudySessionAdaptiveCard.tsx",
     "src/features/study/components/StudyQueueCard.tsx",
   ];
 

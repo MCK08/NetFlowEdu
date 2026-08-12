@@ -1,7 +1,9 @@
+import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useCallback, useEffect, useMemo } from "react";
 import {
   ActivityIndicator,
+  Pressable,
   RefreshControl,
   SectionList,
   StyleSheet,
@@ -11,6 +13,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { Divider } from "@components/ui/Divider";
+import { ROUTES } from "@constants/routes";
 import { EmptyState } from "@components/ui/EmptyState";
 import { LoadingSkeleton } from "@components/ui/LoadingSkeleton";
 import { Toast } from "@components/ui/Toast";
@@ -18,6 +21,7 @@ import { useToast } from "@components/ui/useToast";
 import { useAuth } from "@features/authentication";
 import { useNavigationGuard } from "@hooks/useNavigationGuard";
 import { colors } from "@theme/colors";
+import { minTouchTarget } from "@theme/sizes";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
 import { NotificationRecord } from "@/types/notification";
@@ -107,16 +111,41 @@ export function NotificationScreen({ role }: { role: UserRole }) {
 
   const badgeLabel = formatUnreadBadge(unreadCount);
 
+  // Phase 28 §1 — this screen previously had no back affordance at all:
+  // headerShown is false at the Stack level (see app/(student)/_layout.tsx),
+  // and this component never rendered one of its own, so the only way out
+  // was the iOS edge-swipe gesture or Android hardware back — both real,
+  // but with zero VISIBLE way to leave. `canGoBack()` falls back to
+  // replacing with this role's own tab home rather than calling back()
+  // blindly, which would be a no-op (and log a warning) if this screen was
+  // ever opened as the root of its own stack (e.g. a future deep link).
+  function goBack() {
+    if (router.canGoBack()) router.back();
+    else router.replace((role === "teacher" ? ROUTES.teacher : ROUTES.student) as never);
+  }
+
   return (
     <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
       <View style={styles.header}>
-        <View style={styles.headerTitleRow}>
-          <Text style={styles.title}>Bildirimler</Text>
-          {badgeLabel ? (
-            <View style={styles.headerBadge}>
-              <Text style={styles.headerBadgeText}>{badgeLabel}</Text>
-            </View>
-          ) : null}
+        <View style={styles.headerTopRow}>
+          <Pressable
+            onPress={goBack}
+            style={styles.backButton}
+            accessibilityRole="button"
+            accessibilityLabel="Geri"
+            accessibilityHint="Önceki ekrana döner"
+            hitSlop={8}
+          >
+            <Ionicons name="chevron-back" size={26} color={colors.textPrimary} />
+          </Pressable>
+          <View style={styles.headerTitleRow}>
+            <Text style={styles.title}>Bildirimler</Text>
+            {badgeLabel ? (
+              <View style={styles.headerBadge}>
+                <Text style={styles.headerBadgeText}>{badgeLabel}</Text>
+              </View>
+            ) : null}
+          </View>
         </View>
         {unreadCount > 0 ? (
           <Text
@@ -180,12 +209,22 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   header: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.xs,
+    paddingBottom: spacing.md,
+    gap: spacing.xxs,
+  },
+  headerTopRow: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.md,
+    gap: spacing.xs,
+  },
+  backButton: {
+    minWidth: minTouchTarget,
+    minHeight: minTouchTarget,
+    alignItems: "center",
+    justifyContent: "center",
+    marginLeft: -spacing.sm,
   },
   headerTitleRow: {
     flexDirection: "row",
@@ -214,6 +253,7 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontWeight: "600",
     paddingVertical: spacing.xxs,
+    alignSelf: "flex-end",
   },
   sectionHeader: {
     backgroundColor: colors.background,

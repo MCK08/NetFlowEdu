@@ -1,3 +1,5 @@
-import { ReviewSessionScreen } from "@features/study";
+import { StudySessionScreen } from "@features/study";
 
-export default ReviewSessionScreen;
+export default function StudentReviewSession() {
+  return <StudySessionScreen mode="mandatory" />;
+}

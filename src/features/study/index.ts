@@ -1,5 +1,5 @@
 export { StudyScreen } from "./screens/StudyScreen";
-export { ReviewSessionScreen } from "./screens/ReviewSessionScreen";
+export { StudySessionScreen } from "./screens/StudySessionScreen";
 export { StudyOutcomeButtons } from "./components/StudyOutcomeButtons";
 export { StudyOutcomeControls } from "./components/StudyOutcomeControls";
 export { StudyProgressCard } from "./components/StudyProgressCard";

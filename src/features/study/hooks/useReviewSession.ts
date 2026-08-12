@@ -257,6 +257,13 @@ export function useReviewSession(uid: string | undefined) {
   const current = entries[index] ?? null;
 
   return {
+    // Phase 28 — exposed so StudySessionScreen can render every currently
+    // loaded due card in a real swipeable FlatList (matching the main
+    // Feed's vertical-swipe feel) instead of only ever showing `current`
+    // one at a time. Nothing about how `entries` itself is fetched,
+    // paginated, or deduped changes — this is the exact same array
+    // ReviewSessionScreen's replacement now just gets to read directly.
+    entries,
     current,
     index,
     total: entries.length,
