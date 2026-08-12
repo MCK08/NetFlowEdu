@@ -121,6 +121,35 @@ export async function getAllStudyItems(uid: string): Promise<StudyItem[]> {
   return snapshot.docs.map((d) => toStudyItem(d.id, d.data()));
 }
 
+// Phase 27 — the Teacher Class Performance dashboard's one and only new
+// query. A SINGLE-FIELD equality filter (`sourceClassId`), no `orderBy`
+// combined with it, so this needs no composite index — and it's exactly
+// what firestore.rules' updated studyItems rule can PROVE: the query's own
+// `where` pins `sourceClassId`, so the rule can resolve
+// `resource.data.sourceClassId` for every candidate document without
+// touching any other field. `sourceClassId` is written by
+// recordStudyOutcome itself (Admin SDK) — non-null only for an item
+// studied from a real class question — so this can never surface a
+// student's private/public study activity, only what happened in this one
+// classroom, and only to that class's own teacher.
+//
+// No `limit`: a class's own question pool is what bounds this (nowhere
+// near MAX_ALL_STUDY_ITEMS in practice), not an arbitrary ceiling — and
+// unlike getAllStudyItems this is per-CLASS, not per-STUDENT's entire
+// history, so it stays small by construction.
+export async function getClassSourcedStudyItems(
+  studentUid: string,
+  classId: string,
+): Promise<StudyItem[]> {
+  const snapshot = await getDocs(
+    query(
+      collection(db, "users", studentUid, "studyItems"),
+      where("sourceClassId", "==", classId),
+    ),
+  );
+  return snapshot.docs.map((d) => toStudyItem(d.id, d.data()));
+}
+
 // Phase 25 — one calendar day's real review counters, exactly as written by
 // recordStudyOutcome's transaction (see functions/src/study/
 // recordStudyOutcome.ts's `studyDayRef` write) — reviewCount/solvedCount/

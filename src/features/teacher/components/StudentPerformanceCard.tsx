@@ -1,0 +1,106 @@
+import { memo } from "react";
+import { StyleSheet, Text, View } from "react-native";
+
+import { AnimatedPressable } from "@components/ui/AnimatedPressable";
+import { Avatar } from "@components/ui/Avatar";
+import { Card } from "@components/ui/Card";
+import { colors } from "@theme/colors";
+import { radius } from "@theme/radius";
+import { spacing } from "@theme/spacing";
+import { typography } from "@theme/typography";
+
+import { StudentPerformanceCard as StudentPerformanceCardData } from "../services/studentPerformance";
+
+interface StudentPerformanceCardProps {
+  card: StudentPerformanceCardData;
+  onPress: (studentUid: string) => void;
+}
+
+// Only 3 existing feedback tones exist in the design system (success/
+// danger/neutral, see theme/colors.ts) — no "warning/amber" token to
+// invent one for, so "needs_support"/"declining" both read as danger-toned
+// (both mean "this needs the teacher's attention now"), "strong" reads
+// success-toned, "normal" stays neutral/primary.
+function tierColor(tier: StudentPerformanceCardData["tier"]): string {
+  if (tier === "needs_support" || tier === "declining") return colors.danger;
+  if (tier === "strong") return colors.success;
+  return colors.primary;
+}
+
+export const StudentPerformanceCard = memo(function StudentPerformanceCard({
+  card,
+  onPress,
+}: StudentPerformanceCardProps) {
+  const { snapshot } = card;
+  const progressPercent = snapshot.successRatePercent ?? 0;
+  const barColor = tierColor(card.tier);
+
+  const successLabel =
+    snapshot.successRatePercent === null ? "Henüz veri yok" : `%${snapshot.successRatePercent} başarı`;
+
+  return (
+    <AnimatedPressable
+      onPress={() => onPress(card.studentUid)}
+      accessibilityRole="button"
+      accessibilityLabel={`${card.displayName}. ${successLabel}. ${snapshot.dueCount} bekleyen tekrar. ${snapshot.weakTopics.length} zayıf konu.`}
+    >
+      <Card style={styles.card}>
+        <View style={styles.headerRow}>
+          <Avatar photoURL={card.photoURL} displayName={card.displayName} size="md" />
+          <View style={styles.textColumn}>
+            <Text style={styles.name} numberOfLines={1}>
+              {card.displayName}
+            </Text>
+            <Text style={styles.statsLine} numberOfLines={1}>
+              {successLabel} · {snapshot.dueCount} tekrar · {snapshot.weakTopics.length} zayıf konu
+            </Text>
+          </View>
+        </View>
+
+        <View
+          style={styles.progressTrack}
+          accessible
+          accessibilityRole="progressbar"
+          accessibilityLabel={`${card.displayName} başarı oranı`}
+          accessibilityValue={{ min: 0, max: 100, now: progressPercent }}
+        >
+          <View style={[styles.progressFill, { width: `${progressPercent}%`, backgroundColor: barColor }]} />
+        </View>
+      </Card>
+    </AnimatedPressable>
+  );
+});
+
+const styles = StyleSheet.create({
+  card: {
+    gap: spacing.sm,
+  },
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+  },
+  textColumn: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  name: {
+    ...typography.bodyStrong,
+    color: colors.textPrimary,
+  },
+  statsLine: {
+    ...typography.caption,
+    color: colors.textSecondary,
+  },
+  progressTrack: {
+    height: 8,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceMuted,
+    overflow: "hidden",
+  },
+  progressFill: {
+    height: "100%",
+    borderRadius: radius.pill,
+  },
+});

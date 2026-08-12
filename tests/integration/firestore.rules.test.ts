@@ -3194,7 +3194,172 @@ describe("firestore.rules — study collections (Phase 16)", () => {
     await assertFails(deleteDoc(doc(owner.firestore(), "users", "student-1", "studyItems", "q1")));
   });
 
+  // ---- studyItems: Phase 27 teacher read (Class Performance dashboard) --
+  //
+  // Every case below hinges on `sourceClassId` — server-written by
+  // recordStudyOutcome, never client-settable (the write-path tests above
+  // already prove studyItems is fully client-write-denied). A teacher may
+  // read a class-sourced item ONLY if they own THAT class AND the item's
+  // student is a genuine 'student'-role member of it — never any other
+  // teacher, never a student's private/public items, never a different
+  // class's roster.
+
+  function teacherCtx(uid: string) {
+    return testEnv.authenticatedContext(uid, { role: "teacher", organizationId: "org-1" });
+  }
+
+  async function seedClassSourcedStudyItem(
+    studentUid: string,
+    questionId: string,
+    classId: string | null,
+  ) {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "users", studentUid, "studyItems", questionId), {
+        questionId,
+        status: "review",
+        lastOutcome: "struggled",
+        intervalDays: 1,
+        successfulReviews: 0,
+        attemptCount: 1,
+        nextReviewAt: 1760000000000,
+        source: classId ? "class" : "public",
+        sourceClassId: classId,
+        questionOwnerId: "teacher-1",
+        schemaVersion: 1,
+      });
+    });
+  }
+
+  async function seedTeacherClass(classId: string, teacherId: string) {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "classes", classId), {
+        name: "Test Class",
+        organizationId: "org-1",
+        teacherId,
+        joinCode: "ABC123",
+        createdAt: 1,
+        updatedAt: 1,
+        memberCount: 1,
+        status: "active",
+      });
+    });
+  }
+
+  async function seedClassMemberRow(classId: string, uid: string, role: "student" | "teacher") {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "classes", classId, "members", uid), {
+        uid,
+        role,
+        joinedAt: 1,
+        displayName: "Member",
+        photoURL: null,
+      });
+    });
+  }
+
+  it("lets the class's own teacher read a class-sourced study item belonging to a real student member", async () => {
+    await seedTeacherClass("class-1", "teacher-1");
+    await seedClassMemberRow("class-1", "student-1", "student");
+    await seedClassSourcedStudyItem("student-1", "q1", "class-1");
+
+    const teacher = teacherCtx("teacher-1");
+    await assertSucceeds(
+      getDoc(doc(teacher.firestore(), "users", "student-1", "studyItems", "q1")),
+    );
+  });
+
+  it("lets the class's own teacher LIST a student's items filtered to that class (the real dashboard query)", async () => {
+    await seedTeacherClass("class-1", "teacher-1");
+    await seedClassMemberRow("class-1", "student-1", "student");
+    await seedClassSourcedStudyItem("student-1", "q1", "class-1");
+    await seedClassSourcedStudyItem("student-1", "q2", "class-1");
+    // A different (non-class) item must never come back from this query.
+    await seedStudyItem("student-1", "q-private");
+
+    const teacher = teacherCtx("teacher-1");
+    const snap = await assertSucceeds(
+      getDocs(
+        query(
+          collection(teacher.firestore(), "users", "student-1", "studyItems"),
+          where("sourceClassId", "==", "class-1"),
+        ),
+      ),
+    );
+    expect(snap.docs.map((d) => d.id).sort()).toEqual(["q1", "q2"]);
+  });
+
+  it("denies a DIFFERENT teacher (not this class's own) reading a class-sourced study item", async () => {
+    await seedTeacherClass("class-1", "teacher-1");
+    await seedClassMemberRow("class-1", "student-1", "student");
+    await seedClassSourcedStudyItem("student-1", "q1", "class-1");
+
+    const otherTeacher = teacherCtx("teacher-2");
+    await assertFails(
+      getDoc(doc(otherTeacher.firestore(), "users", "student-1", "studyItems", "q1")),
+    );
+  });
+
+  it("denies the SAME teacher reading a study item sourced from a class they do NOT own", async () => {
+    await seedTeacherClass("class-1", "teacher-1");
+    await seedTeacherClass("class-2", "teacher-2");
+    await seedClassMemberRow("class-2", "student-1", "student");
+    // Item sourced from class-2, which teacher-1 does not teach.
+    await seedClassSourcedStudyItem("student-1", "q1", "class-2");
+
+    const teacher1 = teacherCtx("teacher-1");
+    await assertFails(getDoc(doc(teacher1.firestore(), "users", "student-1", "studyItems", "q1")));
+  });
+
+  it("denies the class's own teacher reading a student's PRIVATE (non-class-sourced) study item", async () => {
+    await seedTeacherClass("class-1", "teacher-1");
+    await seedClassMemberRow("class-1", "student-1", "student");
+    // sourceClassId: null — a private/public item, never class-sourced.
+    await seedStudyItem("student-1", "q-private");
+
+    const teacher = teacherCtx("teacher-1");
+    await assertFails(
+      getDoc(doc(teacher.firestore(), "users", "student-1", "studyItems", "q-private")),
+    );
+  });
+
+  it("denies a teacher reading a class-sourced item for a uid who isn't actually a member of that class", async () => {
+    await seedTeacherClass("class-1", "teacher-1");
+    // No membership row seeded for "student-1" at all — sourceClassId lies
+    // about the relationship (or membership was later removed).
+    await seedClassSourcedStudyItem("student-1", "q1", "class-1");
+
+    const teacher = teacherCtx("teacher-1");
+    await assertFails(getDoc(doc(teacher.firestore(), "users", "student-1", "studyItems", "q1")));
+  });
+
+  it("denies a teacher reading a class-sourced item for a uid whose membership row says 'teacher', not 'student'", async () => {
+    await seedTeacherClass("class-1", "teacher-1");
+    // co-teacher scenario / data anomaly: membership role is 'teacher'.
+    await seedClassMemberRow("class-1", "assistant-1", "teacher");
+    await seedClassSourcedStudyItem("assistant-1", "q1", "class-1");
+
+    const teacher = teacherCtx("teacher-1");
+    await assertFails(getDoc(doc(teacher.firestore(), "users", "assistant-1", "studyItems", "q1")));
+  });
+
+  it("denies a STUDENT (not a teacher at all) using the teacher branch to read a classmate's study item", async () => {
+    await seedTeacherClass("class-1", "teacher-1");
+    await seedClassMemberRow("class-1", "student-1", "student");
+    await seedClassMemberRow("class-1", "student-2", "student");
+    await seedClassSourcedStudyItem("student-1", "q1", "class-1");
+
+    const classmate = studentCtx("student-2");
+    await assertFails(getDoc(doc(classmate.firestore(), "users", "student-1", "studyItems", "q1")));
+  });
+
   // ---- studyMeta --------------------------------------------------------
+  //
+  // Deliberately UNCHANGED by Phase 27 — see studentPerformance.ts's own
+  // doc comment on why streak/dailyGoal stay owner-only: there is no field
+  // on this document (or a companion one) a rule could use to prove a
+  // specific teacher/class relationship without either a schema change or
+  // granting broader-than-classroom access. The dashboard never reads this
+  // collection.
 
   it("lets the owner read their own study summary", async () => {
     await seedSummary("student-1");

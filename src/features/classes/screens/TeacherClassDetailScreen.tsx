@@ -51,6 +51,12 @@ export function TeacherClassDetailScreen({ classId }: TeacherClassDetailScreenPr
     });
   }
 
+  function openPerformance() {
+    guardedNavigate("performance", () => {
+      router.push({ pathname: "/(teacher)/class/[classId]/performance", params: { classId } });
+    });
+  }
+
   if (isLoading || !classRoom) {
     return (
       <SafeAreaView style={styles.centered}>
@@ -113,6 +119,17 @@ export function TeacherClassDetailScreen({ classId }: TeacherClassDetailScreenPr
             >
               <Ionicons name="chatbubble-outline" size={18} color="white" />
               <Text style={styles.chatButtonText}>Sınıf Sohbeti</Text>
+            </Pressable>
+
+            {/* Phase 27 — read-only class performance dashboard. */}
+            <Pressable
+              onPress={openPerformance}
+              style={styles.performanceButton}
+              accessibilityRole="button"
+              accessibilityLabel="Sınıf performansını görüntüle"
+            >
+              <Ionicons name="stats-chart-outline" size={18} color="#3358D9" />
+              <Text style={styles.performanceButtonText}>Sınıf Performansı</Text>
             </Pressable>
 
             <Pressable
@@ -231,6 +248,21 @@ const styles = StyleSheet.create({
   },
   chatButtonText: {
     color: "white",
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  performanceButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    minHeight: 48,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: "#3358D9",
+  },
+  performanceButtonText: {
+    color: "#3358D9",
     fontSize: 15,
     fontWeight: "600",
   },

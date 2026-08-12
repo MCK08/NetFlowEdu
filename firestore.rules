@@ -678,12 +678,35 @@ service cloud.firestore {
     // can never fabricate progress, backdate a review, forge a mastery
     // count, or bring its own nextReviewAt forward to skip a wait.
     //
-    // Read is owner-only. These documents deliberately contain NO question
-    // content (no image, no description) — only scheduling state plus the
-    // questionId — so reading one never leaks private/class material. The
-    // real question is re-fetched and re-authorized on every queue render.
+    // Read is owner-only, PLUS (Phase 27) the teacher of the class this
+    // ONE item came from — never a blanket "any teacher in the org" or
+    // "the student's whole study history" grant. `sourceClassId` is
+    // written by recordStudyOutcome itself (see functions/src/study/
+    // recordStudyOutcome.ts), server-authoritative and non-null only for
+    // an item studied from a real class question — so this can never
+    // expose a student's private/public study activity to a teacher, only
+    // the activity that happened inside that teacher's own classroom.
+    //
+    // Provability for the LIST query the dashboard actually runs
+    // (`where('sourceClassId','==',classId)`, see
+    // teacherClassPerformance.ts's getClassSourcedStudyItems): the query's
+    // own equality filter pins `sourceClassId`, so Firestore can resolve
+    // `resource.data.sourceClassId` for every candidate document without
+    // touching any other unconstrained field — the exact same
+    // "pin the field the query already pins" reasoning
+    // getClassQuestionsPage's own rule comment documents for
+    // questions/{questionId}.
+    //
+    // These documents still contain NO question content (no image, no
+    // description) — only scheduling state plus the questionId — so this
+    // never leaks private/class material beyond what the teacher already
+    // has legitimate access to as that class's own teacher.
     match /users/{uid}/studyItems/{questionId} {
-      allow read: if isOwner(uid);
+      allow read: if isOwner(uid)
+                  || (isTeacher()
+                      && resource.data.sourceClassId is string
+                      && classData(resource.data.sourceClassId).teacherId == uid()
+                      && classMemberData(resource.data.sourceClassId, uid).role == 'student');
       allow write: if false;
     }
 
