@@ -106,6 +106,14 @@ function FeedCardComponent({ question, height }: FeedCardProps) {
         />
 
         <FeedCaption description={question.description} />
+
+        {/* Phase 26 §5 — an explicit primary action, not just "tap
+            anywhere". Same destination as the card's own onPress
+            (openDetail) — this is a visible label for what tapping the
+            card already does, not a second navigation path. */}
+        <View style={styles.solveRow}>
+          <FeedPill label="Çöz" icon="arrow-forward-circle" tone="accent" />
+        </View>
       </View>
     </Pressable>
   );
@@ -136,5 +144,9 @@ const styles = StyleSheet.create({
     ...typography.label,
     color: colors.textInverse,
     opacity: 0.7,
+  },
+  solveRow: {
+    marginTop: spacing.sm,
+    flexDirection: "row",
   },
 });

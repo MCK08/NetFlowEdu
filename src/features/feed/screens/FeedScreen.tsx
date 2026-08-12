@@ -1,9 +1,12 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
+import { useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -17,6 +20,7 @@ import { EmptyState as SharedEmptyState } from "@components/ui/EmptyState";
 import { LoadingSkeleton } from "@components/ui/LoadingSkeleton";
 import { PrimaryButton } from "@components/ui/PrimaryButton";
 import { useAuth } from "@features/authentication";
+import { calculateActiveIndex } from "@features/classes/services/classFeedPagination";
 import { FeedItem } from "@features/classes/services/feedItems";
 import { QuestionMetadataModal } from "@features/questions/components/QuestionMetadataModal";
 import { RatingCard } from "@features/study/components/RatingCard";
@@ -31,6 +35,7 @@ import { typography } from "@theme/typography";
 import { EmptyState } from "../components/EmptyState";
 import { FeedCard } from "../components/FeedCard";
 import { FeedFilterSheet } from "../components/FeedFilterSheet";
+import { useFeedPersonalizationSignals } from "../hooks/useFeedPersonalizationSignals";
 import { useSocialFeed } from "../hooks/useSocialFeed";
 import {
   activeFeedFilterCount,
@@ -40,6 +45,7 @@ import {
   filterQuestions,
   isFeedFilterActive,
 } from "../services/feedFilters";
+import { buildQuestionFeedRanking } from "../services/feedRanking";
 
 function keyExtractor(item: FeedItem) {
   return item.key;
@@ -103,6 +109,31 @@ export function FeedScreen() {
   const filteredQuestions = useMemo(() => filterQuestions(questions, filter), [questions, filter]);
   const filterKey = feedFilterKey(filter);
 
+  // Phase 26 — personalized ordering. Reads the SAME data (studyItems +
+  // question metadata cache) the Study Hub already reads; zero new
+  // Firestore queries. Refreshed on focus (see useFocusEffect below) so an
+  // outcome recorded on a DIFFERENT screen (QuestionDetail, the review
+  // queue) is reflected the next time the student lands back on this tab —
+  // never live mid-scroll, which would reorder cards under the student's
+  // finger.
+  const { signalsByQuestionId, refresh: refreshSignals } = useFeedPersonalizationSignals(uid);
+
+  // Session-local only, never persisted — a question the student has
+  // already scrolled past this session is deprioritized (not hidden) in
+  // future ranking passes, so it doesn't immediately resurface at the top
+  // after a pull-to-refresh. Populated by handleMomentumScrollEnd below.
+  const recentlyShownIdsRef = useRef<Set<string>>(new Set());
+
+  const rankedQuestions = useMemo(
+    () =>
+      buildQuestionFeedRanking({
+        questions: filteredQuestions,
+        signalsByQuestionId,
+        recentlyShownIds: recentlyShownIdsRef.current,
+      }),
+    [filteredQuestions, signalsByQuestionId],
+  );
+
   // A narrow filter can leave very few (or zero) already-loaded questions
   // matching even though the server has more pages — keep pulling pages in
   // automatically while that's true, exactly the same loadMore() pagination
@@ -113,6 +144,18 @@ export function FeedScreen() {
     if (filteredQuestions.length >= THIN_RESULT_THRESHOLD) return;
     loadMore();
   }, [filter, filteredQuestions.length, hasMore, isLoadingMore, loadMore]);
+
+  // Phase 26 §10 — Study → Feed: re-derive personalization signals (not the
+  // feed's own question list/pagination/scroll position) whenever this tab
+  // regains focus, same pattern StudyScreen already uses for its own
+  // refreshInsights(). An outcome recorded on QuestionDetail or the review
+  // queue is picked up here without resetting anything about the feed
+  // itself.
+  useFocusEffect(
+    useCallback(() => {
+      refreshSignals();
+    }, [refreshSignals]),
+  );
 
   const listRef = useRef<FlatList<FeedItem>>(null);
   const scrollToIndex = useCallback(
@@ -128,13 +171,29 @@ export function FeedScreen() {
   // ClassFeedScreen — one implementation, so the two surfaces cannot
   // silently drift. `resetKey: filterKey` (Phase 21) starts a fresh session
   // whenever the active filter changes, so a reshow pair from before the
-  // filter switch can never leak into the newly filtered feed.
+  // filter switch can never leak into the newly filtered feed. Phase 26:
+  // `questions: rankedQuestions` — reconcileFeedItems already handles an
+  // arbitrary reorder of its `questions` input correctly (Phase 20), so
+  // personalization is "just" another kind of change to that array.
   const { items, handleOutcomeRecorded } = useInterleavedStudyFeed({
-    questions: filteredQuestions,
+    questions: rankedQuestions,
     isStudent,
     scrollToIndex,
     resetKey: filterKey,
   });
+
+  // Phase 26 §8 — marks the question the student has actually scrolled to
+  // as "recently shown" for future ranking passes. Bookkeeping only (never
+  // gates rendering or navigation), same posture as ClassFeedScreen's own
+  // identical momentum handler.
+  const handleMomentumScrollEnd = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const index = calculateActiveIndex(event.nativeEvent.contentOffset.y, height, items.length);
+      const questionId = items[index]?.question.id;
+      if (questionId) recentlyShownIdsRef.current.add(questionId);
+    },
+    [height, items],
+  );
 
   const renderItem = useCallback(
     ({ item, index }: { item: FeedItem; index: number }) => {
@@ -247,6 +306,7 @@ export function FeedScreen() {
           )
         }
         refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={refresh} />}
+        onMomentumScrollEnd={handleMomentumScrollEnd}
         onEndReachedThreshold={0.5}
         onEndReached={handleEndReached}
         // Same reasoning as ClassFeedScreen's identical paged-list tuning:
