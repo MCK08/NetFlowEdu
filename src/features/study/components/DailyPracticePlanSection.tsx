@@ -15,7 +15,7 @@ import { goalProgressLabel, planReasonLabel } from "../services/studyPresentatio
 interface DailyPracticePlanSectionProps {
   plan: DailyPracticePlan;
   onStartDue: () => void;
-  onOpenQuestion: (questionId: string) => void;
+  onStartAdaptive: () => void;
 }
 
 interface PlanRowProps {
@@ -59,7 +59,7 @@ function questionWord(count: number): string {
 export const DailyPracticePlanSection = memo(function DailyPracticePlanSection({
   plan,
   onStartDue,
-  onOpenQuestion,
+  onStartAdaptive,
 }: DailyPracticePlanSectionProps) {
   if (plan.dueCount === 0 && plan.planItems.length === 0) return null;
 
@@ -78,9 +78,14 @@ export const DailyPracticePlanSection = memo(function DailyPracticePlanSection({
     : questionWord(continueItems.length);
 
   // Due first (server-authoritative, always fully answerable via the
-  // existing review session); otherwise the plan's own top recommendation.
-  const ctaTarget = plan.dueCount > 0 ? null : (plan.planItems[0]?.questionId ?? null);
-  const handleStart = plan.dueCount > 0 ? onStartDue : ctaTarget ? () => onOpenQuestion(ctaTarget) : undefined;
+  // existing mandatory review session); otherwise, if the plan still has
+  // recommendations (weak topics / goal fill) with nothing mandatory due,
+  // starts the adaptive StudySession over the plan's own ranked items —
+  // never a single question's detail screen (that used to be the fallback
+  // here and is exactly what regressed "Çalışmaya Başla" into opening
+  // AnswerScreen directly instead of a swipeable session).
+  const handleStart =
+    plan.dueCount > 0 ? onStartDue : plan.planItems.length > 0 ? onStartAdaptive : undefined;
 
   return (
     <View style={styles.container}>

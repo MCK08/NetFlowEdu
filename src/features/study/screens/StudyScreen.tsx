@@ -75,6 +75,19 @@ export function StudyScreen() {
     );
   }, [guardedNavigate]);
 
+  // "Çalışmaya Başla" when there is nothing mandatory due (dueCount === 0)
+  // but the daily plan still has recommendations (weak topics / goal fill).
+  // This must open the same vertical-swipe StudySessionScreen the due path
+  // uses — mode="adaptive" — not a single question's detail screen. Kept
+  // distinct from handleOpen, which stays reserved for "open exactly one
+  // named question" (a due-queue card, a weak-topic card): conflating the
+  // two here is exactly the bug this fixes.
+  const startAdaptiveSession = useCallback(() => {
+    guardedNavigate("adaptive-session", () =>
+      router.push(ROUTES.studentAdaptiveSession as never),
+    );
+  }, [guardedNavigate]);
+
   const handleOpen = useCallback(
     (questionId: string) => {
       guardedNavigate(questionId, () =>
@@ -166,7 +179,11 @@ export function StudyScreen() {
             {/* Phase 25 §10 — one deterministic sentence, real trend data,
                 no invented text. See learningMoment.ts. */}
             {moment ? <Text style={styles.moment}>{moment}</Text> : null}
-            <DailyPracticePlanSection plan={plan} onStartDue={startSession} onOpenQuestion={handleOpen} />
+            <DailyPracticePlanSection
+              plan={plan}
+              onStartDue={startSession}
+              onStartAdaptive={startAdaptiveSession}
+            />
             <StudyProgressCard summary={summary} dueCount={insights.dueCount} />
             <DailyGoalEditor currentGoal={summary.dailyGoal} onSaved={handleRefresh} />
             {error ? (
