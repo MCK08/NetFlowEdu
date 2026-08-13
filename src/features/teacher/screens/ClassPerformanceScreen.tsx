@@ -11,6 +11,8 @@ import { LoadingSkeleton } from "@components/ui/LoadingSkeleton";
 import { PrimaryButton } from "@components/ui/PrimaryButton";
 import { SectionHeader } from "@components/ui/SectionHeader";
 import { useAuth } from "@features/authentication";
+import { useClassAssignments } from "@features/assignments/hooks/useClassAssignments";
+import { resolveAssignmentDisplayStatus } from "@features/assignments/services/assignmentStatus";
 import { ImageSourcePicker } from "@features/classes/components/ImageSourcePicker";
 import { QuestionMetadataModal } from "@features/questions/components/QuestionMetadataModal";
 import { LearningTrend } from "@features/study/services/learningTrend";
@@ -147,6 +149,26 @@ export function ClassPerformanceScreen({ classId }: ClassPerformanceScreenProps)
   function openComposerForTopic(subject: string, topic: string) {
     setComposerTopicContext({ subject, topic });
     composer.openComposer();
+  }
+
+  // Zero new reads to LIST assignments here beyond useClassAssignments'
+  // own single classId-equality query — same "no composite index" query
+  // shape as everything else this screen already reads.
+  const { assignments } = useClassAssignments(classId);
+  const recentAssignments = useMemo(() => assignments.slice(0, 3), [assignments]);
+
+  function openCreateAssignment(subject?: string, topic?: string) {
+    router.push({
+      pathname: "/(teacher)/class/[classId]/assignment/create",
+      params: { classId, subject, topic },
+    });
+  }
+
+  function openAssignmentDetail(assignmentId: string) {
+    router.push({
+      pathname: "/(teacher)/class/[classId]/assignment/[assignmentId]",
+      params: { classId, assignmentId },
+    });
   }
 
   const teacherActions = useMemo(
@@ -347,15 +369,26 @@ export function ClassPerformanceScreen({ classId }: ClassPerformanceScreenProps)
                               zorlandı{hotspot.dueStudents > 0 ? ` · ${hotspot.dueStudents} öğrenci tekrar bekliyor` : ""}
                             </Text>
                           </Pressable>
-                          <Pressable
-                            onPress={() => openComposerForTopic(hotspot.subject, hotspot.topic)}
-                            style={styles.hotspotCreateButton}
-                            accessibilityRole="button"
-                            accessibilityLabel={`${hotspot.topic} konusundan soru oluştur`}
-                          >
-                            <Ionicons name="add-circle-outline" size={16} color={colors.primary} />
-                            <Text style={styles.hotspotCreateButtonText}>Soru Oluştur</Text>
-                          </Pressable>
+                          <View style={styles.hotspotActionRow}>
+                            <Pressable
+                              onPress={() => openComposerForTopic(hotspot.subject, hotspot.topic)}
+                              style={styles.hotspotCreateButton}
+                              accessibilityRole="button"
+                              accessibilityLabel={`${hotspot.topic} konusundan soru oluştur`}
+                            >
+                              <Ionicons name="add-circle-outline" size={16} color={colors.primary} />
+                              <Text style={styles.hotspotCreateButtonText}>Soru Oluştur</Text>
+                            </Pressable>
+                            <Pressable
+                              onPress={() => openCreateAssignment(hotspot.subject, hotspot.topic)}
+                              style={styles.hotspotCreateButton}
+                              accessibilityRole="button"
+                              accessibilityLabel={`${hotspot.topic} konusunda ödev oluştur`}
+                            >
+                              <Ionicons name="clipboard-outline" size={16} color={colors.primary} />
+                              <Text style={styles.hotspotCreateButtonText}>Ödev Oluştur</Text>
+                            </Pressable>
+                          </View>
                           {expanded ? (
                             <View style={styles.hotspotStudents}>
                               {affectedStudentsForHotspot(hotspot).map((card) => (
@@ -396,6 +429,48 @@ export function ClassPerformanceScreen({ classId }: ClassPerformanceScreenProps)
                   </View>
                 </View>
               ) : null}
+
+              {/* ASSIGNMENTS (§11) */}
+              <View style={styles.section}>
+                <SectionHeader
+                  title="Ödevler"
+                  action={{ label: "+ Yeni", onPress: () => openCreateAssignment() }}
+                />
+                {recentAssignments.length === 0 ? (
+                  <Text style={styles.priorityReason}>Henüz ödev oluşturulmadı.</Text>
+                ) : (
+                  <View style={styles.priorityList}>
+                    {recentAssignments.map((assignmentItem) => {
+                      const displayStatus = resolveAssignmentDisplayStatus(
+                        assignmentItem.status,
+                        assignmentItem.dueAt,
+                        Date.now(),
+                      );
+                      return (
+                        <Pressable
+                          key={assignmentItem.id}
+                          onPress={() => openAssignmentDetail(assignmentItem.id)}
+                          style={styles.priorityRow}
+                          accessibilityRole="button"
+                          accessibilityLabel={`${assignmentItem.title}. ${displayStatus}`}
+                        >
+                          <Text style={styles.priorityName}>{assignmentItem.title}</Text>
+                          <Text style={styles.priorityReason}>
+                            {assignmentItem.subject} · {assignmentItem.topic} · {assignmentItem.targetCount} soru ·{" "}
+                            {displayStatus === "draft"
+                              ? "Taslak"
+                              : displayStatus === "archived"
+                                ? "Arşivlendi"
+                                : displayStatus === "past_due"
+                                  ? "Süresi geçti"
+                                  : "Aktif"}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                )}
+              </View>
 
               {/* FILTERS */}
               <View style={styles.filterRow}>
@@ -577,12 +652,16 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: colors.primary,
   },
+  hotspotActionRow: {
+    flexDirection: "row",
+    gap: spacing.md,
+    marginTop: spacing.xxs,
+  },
   hotspotCreateButton: {
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.xxs,
     alignSelf: "flex-start",
-    marginTop: spacing.xxs,
   },
   hotspotCreateButtonText: {
     ...typography.caption,

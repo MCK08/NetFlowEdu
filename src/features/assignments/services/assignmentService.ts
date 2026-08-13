@@ -1,0 +1,159 @@
+import {
+  addDoc,
+  collection,
+  doc,
+  DocumentData,
+  getDoc,
+  getDocs,
+  query,
+  runTransaction,
+  serverTimestamp,
+  Timestamp,
+  updateDoc,
+  where,
+} from "firebase/firestore";
+
+import { db } from "@services/firebase/config";
+
+import { Assignment, AssignmentStatus, AssignmentSubmission } from "../domain/assignmentTypes";
+import { applyAssignmentCompletion } from "./assignmentProgress";
+
+function toMillis(value: unknown): number {
+  return value instanceof Timestamp ? value.toMillis() : 0;
+}
+
+function toAssignment(id: string, data: DocumentData): Assignment {
+  return {
+    id,
+    classId: data.classId ?? "",
+    organizationId: data.organizationId ?? null,
+    teacherId: data.teacherId ?? "",
+    title: typeof data.title === "string" ? data.title : "",
+    description: typeof data.description === "string" ? data.description : null,
+    subject: typeof data.subject === "string" ? data.subject : "",
+    topic: typeof data.topic === "string" ? data.topic : "",
+    gradeLevel: typeof data.gradeLevel === "string" ? data.gradeLevel : "",
+    targetStudentIds: Array.isArray(data.targetStudentIds) ? data.targetStudentIds : [],
+    questionIds: Array.isArray(data.questionIds) ? data.questionIds : [],
+    targetCount: typeof data.targetCount === "number" ? data.targetCount : 0,
+    dueAt: typeof data.dueAt === "number" ? data.dueAt : null,
+    status: data.status === "published" || data.status === "archived" ? data.status : "draft",
+    createdAt: toMillis(data.createdAt),
+    updatedAt: toMillis(data.updatedAt),
+  };
+}
+
+function toSubmission(data: DocumentData): AssignmentSubmission {
+  return {
+    studentId: data.studentId ?? "",
+    completedQuestionIds: Array.isArray(data.completedQuestionIds) ? data.completedQuestionIds : [],
+    completedCount: typeof data.completedCount === "number" ? data.completedCount : 0,
+    startedAt: typeof data.startedAt === "number" ? data.startedAt : null,
+    lastCompletedAt: typeof data.lastCompletedAt === "number" ? data.lastCompletedAt : null,
+    completedAt: typeof data.completedAt === "number" ? data.completedAt : null,
+  };
+}
+
+export interface CreateAssignmentInput {
+  classId: string;
+  organizationId: string | null;
+  teacherId: string;
+  title: string;
+  description: string | null;
+  subject: string;
+  topic: string;
+  gradeLevel: string;
+  targetStudentIds: readonly string[];
+  questionIds: readonly string[];
+  dueAt: number | null;
+  status: AssignmentStatus;
+}
+
+export async function createAssignment(input: CreateAssignmentInput): Promise<string> {
+  const ref = await addDoc(collection(db, "assignments"), {
+    classId: input.classId,
+    organizationId: input.organizationId,
+    teacherId: input.teacherId,
+    title: input.title,
+    description: input.description,
+    subject: input.subject,
+    topic: input.topic,
+    gradeLevel: input.gradeLevel,
+    targetStudentIds: [...input.targetStudentIds],
+    questionIds: [...input.questionIds],
+    targetCount: input.questionIds.length,
+    dueAt: input.dueAt,
+    status: input.status,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+  return ref.id;
+}
+
+// Single-field equality — same provable-query shape as
+// getClassQuestionsPage's own classId filter, no composite index needed
+// (no orderBy paired with it; callers sort client-side).
+export async function getClassAssignments(classId: string): Promise<Assignment[]> {
+  const snapshot = await getDocs(query(collection(db, "assignments"), where("classId", "==", classId)));
+  return snapshot.docs.map((docSnap) => toAssignment(docSnap.id, docSnap.data()));
+}
+
+// array-contains alone (no orderBy paired with it) — same "no composite
+// index" reasoning as getClassAssignments above. Spans every class the
+// student is in, matching how their Daily Plan already aggregates across
+// classes via studyItems.
+export async function getStudentAssignments(uid: string): Promise<Assignment[]> {
+  const snapshot = await getDocs(
+    query(collection(db, "assignments"), where("targetStudentIds", "array-contains", uid)),
+  );
+  return snapshot.docs.map((docSnap) => toAssignment(docSnap.id, docSnap.data()));
+}
+
+export async function getAssignmentById(assignmentId: string): Promise<Assignment | null> {
+  const snap = await getDoc(doc(db, "assignments", assignmentId));
+  if (!snap.exists()) return null;
+  return toAssignment(snap.id, snap.data());
+}
+
+// A plain collection read scoped entirely by the fixed assignmentId path
+// segment (not a query filter) — same shape as classes/{classId}/members,
+// already proven safe for a teacher-only list read.
+export async function getAssignmentSubmissions(assignmentId: string): Promise<AssignmentSubmission[]> {
+  const snapshot = await getDocs(collection(db, "assignments", assignmentId, "submissions"));
+  return snapshot.docs.map((docSnap) => toSubmission(docSnap.data()));
+}
+
+export async function getMySubmission(
+  assignmentId: string,
+  uid: string,
+): Promise<AssignmentSubmission | null> {
+  const snap = await getDoc(doc(db, "assignments", assignmentId, "submissions", uid));
+  if (!snap.exists()) return null;
+  return toSubmission(snap.data());
+}
+
+// Idempotent — mirrors applyAssignmentCompletion (pure) exactly, inside a
+// transaction rather than a plain arrayUnion update so the "set startedAt/
+// completedAt only the first time" semantics stay correct even under a
+// rapid double-tap or a retried submit. Never touches recordStudyOutcome's
+// own data — this is a completely separate document/write.
+export async function recordAssignmentProgress(
+  assignmentId: string,
+  studentId: string,
+  questionId: string,
+  targetCount: number,
+): Promise<AssignmentSubmission> {
+  const ref = doc(db, "assignments", assignmentId, "submissions", studentId);
+  return runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    const previous = snap.exists() ? toSubmission(snap.data()) : null;
+    const next = applyAssignmentCompletion(previous, questionId, targetCount, Date.now());
+    const withId: AssignmentSubmission = { ...next, studentId };
+    tx.set(ref, withId);
+    return withId;
+  });
+}
+
+export async function updateAssignmentStatus(assignmentId: string, status: AssignmentStatus): Promise<void> {
+  await updateDoc(doc(db, "assignments", assignmentId), { status, updatedAt: serverTimestamp() });
+}

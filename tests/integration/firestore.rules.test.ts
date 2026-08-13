@@ -3790,3 +3790,391 @@ describe("firestore.rules — users/{uid}/moderationMeta/{docId}", () => {
     );
   });
 });
+
+describe("firestore.rules — assignments/{assignmentId} and submissions (Phase 29)", () => {
+  let testEnv: RulesTestEnvironment;
+
+  beforeAll(async () => {
+    testEnv = await initializeTestEnvironment({
+      projectId: PROJECT_ID,
+      firestore: { rules: fs.readFileSync("firestore.rules", "utf8"), host: "127.0.0.1", port: 8080 },
+    });
+  });
+
+  afterAll(async () => testEnv.cleanup());
+  afterEach(async () => testEnv.clearFirestore());
+
+  function teacherCtx(uid: string, organizationId: string | null = "org-1") {
+    return testEnv.authenticatedContext(uid, { role: "teacher", organizationId });
+  }
+
+  function studentCtx(uid: string) {
+    return testEnv.authenticatedContext(uid, { role: "student", organizationId: null });
+  }
+
+  async function seedClass(classId: string, teacherId: string, organizationId = "org-1") {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "classes", classId), {
+        name: "Test Class",
+        organizationId,
+        teacherId,
+        joinCode: "ABC123",
+        createdAt: 1,
+        updatedAt: 1,
+        memberCount: 1,
+        status: "active",
+      });
+    });
+  }
+
+  function assignmentDoc(overrides: Partial<Record<string, unknown>> = {}) {
+    return {
+      classId: "class-1",
+      organizationId: "org-1",
+      teacherId: "teacher-1",
+      title: "Denklemler Tekrarı",
+      description: null,
+      subject: "Matematik",
+      topic: "Denklemler",
+      gradeLevel: "9",
+      targetStudentIds: ["student-1", "student-2"],
+      questionIds: ["q1", "q2", "q3"],
+      targetCount: 3,
+      dueAt: null,
+      status: "published",
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      ...overrides,
+    };
+  }
+
+  async function seedAssignment(assignmentId: string, overrides: Partial<Record<string, unknown>> = {}) {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "assignments", assignmentId), assignmentDoc(overrides));
+    });
+  }
+
+  // ---- create -------------------------------------------------------------
+
+  it("lets a teacher create an assignment for their own class", async () => {
+    await seedClass("class-1", "teacher-1");
+    const teacher = teacherCtx("teacher-1");
+    await assertSucceeds(addDoc(collection(teacher.firestore(), "assignments"), assignmentDoc()));
+  });
+
+  it("denies a teacher creating an assignment for a class they do not own", async () => {
+    await seedClass("class-1", "teacher-2");
+    const teacher = teacherCtx("teacher-1");
+    await assertFails(addDoc(collection(teacher.firestore(), "assignments"), assignmentDoc()));
+  });
+
+  it("denies a student creating an assignment", async () => {
+    await seedClass("class-1", "teacher-1");
+    const student = studentCtx("student-1");
+    await assertFails(addDoc(collection(student.firestore(), "assignments"), assignmentDoc()));
+  });
+
+  it("denies creating with a teacherId that doesn't match the caller", async () => {
+    await seedClass("class-1", "teacher-1");
+    const teacher = teacherCtx("teacher-1");
+    await assertFails(
+      addDoc(collection(teacher.firestore(), "assignments"), assignmentDoc({ teacherId: "teacher-1-fake" })),
+    );
+  });
+
+  it("denies more questionIds than the cap", async () => {
+    await seedClass("class-1", "teacher-1");
+    const teacher = teacherCtx("teacher-1");
+    const tooMany = Array.from({ length: 31 }, (_, i) => `q${i}`);
+    await assertFails(
+      addDoc(
+        collection(teacher.firestore(), "assignments"),
+        assignmentDoc({ questionIds: tooMany, targetCount: tooMany.length }),
+      ),
+    );
+  });
+
+  it("denies targetCount that doesn't match questionIds.length", async () => {
+    await seedClass("class-1", "teacher-1");
+    const teacher = teacherCtx("teacher-1");
+    await assertFails(
+      addDoc(collection(teacher.firestore(), "assignments"), assignmentDoc({ targetCount: 999 })),
+    );
+  });
+
+  it("denies an empty targetStudentIds list", async () => {
+    await seedClass("class-1", "teacher-1");
+    const teacher = teacherCtx("teacher-1");
+    await assertFails(
+      addDoc(collection(teacher.firestore(), "assignments"), assignmentDoc({ targetStudentIds: [] })),
+    );
+  });
+
+  // ---- read -----------------------------------------------------------------
+
+  it("lets the owning teacher read their own class's assignment", async () => {
+    await seedClass("class-1", "teacher-1");
+    await seedAssignment("a1");
+    const teacher = teacherCtx("teacher-1");
+    await assertSucceeds(getDoc(doc(teacher.firestore(), "assignments", "a1")));
+  });
+
+  it("denies a DIFFERENT teacher reading another teacher's assignment (cross-class denial)", async () => {
+    await seedClass("class-1", "teacher-1");
+    await seedAssignment("a1");
+    const otherTeacher = teacherCtx("teacher-2");
+    await assertFails(getDoc(doc(otherTeacher.firestore(), "assignments", "a1")));
+  });
+
+  it("lets a TARGETED student read the assignment", async () => {
+    await seedClass("class-1", "teacher-1");
+    await seedAssignment("a1");
+    const student = studentCtx("student-1");
+    await assertSucceeds(getDoc(doc(student.firestore(), "assignments", "a1")));
+  });
+
+  it("denies a student who is NOT targeted from reading the assignment", async () => {
+    await seedClass("class-1", "teacher-1");
+    await seedAssignment("a1");
+    const outsider = studentCtx("student-9");
+    await assertFails(getDoc(doc(outsider.firestore(), "assignments", "a1")));
+  });
+
+  it("lets the owning teacher LIST their own class's assignments (the real query shape)", async () => {
+    await seedClass("class-1", "teacher-1");
+    await seedAssignment("a1");
+    await seedAssignment("a2");
+    const teacher = teacherCtx("teacher-1");
+    const snap = await assertSucceeds(
+      getDocs(query(collection(teacher.firestore(), "assignments"), where("classId", "==", "class-1"))),
+    );
+    expect(snap.docs).toHaveLength(2);
+  });
+
+  it("lets a targeted student LIST their own assignments (the real array-contains query shape)", async () => {
+    await seedClass("class-1", "teacher-1");
+    await seedAssignment("a1");
+    await seedAssignment("a2", { targetStudentIds: ["student-9"] }); // not targeting student-1
+    const student = studentCtx("student-1");
+    const snap = await assertSucceeds(
+      getDocs(
+        query(collection(student.firestore(), "assignments"), where("targetStudentIds", "array-contains", "student-1")),
+      ),
+    );
+    expect(snap.docs.map((d) => d.id)).toEqual(["a1"]);
+  });
+
+  // ---- update / delete --------------------------------------------------
+
+  it("lets the owning teacher archive their own assignment", async () => {
+    await seedClass("class-1", "teacher-1");
+    await seedAssignment("a1");
+    const teacher = teacherCtx("teacher-1");
+    await assertSucceeds(
+      updateDoc(doc(teacher.firestore(), "assignments", "a1"), { status: "archived" }),
+    );
+  });
+
+  it("denies a different teacher updating another teacher's assignment", async () => {
+    await seedClass("class-1", "teacher-1");
+    await seedAssignment("a1");
+    const otherTeacher = teacherCtx("teacher-2");
+    await assertFails(
+      updateDoc(doc(otherTeacher.firestore(), "assignments", "a1"), { status: "archived" }),
+    );
+  });
+
+  it("denies changing questionIds on update (the snapshot must stay frozen)", async () => {
+    await seedClass("class-1", "teacher-1");
+    await seedAssignment("a1");
+    const teacher = teacherCtx("teacher-1");
+    await assertFails(
+      updateDoc(doc(teacher.firestore(), "assignments", "a1"), { questionIds: ["q-new"] }),
+    );
+  });
+
+  it("denies a student updating an assignment", async () => {
+    await seedClass("class-1", "teacher-1");
+    await seedAssignment("a1");
+    const student = studentCtx("student-1");
+    await assertFails(updateDoc(doc(student.firestore(), "assignments", "a1"), { status: "archived" }));
+  });
+
+  it("lets the owning teacher delete their own assignment", async () => {
+    await seedClass("class-1", "teacher-1");
+    await seedAssignment("a1");
+    const teacher = teacherCtx("teacher-1");
+    await assertSucceeds(deleteDoc(doc(teacher.firestore(), "assignments", "a1")));
+  });
+
+  it("denies a different teacher deleting another teacher's assignment", async () => {
+    await seedClass("class-1", "teacher-1");
+    await seedAssignment("a1");
+    const otherTeacher = teacherCtx("teacher-2");
+    await assertFails(deleteDoc(doc(otherTeacher.firestore(), "assignments", "a1")));
+  });
+
+  // ---- submissions --------------------------------------------------------
+
+  function submissionDoc(studentId: string, overrides: Partial<Record<string, unknown>> = {}) {
+    return {
+      studentId,
+      completedQuestionIds: ["q1"],
+      completedCount: 1,
+      startedAt: 1,
+      lastCompletedAt: 1,
+      completedAt: null,
+      ...overrides,
+    };
+  }
+
+  it("lets a targeted student write their OWN submission", async () => {
+    await seedClass("class-1", "teacher-1");
+    await seedAssignment("a1");
+    const student = studentCtx("student-1");
+    await assertSucceeds(
+      setDoc(
+        doc(student.firestore(), "assignments", "a1", "submissions", "student-1"),
+        submissionDoc("student-1"),
+      ),
+    );
+  });
+
+  it("denies a student writing to ANOTHER student's submission (cross-student denial)", async () => {
+    await seedClass("class-1", "teacher-1");
+    await seedAssignment("a1");
+    const attacker = studentCtx("student-2");
+    await assertFails(
+      setDoc(
+        doc(attacker.firestore(), "assignments", "a1", "submissions", "student-1"),
+        submissionDoc("student-1"),
+      ),
+    );
+  });
+
+  it("denies a student writing a submission with their studentId field spoofed to someone else", async () => {
+    await seedClass("class-1", "teacher-1");
+    await seedAssignment("a1");
+    const student = studentCtx("student-1");
+    await assertFails(
+      setDoc(
+        doc(student.firestore(), "assignments", "a1", "submissions", "student-1"),
+        submissionDoc("student-2"),
+      ),
+    );
+  });
+
+  it("denies a non-targeted student writing a submission for an assignment they're not part of", async () => {
+    await seedClass("class-1", "teacher-1");
+    await seedAssignment("a1"); // targets student-1, student-2 only
+    const outsider = studentCtx("student-9");
+    await assertFails(
+      setDoc(
+        doc(outsider.firestore(), "assignments", "a1", "submissions", "student-9"),
+        submissionDoc("student-9"),
+      ),
+    );
+  });
+
+  it("denies claiming a completed questionId that isn't actually in the assignment", async () => {
+    await seedClass("class-1", "teacher-1");
+    await seedAssignment("a1"); // questionIds: q1, q2, q3
+    const student = studentCtx("student-1");
+    await assertFails(
+      setDoc(
+        doc(student.firestore(), "assignments", "a1", "submissions", "student-1"),
+        submissionDoc("student-1", { completedQuestionIds: ["q-not-in-assignment"] }),
+      ),
+    );
+  });
+
+  it("denies a completedCount that doesn't match completedQuestionIds.length", async () => {
+    await seedClass("class-1", "teacher-1");
+    await seedAssignment("a1");
+    const student = studentCtx("student-1");
+    await assertFails(
+      setDoc(
+        doc(student.firestore(), "assignments", "a1", "submissions", "student-1"),
+        submissionDoc("student-1", { completedCount: 999 }),
+      ),
+    );
+  });
+
+  it("lets the owning teacher read a student's submission", async () => {
+    await seedClass("class-1", "teacher-1");
+    await seedAssignment("a1");
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(
+        doc(context.firestore(), "assignments", "a1", "submissions", "student-1"),
+        submissionDoc("student-1"),
+      );
+    });
+    const teacher = teacherCtx("teacher-1");
+    await assertSucceeds(getDoc(doc(teacher.firestore(), "assignments", "a1", "submissions", "student-1")));
+  });
+
+  it("lets the owning teacher LIST all submissions for their own assignment", async () => {
+    await seedClass("class-1", "teacher-1");
+    await seedAssignment("a1");
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(
+        doc(context.firestore(), "assignments", "a1", "submissions", "student-1"),
+        submissionDoc("student-1"),
+      );
+      await setDoc(
+        doc(context.firestore(), "assignments", "a1", "submissions", "student-2"),
+        submissionDoc("student-2"),
+      );
+    });
+    const teacher = teacherCtx("teacher-1");
+    const snap = await assertSucceeds(
+      getDocs(collection(teacher.firestore(), "assignments", "a1", "submissions")),
+    );
+    expect(snap.docs).toHaveLength(2);
+  });
+
+  it("denies a DIFFERENT teacher reading another teacher's assignment submissions", async () => {
+    await seedClass("class-1", "teacher-1");
+    await seedAssignment("a1");
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(
+        doc(context.firestore(), "assignments", "a1", "submissions", "student-1"),
+        submissionDoc("student-1"),
+      );
+    });
+    const otherTeacher = teacherCtx("teacher-2");
+    await assertFails(
+      getDoc(doc(otherTeacher.firestore(), "assignments", "a1", "submissions", "student-1")),
+    );
+  });
+
+  it("denies a student reading ANOTHER student's submission (cross-student read denial)", async () => {
+    await seedClass("class-1", "teacher-1");
+    await seedAssignment("a1");
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(
+        doc(context.firestore(), "assignments", "a1", "submissions", "student-1"),
+        submissionDoc("student-1"),
+      );
+    });
+    const otherStudent = studentCtx("student-2");
+    await assertFails(
+      getDoc(doc(otherStudent.firestore(), "assignments", "a1", "submissions", "student-1")),
+    );
+  });
+
+  it("denies deleting a submission entirely (even the owner)", async () => {
+    await seedClass("class-1", "teacher-1");
+    await seedAssignment("a1");
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(
+        doc(context.firestore(), "assignments", "a1", "submissions", "student-1"),
+        submissionDoc("student-1"),
+      );
+    });
+    const student = studentCtx("student-1");
+    await assertFails(
+      deleteDoc(doc(student.firestore(), "assignments", "a1", "submissions", "student-1")),
+    );
+  });
+});

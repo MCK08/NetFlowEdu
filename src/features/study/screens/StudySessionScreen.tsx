@@ -24,6 +24,9 @@ import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
 import { Question } from "@/types/question";
 
+import { useAssignmentSession } from "@features/assignments/hooks/useAssignmentSession";
+import { computeAssignmentProgress } from "@features/assignments/services/assignmentProgress";
+
 import { StudySessionAdaptiveCard } from "../components/StudySessionAdaptiveCard";
 import { StudySessionMandatoryCard } from "../components/StudySessionMandatoryCard";
 import { useAdaptiveStudySession } from "../hooks/useAdaptiveStudySession";
@@ -35,10 +38,19 @@ import {
   StudySessionExitGuardResult,
 } from "../services/studySessionExitGuard";
 
-export type StudySessionMode = "mandatory" | "adaptive";
+// "assignment" (Phase 29) renders through the exact same swipe-card UI as
+// "adaptive" (StudySessionAdaptiveCard, same recordStudyOutcome path via
+// useStudyQuestionState) — the only difference is WHICH question list feeds
+// it (a teacher's assignment snapshot instead of the adaptive plan) and
+// that completing a question ALSO records assignment progress alongside
+// the normal outcome. Nothing about scheduling/mastery/recordStudyOutcome
+// changes for this mode — see useAssignmentSession's own doc comment.
+export type StudySessionMode = "mandatory" | "adaptive" | "assignment";
 
 interface StudySessionScreenProps {
   mode: StudySessionMode;
+  // Required when mode === "assignment", ignored otherwise.
+  assignmentId?: string;
 }
 
 function mandatoryKeyExtractor(entry: ResolvedQueueEntry) {
@@ -65,15 +77,28 @@ function adaptiveKeyExtractor(question: Question) {
 // buildAdaptivePracticePlan's already-ranked output. Neither mode
 // recomputes priority, mastery, recency, or scheduling — reviewScheduler.ts
 // and recordStudyOutcome.ts are untouched.
-export function StudySessionScreen({ mode }: StudySessionScreenProps) {
+export function StudySessionScreen({ mode, assignmentId }: StudySessionScreenProps) {
   const { firebaseUser } = useAuth();
   const uid = firebaseUser?.uid;
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
+  const isAssignmentMode = mode === "assignment";
 
   const mandatory = useReviewSession(mode === "mandatory" ? uid : undefined);
   const { summary } = useStudyQueue(mode === "adaptive" ? uid : undefined);
   const adaptive = useAdaptiveStudySession(mode === "adaptive" ? uid : undefined, summary);
+  const assignmentSession = useAssignmentSession(
+    isAssignmentMode ? assignmentId : undefined,
+    isAssignmentMode ? uid : undefined,
+  );
+
+  // Unified so the loading/error/FlatList rendering below (shared by both
+  // swipe modes) never needs to branch on `mode` itself — only the DATA
+  // SOURCE differs.
+  const swipeQuestions = isAssignmentMode ? assignmentSession.questions : adaptive.questions;
+  const swipeIsLoading = isAssignmentMode ? assignmentSession.isLoading : adaptive.isLoading;
+  const swipeError = isAssignmentMode ? assignmentSession.error : adaptive.error;
+  const swipeRefresh = isAssignmentMode ? assignmentSession.refresh : adaptive.refresh;
 
   const listRef = useRef<FlatList<ResolvedQueueEntry | Question>>(null);
   // A real height, not the window's full height minus anything — this is
@@ -86,19 +111,19 @@ export function StudySessionScreen({ mode }: StudySessionScreenProps) {
     else router.replace(ROUTES.studentStudy as never);
   }
 
-  // Adaptive cards are self-contained (each owns its own
-  // useStudyQuestionState, see StudySessionAdaptiveCard's own doc comment)
-  // — the screen has no other visibility into whether the currently visible
-  // card has a submission in flight, so each rendered card reports its own
-  // state here. A Set (not a single boolean) because windowSize keeps up to
-  // 3 cards mounted at once; only cleared for a given question when THAT
-  // question's own card reports settled.
-  const adaptiveSubmittingIdsRef = useRef<Set<string>>(new Set());
-  const [isAdaptiveSubmitting, setIsAdaptiveSubmitting] = useState(false);
-  const handleAdaptiveSubmittingChange = useCallback((questionId: string, submitting: boolean) => {
-    if (submitting) adaptiveSubmittingIdsRef.current.add(questionId);
-    else adaptiveSubmittingIdsRef.current.delete(questionId);
-    setIsAdaptiveSubmitting(adaptiveSubmittingIdsRef.current.size > 0);
+  // Swipe cards (adaptive AND assignment — both render StudySessionAdaptiveCard)
+  // are self-contained (each owns its own useStudyQuestionState, see that
+  // component's own doc comment) — the screen has no other visibility into
+  // whether the currently visible card has a submission in flight, so each
+  // rendered card reports its own state here. A Set (not a single boolean)
+  // because windowSize keeps up to 3 cards mounted at once; only cleared
+  // for a given question when THAT question's own card reports settled.
+  const swipeSubmittingIdsRef = useRef<Set<string>>(new Set());
+  const [isSwipeCardSubmitting, setIsSwipeCardSubmitting] = useState(false);
+  const handleSwipeSubmittingChange = useCallback((questionId: string, submitting: boolean) => {
+    if (submitting) swipeSubmittingIdsRef.current.add(questionId);
+    else swipeSubmittingIdsRef.current.delete(questionId);
+    setIsSwipeCardSubmitting(swipeSubmittingIdsRef.current.size > 0);
   }, []);
 
   // Read inside the beforeRemove listener below, which is registered once
@@ -106,9 +131,9 @@ export function StudySessionScreen({ mode }: StudySessionScreenProps) {
   // AnswerScreen's exitGuardRef.
   const exitGuardRef = useRef<StudySessionExitGuardResult>({ blocked: false, message: "" });
   useEffect(() => {
-    const isSubmitting = mode === "mandatory" ? mandatory.isSubmitting : isAdaptiveSubmitting;
+    const isSubmitting = mode === "mandatory" ? mandatory.isSubmitting : isSwipeCardSubmitting;
     exitGuardRef.current = resolveStudySessionExitGuard({ isSubmitting });
-  }, [mode, mandatory.isSubmitting, isAdaptiveSubmitting]);
+  }, [mode, mandatory.isSubmitting, isSwipeCardSubmitting]);
 
   useEffect(() => {
     const unsubscribe = navigation.addListener("beforeRemove", (event) => {
@@ -146,6 +171,24 @@ export function StudySessionScreen({ mode }: StudySessionScreenProps) {
   const isAdaptiveDone =
     mode === "adaptive" && !adaptive.isLoading && adaptive.questions.length === 0;
 
+  // Assignment "done" is progress-based (completedCount >= targetCount via
+  // the shared, tested computeAssignmentProgress), NOT list-exhaustion —
+  // unlike the adaptive plan, an assignment's question list is a fixed
+  // snapshot that never shrinks as items are completed, so "ran out of
+  // cards" is never the right completion signal here. A separate "empty"
+  // state covers the genuinely different case of zero resolvable questions
+  // (e.g. every question in the assignment was since deleted).
+  const assignmentProgress = isAssignmentMode
+    ? computeAssignmentProgress(assignmentSession.submission, assignmentSession.targetCount)
+    : null;
+  const isAssignmentComplete =
+    isAssignmentMode && !assignmentSession.isLoading && (assignmentProgress?.isComplete ?? false);
+  const isAssignmentEmpty =
+    isAssignmentMode &&
+    !assignmentSession.isLoading &&
+    assignmentSession.questions.length === 0 &&
+    !isAssignmentComplete;
+
   const header = (
     <View style={[styles.header, { paddingTop: insets.top + spacing.xs }]}>
       <Pressable
@@ -157,13 +200,19 @@ export function StudySessionScreen({ mode }: StudySessionScreenProps) {
       >
         <Ionicons name="chevron-back" size={26} color={colors.textPrimary} />
       </Pressable>
-      <Text style={styles.headerTitle}>{mode === "mandatory" ? "Tekrar" : "Çalışma"}</Text>
+      <Text style={styles.headerTitle}>
+        {mode === "mandatory" ? "Tekrar" : isAssignmentMode ? "Ödev" : "Çalışma"}
+      </Text>
       {mode === "mandatory" && !isMandatoryComplete ? (
         <Text style={styles.headerProgress}>
           {formatFeedPosition(mandatory.index, mandatory.total)}
         </Text>
       ) : mode === "adaptive" && !isAdaptiveDone ? (
         <Text style={styles.headerProgress}>{adaptive.questions.length} soru</Text>
+      ) : isAssignmentMode && assignmentProgress && !isAssignmentComplete && !isAssignmentEmpty ? (
+        <Text style={styles.headerProgress}>
+          {assignmentProgress.completedCount} / {assignmentProgress.targetCount}
+        </Text>
       ) : null}
     </View>
   );
@@ -256,8 +305,8 @@ export function StudySessionScreen({ mode }: StudySessionScreenProps) {
     );
   }
 
-  // ---- adaptive mode ----
-  if (adaptive.isLoading) {
+  // ---- adaptive / assignment mode (shared swipe UI) ----
+  if (swipeIsLoading) {
     return (
       <View style={styles.flex}>
         {header}
@@ -268,13 +317,13 @@ export function StudySessionScreen({ mode }: StudySessionScreenProps) {
     );
   }
 
-  if (adaptive.error) {
+  if (swipeError) {
     return (
       <View style={styles.flex}>
         {header}
         <View style={styles.centered}>
-          <EmptyState icon="cloud-offline-outline" title={adaptive.error} />
-          <PrimaryButton label="Tekrar Dene" onPress={adaptive.refresh} />
+          <EmptyState icon="cloud-offline-outline" title={swipeError} />
+          <PrimaryButton label="Tekrar Dene" onPress={swipeRefresh} />
         </View>
       </View>
     );
@@ -298,20 +347,54 @@ export function StudySessionScreen({ mode }: StudySessionScreenProps) {
     );
   }
 
+  if (isAssignmentEmpty) {
+    return (
+      <View style={styles.flex}>
+        {header}
+        <View style={styles.centered}>
+          <EmptyState icon="document-text-outline" title="Bu ödevde artık geçerli soru yok" />
+          <PrimaryButton label="Öğrenme Merkezine Dön" onPress={goBack} />
+        </View>
+      </View>
+    );
+  }
+
+  if (isAssignmentComplete) {
+    return (
+      <View style={styles.flex}>
+        {header}
+        <View style={styles.centered}>
+          <Ionicons name="checkmark-done-circle-outline" size={56} color={colors.success} />
+          <Text style={styles.completionTitle}>Ödev tamamlandı 🎉</Text>
+          <Text style={styles.completionSubtitle}>
+            {assignmentProgress?.completedCount ?? 0} / {assignmentProgress?.targetCount ?? 0} soru çözüldü.
+          </Text>
+          <PrimaryButton label="Öğrenme Merkezine Dön" onPress={goBack} />
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.flex}>
       <FlatList
         ref={listRef as never}
-        data={adaptive.questions}
+        data={swipeQuestions}
         keyExtractor={adaptiveKeyExtractor}
         renderItem={({ item, index }) => (
           <StudySessionAdaptiveCard
             question={item}
             height={pageHeight}
-            onOutcomeRecorded={() => {
+            onOutcomeRecorded={(_outcome, question) => {
+              // recordStudyOutcome has ALREADY succeeded by the time this
+              // fires (see StudySessionAdaptiveCard's own doc comment) —
+              // recording assignment progress here never changes, delays,
+              // or gates that outcome; it's a parallel, independent,
+              // idempotent write (see useAssignmentSession.recordProgress).
+              if (isAssignmentMode) assignmentSession.recordProgress(question.id);
               listRef.current?.scrollToOffset({ offset: pageHeight * (index + 1), animated: true });
             }}
-            onSubmittingChange={(submitting) => handleAdaptiveSubmittingChange(item.id, submitting)}
+            onSubmittingChange={(submitting) => handleSwipeSubmittingChange(item.id, submitting)}
           />
         )}
         getItemLayout={(_, index) => ({ length: pageHeight, offset: pageHeight * index, index })}

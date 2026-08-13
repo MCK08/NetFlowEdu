@@ -731,6 +731,116 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ---- assignments helper -----------------------------------------------
+    function assignmentData(assignmentId) {
+      return get(/databases/$(database)/documents/assignments/$(assignmentId)).data;
+    }
+
+    // ---- assignments/{assignmentId} ---------------------------------------
+    // Phase 29 — a teacher-authored ORCHESTRATION document: WHICH questions
+    // (a snapshot, never re-derived after creation) go to WHICH students
+    // (also a snapshot), by when. Never touches studyItems/studyDays/
+    // studyMeta — those stay exclusively recordStudyOutcome's (Admin SDK);
+    // this collection only records the teacher's own assignment metadata,
+    // and (in its submissions subcollection below) each targeted student's
+    // own completion progress against it.
+    match /assignments/{assignmentId} {
+      // A teacher may read their own class's assignments (their own
+      // getClassAssignments query, classId-equality only — resource.data.
+      // classId is always defined, so classData(...) is always
+      // well-defined here, same "the field the query itself pins is always
+      // safe to read" reasoning questions/{questionId}'s own read rule
+      // documents at length). A targeted student may read an assignment
+      // naming them — targetStudentIds is a required field on every
+      // document (enforced by the create rule below), so this branch is
+      // equally well-defined for every document either query could ever
+      // return; array-contains membership provability is the same
+      // established pattern.
+      allow read: if isSignedIn()
+                  && (
+                       (isTeacher() && classData(resource.data.classId).teacherId == uid())
+                       || uid() in resource.data.targetStudentIds
+                     );
+
+      allow create: if isSignedIn() && isTeacher()
+                    && request.resource.data.teacherId == uid()
+                    && classData(request.resource.data.classId).teacherId == uid()
+                    && request.resource.data.organizationId
+                       == classData(request.resource.data.classId).organizationId
+                    && request.resource.data.title is string
+                    && request.resource.data.title.size() > 0
+                    && request.resource.data.title.size() <= 80
+                    && (request.resource.data.description == null
+                        || (request.resource.data.description is string
+                            && request.resource.data.description.size() <= 300))
+                    && request.resource.data.subject is string
+                    && request.resource.data.questionIds is list
+                    && request.resource.data.questionIds.size() > 0
+                    && request.resource.data.questionIds.size() <= 30
+                    && request.resource.data.targetStudentIds is list
+                    && request.resource.data.targetStudentIds.size() > 0
+                    && request.resource.data.targetStudentIds.size() <= 200
+                    && request.resource.data.targetCount == request.resource.data.questionIds.size()
+                    && request.resource.data.status in ['draft', 'published']
+                    && (request.resource.data.dueAt == null || request.resource.data.dueAt is number);
+
+      // Everything that defines WHAT the assignment IS (class, org,
+      // teacher, subject/topic/grade, the question/target snapshots,
+      // targetCount, createdAt) is frozen after creation — only
+      // description/dueAt/status may ever change, matching
+      // questions/{questionId}'s own "posterRole/classId/visibility are
+      // immutable" precedent for the identical reason: an edit must never
+      // be able to smuggle in a different snapshot than the one students
+      // were shown.
+      allow update: if isSignedIn() && isTeacher()
+                    && classData(resource.data.classId).teacherId == uid()
+                    && request.resource.data.classId == resource.data.classId
+                    && request.resource.data.organizationId == resource.data.organizationId
+                    && request.resource.data.teacherId == resource.data.teacherId
+                    && request.resource.data.title == resource.data.title
+                    && request.resource.data.subject == resource.data.subject
+                    && request.resource.data.topic == resource.data.topic
+                    && request.resource.data.gradeLevel == resource.data.gradeLevel
+                    && request.resource.data.questionIds == resource.data.questionIds
+                    && request.resource.data.targetStudentIds == resource.data.targetStudentIds
+                    && request.resource.data.targetCount == resource.data.targetCount
+                    && request.resource.data.createdAt == resource.data.createdAt
+                    && request.resource.data.status in ['draft', 'published', 'archived'];
+
+      allow delete: if isSignedIn() && isTeacher() && classData(resource.data.classId).teacherId == uid();
+    }
+
+    // ---- assignments/{assignmentId}/submissions/{studentId} --------------
+    // One student's own progress against one assignment — never written by
+    // a Cloud Function. A plain client-side transaction is safe here (see
+    // assignmentService.ts's recordAssignmentProgress) because nothing in
+    // this document is server-computed scheduling state (that stays
+    // recordStudyOutcome's alone); this only records which of the
+    // assignment's OWN questionIds the student has answered.
+    match /assignments/{assignmentId}/submissions/{studentId} {
+      allow read: if isSignedIn()
+                  && (
+                       isOwner(studentId)
+                       || (isTeacher() && classData(assignmentData(assignmentId).classId).teacherId == uid())
+                     );
+
+      // Every progress write REPLACES the whole document (tx.set, never a
+      // partial merge — see assignmentService.ts), so create/update share
+      // one rule. hasOnly(...) rejects a student ever claiming to have
+      // completed a question that isn't actually part of THIS assignment.
+      allow create, update: if isSignedIn()
+                    && studentId == uid()
+                    && studentId in assignmentData(assignmentId).targetStudentIds
+                    && request.resource.data.studentId == studentId
+                    && request.resource.data.completedQuestionIds is list
+                    && request.resource.data.completedQuestionIds
+                       .hasOnly(assignmentData(assignmentId).questionIds)
+                    && request.resource.data.completedCount
+                       == request.resource.data.completedQuestionIds.size();
+
+      allow delete: if false;
+    }
+
     // ---- usernames/{username} ------------------------------------------
     // Written exclusively by the setUsername Cloud Function (Admin SDK,
     // bypasses these rules) as a uniqueness reservation. Never read or

@@ -13,7 +13,10 @@ import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
 
+import { useStudentAssignments } from "@features/assignments/hooks/useStudentAssignments";
+
 import { StudyOutcome } from "../domain/studyTypes";
+import { AssignedWorkSection } from "../components/AssignedWorkSection";
 import { DailyGoalEditor } from "../components/DailyGoalEditor";
 import { DailyPracticePlanSection } from "../components/DailyPracticePlanSection";
 import { StudyProgressCard } from "../components/StudyProgressCard";
@@ -51,6 +54,7 @@ export function StudyScreen() {
   const uid = firebaseUser?.uid;
   const { entries, summary, isLoading, isRefreshing, error, refresh, dismiss } = useStudyQueue(uid);
   const { items, insights, plan, moment, refresh: refreshInsights } = useLearningInsights(uid, summary);
+  const { cards: assignmentCards, refresh: refreshAssignments } = useStudentAssignments(uid);
   const guardedNavigate = useNavigationGuard();
 
   // Per-card busy/error state, keyed by questionId — a failure on one card
@@ -67,7 +71,17 @@ export function StudyScreen() {
     useCallback(() => {
       refresh();
       refreshInsights();
-    }, [refresh, refreshInsights]),
+      refreshAssignments();
+    }, [refresh, refreshInsights, refreshAssignments]),
+  );
+
+  const openAssignment = useCallback(
+    (assignmentId: string) => {
+      guardedNavigate(`assignment-${assignmentId}`, () =>
+        router.push(`/(student)/assignment/${assignmentId}` as never),
+      );
+    },
+    [guardedNavigate],
   );
 
   const startSession = useCallback(() => {
@@ -208,6 +222,7 @@ export function StudyScreen() {
             {/* Phase 25 §10 — one deterministic sentence, real trend data,
                 no invented text. See learningMoment.ts. */}
             {moment ? <Text style={styles.moment}>{moment}</Text> : null}
+            <AssignedWorkSection cards={assignmentCards} onOpen={openAssignment} />
             <DailyPracticePlanSection plan={plan} onStart={handleStartPlan} />
             <StudyProgressCard summary={summary} dueCount={insights.dueCount} />
             <DailyGoalEditor currentGoal={summary.dailyGoal} onSaved={handleRefresh} />
