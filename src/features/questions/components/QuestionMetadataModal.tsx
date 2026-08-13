@@ -31,6 +31,15 @@ interface QuestionMetadataModalProps {
   errorMessage: string | null;
   onSubmit: (details: QuestionMetadataDetails) => void;
   onCancel: () => void;
+  // Optional suggested starting values — e.g. the Teacher Action Center
+  // opening this prefilled from a topic hotspot the teacher just tapped.
+  // A SUGGESTION, never a lock: still rendered as the same editable chip
+  // rows below, and silently ignored (falls back to the original default)
+  // if the value isn't one of the real, current taxonomy options — never
+  // renders a selected chip that doesn't actually exist.
+  initialSubject?: string;
+  initialGradeLevel?: string;
+  initialTopic?: string;
 }
 
 // Phase 21's "yeni soru oluşturma ekranı" — shown after an image has
@@ -48,6 +57,9 @@ export function QuestionMetadataModal({
   errorMessage,
   onSubmit,
   onCancel,
+  initialSubject,
+  initialGradeLevel,
+  initialTopic,
 }: QuestionMetadataModalProps) {
   const [subject, setSubject] = useState<string>(QUESTION_SUBJECTS[0]);
   const [gradeLevel, setGradeLevel] = useState<string>(GRADE_LEVELS[0]);
@@ -59,20 +71,35 @@ export function QuestionMetadataModal({
   const [validationError, setValidationError] = useState<string | null>(null);
 
   // Resets the whole form each time a fresh image is picked, not on every
-  // re-render — visible flips true→false→true across separate uploads.
+  // re-render — visible flips true→false→true across separate uploads. A
+  // valid initial* suggestion wins over the plain first-option default;
+  // an invalid/stale one (not in the current real taxonomy) is ignored.
   useEffect(() => {
     if (visible) {
-      const firstSubject = QUESTION_SUBJECTS[0];
+      const subjectOptions: readonly string[] = QUESTION_SUBJECTS;
+      const firstSubject =
+        initialSubject && subjectOptions.includes(initialSubject) ? initialSubject : QUESTION_SUBJECTS[0];
       setSubject(firstSubject);
-      setGradeLevel(GRADE_LEVELS[0]);
-      setTopic(getTopicsForSubject(firstSubject)[0] ?? "");
+
+      const gradeOptions: readonly string[] = GRADE_LEVELS;
+      setGradeLevel(
+        initialGradeLevel && gradeOptions.includes(initialGradeLevel) ? initialGradeLevel : GRADE_LEVELS[0],
+      );
+
+      const topicOptionsForSubject = getTopicsForSubject(firstSubject);
+      setTopic(
+        initialTopic && topicOptionsForSubject.includes(initialTopic)
+          ? initialTopic
+          : topicOptionsForSubject[0] ?? "",
+      );
+
       setDescription("");
       setMcEnabled(false);
       setChoiceDrafts({});
       setCorrectChoice(null);
       setValidationError(null);
     }
-  }, [visible]);
+  }, [visible, initialSubject, initialGradeLevel, initialTopic]);
 
   const topicOptions = getTopicsForSubject(subject);
 

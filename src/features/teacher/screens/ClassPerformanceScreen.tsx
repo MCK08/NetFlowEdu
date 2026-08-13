@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -10,7 +10,11 @@ import { EmptyState } from "@components/ui/EmptyState";
 import { LoadingSkeleton } from "@components/ui/LoadingSkeleton";
 import { PrimaryButton } from "@components/ui/PrimaryButton";
 import { SectionHeader } from "@components/ui/SectionHeader";
+import { useAuth } from "@features/authentication";
+import { ImageSourcePicker } from "@features/classes/components/ImageSourcePicker";
+import { QuestionMetadataModal } from "@features/questions/components/QuestionMetadataModal";
 import { LearningTrend } from "@features/study/services/learningTrend";
+import { getClassById } from "@services/firebase/classes";
 import { colors } from "@theme/colors";
 import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
@@ -18,12 +22,14 @@ import { typography } from "@theme/typography";
 
 import { StudentPerformanceCard } from "../components/StudentPerformanceCard";
 import { useClassPerformance } from "../hooks/useClassPerformance";
+import { useTeacherQuestionComposer } from "../hooks/useTeacherQuestionComposer";
 import { ClassTopicHotspot } from "../services/classTopicInsights";
 import {
   AttentionCategory,
   StudentAttentionCard,
 } from "../services/studentAttention";
 import { buildClassPerformanceSummary, StudentPerformanceCard as StudentPerformanceCardData } from "../services/studentPerformance";
+import { buildTeacherActionSummary, TeacherAction } from "../services/teacherActionSummary";
 
 interface ClassPerformanceScreenProps {
   classId: string;
@@ -98,11 +104,63 @@ function topicKey(subject: string, topic: string): string {
 // Student Attention, filters) is derived ENTIRELY from useClassPerformance's
 // existing `cards` fetch — zero new Firestore reads.
 export function ClassPerformanceScreen({ classId }: ClassPerformanceScreenProps) {
+  const { firebaseUser } = useAuth();
   const { cards, attentionCards, topicHotspots, trend, isLoading, error, refresh } =
     useClassPerformance(classId);
   const summary = buildClassPerformanceSummary(cards);
   const [filter, setFilter] = useState<FilterValue>("all");
   const [expandedHotspot, setExpandedHotspot] = useState<string | null>(null);
+
+  // ONE new read this phase: the class doc's own organizationId, needed to
+  // satisfy uploadClassQuestionImage's existing required parameter (the
+  // exact same field useClassUpload/useStudentQuestionUpload already
+  // require). useClassPerformance's own `getClassMembers` read doesn't
+  // carry organizationId (it's a roster, not class metadata), so there's
+  // no already-loaded value to reuse here — a single classes/{classId}
+  // get() is the smallest correct source. Read once per screen mount, not
+  // per composer open.
+  const [classOrganizationId, setClassOrganizationId] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    getClassById(classId).then((room) => {
+      if (!cancelled) setClassOrganizationId(room?.organizationId ?? null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [classId]);
+
+  const [composerTopicContext, setComposerTopicContext] = useState<{ subject: string; topic: string } | null>(
+    null,
+  );
+  const composer = useTeacherQuestionComposer({
+    uid: firebaseUser?.uid,
+    organizationId: classOrganizationId,
+    classId,
+    // A teacher-created question changes the class's own topic hotspots
+    // over time (once studied), so a refresh keeps the dashboard honest —
+    // reuses the exact same refresh() the retry button already calls, no
+    // new fetch mechanism.
+    onUploaded: refresh,
+  });
+
+  function openComposerForTopic(subject: string, topic: string) {
+    setComposerTopicContext({ subject, topic });
+    composer.openComposer();
+  }
+
+  const teacherActions = useMemo(
+    () => buildTeacherActionSummary(topicHotspots, attentionCards),
+    [topicHotspots, attentionCards],
+  );
+
+  function handleActionPress(action: TeacherAction) {
+    if (action.kind === "create_question" && action.topicContext) {
+      openComposerForTopic(action.topicContext.subject, action.topicContext.topic);
+    } else if (action.kind === "open_student" && action.studentUid) {
+      openStudent(action.studentUid);
+    }
+  }
 
   const attentionByStudent = useMemo(() => {
     const map = new Map<string, StudentAttentionCard>();
@@ -205,6 +263,36 @@ export function ClassPerformanceScreen({ classId }: ClassPerformanceScreenProps)
           }
           ListHeaderComponent={
             <View style={styles.headerSections}>
+              {/* ACTION SUMMARY (§12) — a short, capped "what can I do now"
+                  list, not a second dashboard. Every item links straight to
+                  a real action (create_question opens the composer
+                  pre-filled; open_student opens the existing student
+                  detail route). */}
+              {teacherActions.length > 0 ? (
+                <View style={styles.section}>
+                  <SectionHeader title="Şimdi Yapılabilecekler" />
+                  <View style={styles.actionList}>
+                    {teacherActions.map((action, index) => (
+                      <Pressable
+                        key={`${action.kind}-${action.studentUid ?? ""}-${action.title}-${index}`}
+                        onPress={() => handleActionPress(action)}
+                        style={styles.actionRow}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${action.title}. ${action.reason}. ${action.kind === "create_question" ? "Soru oluştur" : "Öğrenciyi aç"}`}
+                      >
+                        <View style={styles.actionText}>
+                          <Text style={styles.actionTitle}>{action.title}</Text>
+                          <Text style={styles.actionReason}>{action.reason}</Text>
+                        </View>
+                        <Text style={styles.actionCta}>
+                          {action.kind === "create_question" ? "Soru Oluştur" : "Öğrenciyi Aç"}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                </View>
+              ) : null}
+
               {/* CLASS HEALTH */}
               <View style={styles.summaryCard}>
                 <Text style={styles.summaryStudentCount}>{summary.studentCount} öğrenci</Text>
@@ -258,6 +346,15 @@ export function ClassPerformanceScreen({ classId }: ClassPerformanceScreenProps)
                               {hotspot.studentsWithAttempts} öğrenci çalıştı · {hotspot.strugglingStudents} öğrenci
                               zorlandı{hotspot.dueStudents > 0 ? ` · ${hotspot.dueStudents} öğrenci tekrar bekliyor` : ""}
                             </Text>
+                          </Pressable>
+                          <Pressable
+                            onPress={() => openComposerForTopic(hotspot.subject, hotspot.topic)}
+                            style={styles.hotspotCreateButton}
+                            accessibilityRole="button"
+                            accessibilityLabel={`${hotspot.topic} konusundan soru oluştur`}
+                          >
+                            <Ionicons name="add-circle-outline" size={16} color={colors.primary} />
+                            <Text style={styles.hotspotCreateButtonText}>Soru Oluştur</Text>
                           </Pressable>
                           {expanded ? (
                             <View style={styles.hotspotStudents}>
@@ -315,6 +412,23 @@ export function ClassPerformanceScreen({ classId }: ClassPerformanceScreenProps)
           }
         />
       )}
+
+      <ImageSourcePicker
+        visible={composer.isSourcePickerOpen}
+        onSelect={composer.selectImageSource}
+        onCancel={composer.cancelSourcePicker}
+      />
+
+      <QuestionMetadataModal
+        visible={composer.pickedImageUri !== null}
+        imageUri={composer.pickedImageUri}
+        isUploading={composer.isUploading}
+        errorMessage={composer.errorMessage}
+        onSubmit={composer.submitDetails}
+        onCancel={composer.cancelDetails}
+        initialSubject={composerTopicContext?.subject}
+        initialTopic={composerTopicContext?.topic}
+      />
     </SafeAreaView>
   );
 }
@@ -432,6 +546,48 @@ const styles = StyleSheet.create({
   },
   section: {
     gap: spacing.xs,
+  },
+  actionList: {
+    gap: spacing.sm,
+  },
+  actionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: spacing.sm,
+    gap: spacing.sm,
+  },
+  actionText: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  actionTitle: {
+    ...typography.bodyStrong,
+    color: colors.textPrimary,
+  },
+  actionReason: {
+    ...typography.caption,
+    color: colors.textSecondary,
+  },
+  actionCta: {
+    ...typography.caption,
+    fontWeight: "700",
+    color: colors.primary,
+  },
+  hotspotCreateButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xxs,
+    alignSelf: "flex-start",
+    marginTop: spacing.xxs,
+  },
+  hotspotCreateButtonText: {
+    ...typography.caption,
+    fontWeight: "700",
+    color: colors.primary,
   },
   hotspotList: {
     gap: spacing.sm,
