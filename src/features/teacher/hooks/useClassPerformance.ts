@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { getClassMembers } from "@services/firebase/classes";
 import { getClassSourcedStudyItems } from "@features/study/services/studyService";
@@ -7,12 +7,27 @@ import { mapStudyErrorToMessage } from "@features/study/services/studyErrorMappe
 import { shouldApplyStaleResponse } from "@features/study/services/staleResponseGuard";
 import { ClassMember } from "@/types/class";
 
+import { mapWithConcurrency } from "../services/boundedConcurrency";
+import { buildClassTopicHotspots, ClassTopicHotspot } from "../services/classTopicInsights";
+import { buildClassTrend } from "../services/classTrend";
 import {
   buildStudentPerformanceSnapshot,
   classifyStudentSupportTier,
   sortStudentPerformanceCards,
   StudentPerformanceCard,
 } from "../services/studentPerformance";
+import {
+  buildStudentAttentionInsight,
+  sortStudentAttentionCards,
+  StudentAttentionCard,
+} from "../services/studentAttention";
+import { LearningTrend } from "@features/study/services/learningTrend";
+
+// Caps how many per-student studyItems queries are ever simultaneously in
+// flight — see boundedConcurrency.ts's own doc comment. Chosen as a small,
+// safe default; not tuned against real traffic (there is none to tune
+// against yet), only against "don't fire 30+ queries in the same tick".
+const STUDENT_FETCH_CONCURRENCY = 8;
 
 // Phase 27 — the Class Performance dashboard's data layer.
 //
@@ -53,8 +68,8 @@ export function useClassPerformance(classId: string | undefined) {
       // across paginated/merged reads in a future change to getClassMembers.
       const students = dedupeMembersByUid(members.filter((member) => member.role === "student"));
 
-      const itemsByStudent = await Promise.all(
-        students.map((student) => getClassSourcedStudyItems(student.uid, classId)),
+      const itemsByStudent = await mapWithConcurrency(students, STUDENT_FETCH_CONCURRENCY, (student) =>
+        getClassSourcedStudyItems(student.uid, classId),
       );
       if (!shouldApplyStaleResponse(requestId, requestIdRef.current)) return;
 
@@ -92,7 +107,36 @@ export function useClassPerformance(classId: string | undefined) {
     load();
   }, [load]);
 
-  return { cards, isLoading, error, refresh: load };
+  // All three derived ENTIRELY from `cards` — zero additional Firestore
+  // reads, zero new fetch/generation state to guard: they inherit `cards`'
+  // own staleness protection above for free, and recompute automatically
+  // whenever `cards` does (a fresh load, a refresh, a classId change).
+  const attentionCards: StudentAttentionCard[] = useMemo(() => {
+    const now = Date.now();
+    return sortStudentAttentionCards(
+      cards.map((card) => ({
+        studentUid: card.studentUid,
+        displayName: card.displayName,
+        insight: buildStudentAttentionInsight(card.snapshot, now),
+        successRatePercent: card.snapshot.successRatePercent,
+      })),
+    );
+  }, [cards]);
+
+  const topicHotspots: ClassTopicHotspot[] = useMemo(
+    () =>
+      buildClassTopicHotspots(
+        cards.map((card) => ({ studentUid: card.studentUid, allTopics: card.snapshot.allTopics })),
+      ),
+    [cards],
+  );
+
+  const trend: LearningTrend = useMemo(
+    () => buildClassTrend(cards.map((card) => card.snapshot.dayBuckets)),
+    [cards],
+  );
+
+  return { cards, attentionCards, topicHotspots, trend, isLoading, error, refresh: load };
 }
 
 function dedupeMembersByUid(members: readonly ClassMember[]): ClassMember[] {

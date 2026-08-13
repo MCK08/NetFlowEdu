@@ -1,5 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
+import { useMemo } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -14,6 +15,7 @@ import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
 
 import { useStudentPerformanceDetail } from "../hooks/useStudentPerformanceDetail";
+import { buildStudentAttentionInsight } from "../services/studentAttention";
 
 interface StudentPerformanceScreenProps {
   classId: string;
@@ -52,6 +54,10 @@ function formatLastStudied(timestampMs: number | null): string {
 // output. A teacher cannot change a student's answer or study state here.
 export function StudentPerformanceScreen({ classId, studentId, studentName }: StudentPerformanceScreenProps) {
   const { snapshot, isLoading, error, refresh } = useStudentPerformanceDetail(classId, studentId);
+  const attention = useMemo(
+    () => (snapshot ? buildStudentAttentionInsight(snapshot, Date.now()) : null),
+    [snapshot],
+  );
 
   return (
     <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
@@ -97,6 +103,17 @@ export function StudentPerformanceScreen({ classId, studentId, studentName }: St
               {snapshot.successRatePercent === null ? "—" : `%${snapshot.successRatePercent}`}
             </Text>
           </Card>
+
+          {attention ? (
+            <Card style={styles.attentionCard}>
+              <Text style={styles.sectionLabel}>Öğretmen notu</Text>
+              {attention.reasons.map((reason) => (
+                <Text key={reason} style={styles.bodyText}>
+                  {reason}
+                </Text>
+              ))}
+            </Card>
+          ) : null}
 
           <Card style={styles.card}>
             <Text style={styles.sectionLabel}>Bugünkü durum</Text>
@@ -203,6 +220,10 @@ const styles = StyleSheet.create({
   },
   card: {
     gap: spacing.xxs,
+  },
+  attentionCard: {
+    gap: spacing.xxs,
+    backgroundColor: colors.surfaceMuted,
   },
   row: {
     flexDirection: "row",

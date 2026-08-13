@@ -1,7 +1,9 @@
 import {
+  bucketItemsByDay,
   buildClassPerformanceSummary,
   buildStudentPerformanceSnapshot,
   classifyStudentSupportTier,
+  RECENT_OUTCOMES_LIMIT,
   sortStudentPerformanceCards,
   StudentPerformanceCard,
 } from "../../src/features/teacher/services/studentPerformance";
@@ -179,6 +181,65 @@ describe("buildStudentPerformanceSnapshot — trend (reuses buildLearningTrend)"
     expect(snapshot.trend).toBe("declining");
   });
 });
+
+describe("buildStudentPerformanceSnapshot — recentOutcomes", () => {
+  it("is empty when nothing has ever been reviewed", () => {
+    const items = [studyItem({ questionId: "a", lastReviewedAt: 0 })];
+    const snapshot = snapshotFor(items, [question("a")]);
+    expect(snapshot.recentOutcomes).toEqual([]);
+  });
+
+  it("orders most-recently-reviewed first", () => {
+    const items = [
+      studyItem({ questionId: "old", lastReviewedAt: NOW - 2 * DAY_MS, lastOutcome: "solved" }),
+      studyItem({ questionId: "new", lastReviewedAt: NOW, lastOutcome: "struggled" }),
+    ];
+    const snapshot = snapshotFor(items, [question("old"), question("new")]);
+    expect(snapshot.recentOutcomes).toEqual(["struggled", "solved"]);
+  });
+
+  it("caps at RECENT_OUTCOMES_LIMIT even with many more reviewed items", () => {
+    const items = Array.from({ length: RECENT_OUTCOMES_LIMIT + 5 }, (_, i) =>
+      studyItem({ questionId: `q${i}`, lastReviewedAt: NOW - i * 1000, lastOutcome: "solved" }),
+    );
+    const questions = items.map((item) => question(item.questionId));
+    const snapshot = snapshotFor(items, questions);
+    expect(snapshot.recentOutcomes).toHaveLength(RECENT_OUTCOMES_LIMIT);
+  });
+
+  it("excludes never-reviewed items even if other items exist", () => {
+    const items = [
+      studyItem({ questionId: "reviewed", lastReviewedAt: NOW, lastOutcome: "solved" }),
+      studyItem({ questionId: "never", lastReviewedAt: 0, lastOutcome: "solved" }),
+    ];
+    const snapshot = snapshotFor(items, [question("reviewed"), question("never")]);
+    expect(snapshot.recentOutcomes).toEqual(["solved"]);
+  });
+});
+
+describe("buildStudentPerformanceSnapshot — dayBuckets", () => {
+  it("matches what bucketItemsByDay computes directly from the same items", () => {
+    const items = [
+      studyItem({ questionId: "a", lastReviewedAt: NOW, lastOutcome: "solved" }),
+      studyItem({ questionId: "b", lastReviewedAt: NOW, lastOutcome: "struggled" }),
+    ];
+    const snapshot = snapshotFor(items, [question("a"), question("b")]);
+    expect(snapshot.dayBuckets).toEqual(bucketItemsByDay(items));
+  });
+
+  it("daysActiveRecently equals dayBuckets.length", () => {
+    const items = [
+      studyItem({ questionId: "a", lastReviewedAt: NOW }),
+      studyItem({ questionId: "b", lastReviewedAt: NOW - 3 * DAY_MS }),
+    ];
+    const snapshot = snapshotFor(items, [question("a"), question("b")]);
+    expect(snapshot.daysActiveRecently).toBe(snapshot.dayBuckets.length);
+  });
+});
+
+function snapshotFor(items: StudyItem[], questions: Question[], now = NOW) {
+  return buildStudentPerformanceSnapshot(items, questionsMap(...questions), now);
+}
 
 describe("buildStudentPerformanceSnapshot — robustness", () => {
   it("does not mutate the input items array or questionsById map", () => {

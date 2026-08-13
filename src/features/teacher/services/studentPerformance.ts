@@ -5,7 +5,13 @@ import {
 } from "@features/study/services/learningInsights";
 import { buildLearningTrend, LearningTrend } from "@features/study/services/learningTrend";
 import { StudyDay, StudyItem } from "@features/study/services/studyService";
+import { StudyOutcome } from "@features/study/domain/studyTypes";
 import { Question } from "@/types/question";
+
+// How many of a student's most-recently-reviewed items to carry through as
+// `recentOutcomes` — enough for a "last N studies" attention reason (see
+// studentAttention.ts) without turning the snapshot into a full history.
+export const RECENT_OUTCOMES_LIMIT = 5;
 
 // Phase 27 — the Teacher Class Performance dashboard's pure computation
 // layer. Deliberately NOT a new mastery/trend/priority system: every
@@ -46,6 +52,17 @@ export interface StudentPerformanceSnapshot {
   trend: LearningTrend;
   // null when the student has never reviewed anything from this class yet.
   lastStudiedAt: number | null;
+  // Most-recently-reviewed outcomes first, capped at RECENT_OUTCOMES_LIMIT —
+  // exactly what feeds studentAttention.ts's "son N çalışmada M zorlanma"
+  // reason. Items never reviewed (lastReviewedAt <= 0) are excluded, same
+  // rule bucketItemsByDay already uses.
+  recentOutcomes: readonly StudyOutcome[];
+  // The same per-day buckets used to derive `trend` below, exposed so a
+  // CLASS-level trend (classTrend.ts) can merge multiple students' buckets
+  // and run the identical, unmodified buildLearningTrend over the sum —
+  // never a second trend engine. Already computed for `trend`; this is a
+  // zero-cost exposure, not a new calculation.
+  dayBuckets: readonly StudyDay[];
   // Deliberately NOT "streak" — the real currentStreak/longestStreak lives
   // only in users/{uid}/studyMeta/summary, which has no sourceClassId (or
   // any other field) a rule could use to prove a specific teacher may read
@@ -85,7 +102,11 @@ function localDayKey(epochMs: number): string {
   return `${year}-${month}-${day}`;
 }
 
-function bucketItemsByDay(items: readonly StudyItem[]): StudyDay[] {
+// Exported so classTrend.ts can bucket several students' items and merge
+// the results into one class-wide StudyDay[] — the exact same bucketing
+// rule this file already uses for one student's own trend, never a second
+// implementation of it.
+export function bucketItemsByDay(items: readonly StudyItem[]): StudyDay[] {
   const buckets = new Map<string, { reviewCount: number; solvedCount: number; struggledCount: number }>();
   for (const item of items) {
     if (!item.lastReviewedAt || item.lastReviewedAt <= 0) continue;
@@ -161,6 +182,20 @@ export function buildStudentPerformanceSnapshot(
 
   const dayBuckets = bucketItemsByDay(items);
 
+  // Most-recently-reviewed first. A stable sort so two items reviewed at
+  // the identical timestamp (e.g. backfilled/legacy data) always order the
+  // same way call after call — questionId as the tiebreak, matching
+  // dailyPracticePlan.ts's own deterministic-tiebreak convention.
+  const recentOutcomes = items
+    .filter((item) => item.lastReviewedAt > 0)
+    .slice()
+    .sort((a, b) => {
+      if (a.lastReviewedAt !== b.lastReviewedAt) return b.lastReviewedAt - a.lastReviewedAt;
+      return a.questionId.localeCompare(b.questionId);
+    })
+    .slice(0, RECENT_OUTCOMES_LIMIT)
+    .map((item) => item.lastOutcome);
+
   return {
     totalCount,
     masteredCount,
@@ -172,6 +207,8 @@ export function buildStudentPerformanceSnapshot(
     allTopics: insights.allTopics,
     trend: buildLearningTrend(dayBuckets),
     lastStudiedAt,
+    recentOutcomes,
+    dayBuckets,
     daysActiveRecently: dayBuckets.length,
   };
 }
