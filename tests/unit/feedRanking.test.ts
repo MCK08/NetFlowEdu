@@ -2,6 +2,8 @@ import {
   buildQuestionFeedRanking,
   QuestionSignal,
 } from "../../src/features/feed/services/feedRanking";
+import { buildDailyPracticePlan } from "../../src/features/study/services/dailyPracticePlan";
+import { LearningInsightItem } from "../../src/features/study/services/learningInsights";
 import { Question } from "@/types/question";
 
 function q(id: string, overrides: Partial<Question> = {}): Question {
@@ -195,5 +197,60 @@ describe("buildQuestionFeedRanking — determinism, stability, robustness", () =
     buildQuestionFeedRanking({ questions, signalsByQuestionId: signals, recentlyShownIds: seen });
     expect(signals).toEqual(signalsCopy);
     expect(seen).toEqual(seenCopy);
+  });
+});
+
+// Cross-surface contract guard — NOT a "these two must agree" test. The
+// opposite: locks in that Feed (discovery-first) and the Daily Practice
+// Plan (reinforcement-first) are INTENTIONALLY allowed to disagree on the
+// same underlying data, so a future change that "fixes" this by merging
+// the two orderings fails loudly here instead of silently regressing a
+// documented product decision. See both files' own doc comments.
+describe("Feed vs. Daily Plan — intentional discovery/reinforcement divergence", () => {
+  it("Feed ranks a never-studied (discovery) question above an already-developed one", () => {
+    const discovery = q("discovery-q");
+    const developed = q("developed-q", { subject: "Fizik", topic: "Optik" });
+    const signals = new Map([
+      // No entry for "discovery-q" at all — exactly how a genuinely
+      // never-studied question is represented (NO_SIGNAL default).
+      ["developed-q", signal({ masteryBand: "strong" })],
+    ]);
+
+    const ranked = buildQuestionFeedRanking({
+      questions: [developed, discovery],
+      signalsByQuestionId: signals,
+      recentlyShownIds: EMPTY_SEEN,
+    });
+
+    expect(ranked.map((question) => question.id)).toEqual(["discovery-q", "developed-q"]);
+  });
+
+  it("the SAME never-studied question can never appear in the Daily Practice Plan at all", () => {
+    // A never-studied question has no users/{uid}/studyItems document, so
+    // it never becomes a LearningInsightItem — buildDailyPracticePlan's
+    // input is structurally incapable of including it, unlike Feed above.
+    const items: LearningInsightItem[] = [
+      {
+        questionId: "developed-q",
+        status: "mastered",
+        lastOutcome: "solved",
+        nextReviewAt: Date.now() + 30 * 24 * 60 * 60 * 1000,
+        subject: "Fizik",
+        topic: "Optik",
+        successfulReviews: 5,
+        lastReviewedAt: Date.now() - 24 * 60 * 60 * 1000,
+      },
+    ];
+
+    const plan = buildDailyPracticePlan({
+      items,
+      weakTopics: [],
+      now: Date.now(),
+      reviewedToday: 0,
+      dailyGoal: 10,
+    });
+
+    expect(plan.planItems.some((item) => item.questionId === "discovery-q")).toBe(false);
+    expect(Object.keys(plan.reasonByQuestionId)).not.toContain("discovery-q");
   });
 });

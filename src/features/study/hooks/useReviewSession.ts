@@ -14,6 +14,7 @@ import {
   ResolvedQueueEntry,
 } from "../services/studyService";
 import { mergeResolvedPages, removeStudyItemById } from "../services/studyQueueMerge";
+import { shouldApplyStaleResponse } from "../services/staleResponseGuard";
 
 export interface SessionTotals {
   reviewed: number;
@@ -98,15 +99,19 @@ export function useReviewSession(uid: string | undefined) {
     try {
       const page = await getDueStudyItemsPage(uid, Date.now(), DEFAULT_QUEUE_PAGE_SIZE, null);
       const resolved = await resolveQueueEntries(page.items);
-      if (generationRef.current !== generation || activeUidRef.current !== uid) return;
+      if (!shouldApplyStaleResponse(generation, generationRef.current) || activeUidRef.current !== uid) return;
       setEntries(resolved);
       cursorRef.current = page.cursor;
       setHasMore(page.hasMore);
     } catch (error) {
-      if (generationRef.current !== generation) return;
+      if (!shouldApplyStaleResponse(generation, generationRef.current)) return;
       setLoadError(mapStudyErrorToMessage(error));
     } finally {
-      if (generationRef.current === generation) setIsLoading(false);
+      // Safe to gate here (unlike loadMore below): loadFirstPage has no
+      // in-flight guard blocking a retry, so a superseded call is always
+      // followed by a newer one whose own finally settles isLoading — never
+      // stuck true.
+      if (shouldApplyStaleResponse(generation, generationRef.current)) setIsLoading(false);
     }
   }, [uid]);
 
@@ -140,19 +145,33 @@ export function useReviewSession(uid: string | undefined) {
         cursorRef.current,
       );
       const resolved = await resolveQueueEntries(page.items);
-      if (generationRef.current !== generation || activeUidRef.current !== uid) return;
+      if (!shouldApplyStaleResponse(generation, generationRef.current) || activeUidRef.current !== uid) return;
       // Dedupe by questionId: a page boundary can legitimately overlap once
       // an item's nextReviewAt has been rewritten by a review.
       setEntries((prev) => mergeResolvedPages(prev, resolved));
       cursorRef.current = page.cursor;
       setHasMore(page.hasMore);
     } catch (error) {
-      if (generationRef.current !== generation) return;
+      if (!shouldApplyStaleResponse(generation, generationRef.current)) return;
       // A failed page must NEVER clear what's already loaded.
       setPaginationError(mapStudyErrorToMessage(error));
     } finally {
       inFlightRef.current = false;
-      if (generationRef.current === generation) setIsLoadingMore(false);
+      // Unconditional, unlike the data-application checks above: this
+      // function is guarded by inFlightRef (a synchronous "already running"
+      // lock), so unlike loadFirstPage, a retry/loadFirstPage racing this
+      // call while it's in flight bumps generationRef WITHOUT that being
+      // followed by a guaranteed second loadMore() call to clean up after
+      // it. Gating this reset the same way the data-application checks are
+      // gated left isLoadingMore stuck true forever whenever that race hit
+      // — the inFlightRef.current guard at the top of this function then
+      // stayed permanently irrelevant (already false), but isLoadingMore
+      // itself never went back to false, leaving the pagination footer
+      // spinning forever and onEndReached silently doing nothing (it isn't
+      // gated on isLoadingMore, but the UI's spinner never clears). This is
+      // the exact bug class useSocialFeed.loadMore had — see its own fix's
+      // doc comment.
+      setIsLoadingMore(false);
     }
   }, [uid, hasMore]);
 

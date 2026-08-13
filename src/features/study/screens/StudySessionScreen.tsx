@@ -1,8 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
-import { useCallback, useEffect, useRef } from "react";
+import { router, useNavigation } from "expo-router";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Pressable,
   StyleSheet,
@@ -29,6 +30,10 @@ import { useAdaptiveStudySession } from "../hooks/useAdaptiveStudySession";
 import { useReviewSession } from "../hooks/useReviewSession";
 import { useStudyQueue } from "../hooks/useStudyQueue";
 import { ResolvedQueueEntry } from "../services/studyService";
+import {
+  resolveStudySessionExitGuard,
+  StudySessionExitGuardResult,
+} from "../services/studySessionExitGuard";
 
 export type StudySessionMode = "mandatory" | "adaptive";
 
@@ -64,6 +69,7 @@ export function StudySessionScreen({ mode }: StudySessionScreenProps) {
   const { firebaseUser } = useAuth();
   const uid = firebaseUser?.uid;
   const insets = useSafeAreaInsets();
+  const navigation = useNavigation();
 
   const mandatory = useReviewSession(mode === "mandatory" ? uid : undefined);
   const { summary } = useStudyQueue(mode === "adaptive" ? uid : undefined);
@@ -79,6 +85,47 @@ export function StudySessionScreen({ mode }: StudySessionScreenProps) {
     if (router.canGoBack()) router.back();
     else router.replace(ROUTES.studentStudy as never);
   }
+
+  // Adaptive cards are self-contained (each owns its own
+  // useStudyQuestionState, see StudySessionAdaptiveCard's own doc comment)
+  // — the screen has no other visibility into whether the currently visible
+  // card has a submission in flight, so each rendered card reports its own
+  // state here. A Set (not a single boolean) because windowSize keeps up to
+  // 3 cards mounted at once; only cleared for a given question when THAT
+  // question's own card reports settled.
+  const adaptiveSubmittingIdsRef = useRef<Set<string>>(new Set());
+  const [isAdaptiveSubmitting, setIsAdaptiveSubmitting] = useState(false);
+  const handleAdaptiveSubmittingChange = useCallback((questionId: string, submitting: boolean) => {
+    if (submitting) adaptiveSubmittingIdsRef.current.add(questionId);
+    else adaptiveSubmittingIdsRef.current.delete(questionId);
+    setIsAdaptiveSubmitting(adaptiveSubmittingIdsRef.current.size > 0);
+  }, []);
+
+  // Read inside the beforeRemove listener below, which is registered once
+  // and would otherwise close over stale values — same pattern as
+  // AnswerScreen's exitGuardRef.
+  const exitGuardRef = useRef<StudySessionExitGuardResult>({ blocked: false, message: "" });
+  useEffect(() => {
+    const isSubmitting = mode === "mandatory" ? mandatory.isSubmitting : isAdaptiveSubmitting;
+    exitGuardRef.current = resolveStudySessionExitGuard({ isSubmitting });
+  }, [mode, mandatory.isSubmitting, isAdaptiveSubmitting]);
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener("beforeRemove", (event) => {
+      if (!exitGuardRef.current.blocked) return;
+
+      event.preventDefault();
+      Alert.alert("Emin misin?", exitGuardRef.current.message, [
+        { text: "İptal", style: "cancel" },
+        {
+          text: "Çık",
+          style: "destructive",
+          onPress: () => navigation.dispatch(event.data.action),
+        },
+      ]);
+    });
+    return unsubscribe;
+  }, [navigation]);
 
   // Keeps the FlatList in sync with useReviewSession's own idea of "the
   // current card" (advances automatically after an outcome, or after a
@@ -264,6 +311,7 @@ export function StudySessionScreen({ mode }: StudySessionScreenProps) {
             onOutcomeRecorded={() => {
               listRef.current?.scrollToOffset({ offset: pageHeight * (index + 1), animated: true });
             }}
+            onSubmittingChange={(submitting) => handleAdaptiveSubmittingChange(item.id, submitting)}
           />
         )}
         getItemLayout={(_, index) => ({ length: pageHeight, offset: pageHeight * index, index })}

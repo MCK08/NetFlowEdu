@@ -27,6 +27,7 @@ import { mapStudyErrorToMessage } from "../services/studyErrorMapper";
 import { queueEmptyCopy } from "../services/studyPresentation";
 import { recordStudyOutcome } from "../services/studyService";
 import { ResolvedQueueEntry } from "../services/studyService";
+import { resolveStudyStartTarget } from "../services/studyDueCheck";
 
 function keyExtractor(entry: ResolvedQueueEntry) {
   return entry.item.questionId;
@@ -49,7 +50,7 @@ export function StudyScreen() {
   const { firebaseUser } = useAuth();
   const uid = firebaseUser?.uid;
   const { entries, summary, isLoading, isRefreshing, error, refresh, dismiss } = useStudyQueue(uid);
-  const { insights, plan, moment, refresh: refreshInsights } = useLearningInsights(uid, summary);
+  const { items, insights, plan, moment, refresh: refreshInsights } = useLearningInsights(uid, summary);
   const guardedNavigate = useNavigationGuard();
 
   // Per-card busy/error state, keyed by questionId — a failure on one card
@@ -87,6 +88,34 @@ export function StudyScreen() {
       router.push(ROUTES.studentAdaptiveSession as never),
     );
   }, [guardedNavigate]);
+
+  // The Daily Practice Plan card's own dueCount is a memoized snapshot
+  // (useLearningInsights recomputes it only when `items`/summary change,
+  // never on the clock alone) — it can under- or over-report due-ness by
+  // however long this screen has sat idle. Re-checking against `items`
+  // (the same data, zero new reads) with a genuinely fresh `now` at the
+  // moment of the tap is what makes the routing decision trustworthy;
+  // plan.dueCount itself is only ever used for what's DISPLAYED, never for
+  // which screen opens.
+  const handleStartPlan = useCallback(() => {
+    const target = resolveStudyStartTarget({
+      items,
+      now: Date.now(),
+      hasPlanItems: plan.planItems.length > 0,
+    });
+    // The stale display disagreed with the live check — self-correct it via
+    // the same refresh the Hub already triggers elsewhere (focus, outcome
+    // recorded), rather than leaving it wrong until the next natural
+    // trigger. No new fetch: refreshInsights() already exists.
+    if (target === "mandatory" && plan.dueCount === 0) {
+      refreshInsights();
+    }
+    if (target === "mandatory") {
+      startSession();
+    } else if (target === "adaptive") {
+      startAdaptiveSession();
+    }
+  }, [items, plan.planItems.length, plan.dueCount, refreshInsights, startSession, startAdaptiveSession]);
 
   const handleOpen = useCallback(
     (questionId: string) => {
@@ -179,11 +208,7 @@ export function StudyScreen() {
             {/* Phase 25 §10 — one deterministic sentence, real trend data,
                 no invented text. See learningMoment.ts. */}
             {moment ? <Text style={styles.moment}>{moment}</Text> : null}
-            <DailyPracticePlanSection
-              plan={plan}
-              onStartDue={startSession}
-              onStartAdaptive={startAdaptiveSession}
-            />
+            <DailyPracticePlanSection plan={plan} onStart={handleStartPlan} />
             <StudyProgressCard summary={summary} dueCount={insights.dueCount} />
             <DailyGoalEditor currentGoal={summary.dailyGoal} onSaved={handleRefresh} />
             {error ? (

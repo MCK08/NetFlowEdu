@@ -14,8 +14,12 @@ import { goalProgressLabel, planReasonLabel } from "../services/studyPresentatio
 
 interface DailyPracticePlanSectionProps {
   plan: DailyPracticePlan;
-  onStartDue: () => void;
-  onStartAdaptive: () => void;
+  // A single callback, not onStartDue/onStartAdaptive — the CALLER decides
+  // mandatory vs. adaptive at press time via a fresh due-check (see
+  // studyDueCheck.ts), not this component from a possibly-stale
+  // plan.dueCount. This component only decides WHETHER to show the button
+  // at all (is there anything to do), never WHICH mode to open.
+  onStart: () => void;
 }
 
 interface PlanRowProps {
@@ -58,8 +62,7 @@ function questionWord(count: number): string {
 // WeakTopicsSection/SubjectBreakdownSection's "hide when empty" convention.
 export const DailyPracticePlanSection = memo(function DailyPracticePlanSection({
   plan,
-  onStartDue,
-  onStartAdaptive,
+  onStart,
 }: DailyPracticePlanSectionProps) {
   if (plan.dueCount === 0 && plan.planItems.length === 0) return null;
 
@@ -77,15 +80,12 @@ export const DailyPracticePlanSection = memo(function DailyPracticePlanSection({
     ? `${firstContinueSubject} · ${questionWord(continueItems.length)}`
     : questionWord(continueItems.length);
 
-  // Due first (server-authoritative, always fully answerable via the
-  // existing mandatory review session); otherwise, if the plan still has
-  // recommendations (weak topics / goal fill) with nothing mandatory due,
-  // starts the adaptive StudySession over the plan's own ranked items —
-  // never a single question's detail screen (that used to be the fallback
-  // here and is exactly what regressed "Çalışmaya Başla" into opening
-  // AnswerScreen directly instead of a swipeable session).
-  const handleStart =
-    plan.dueCount > 0 ? onStartDue : plan.planItems.length > 0 ? onStartAdaptive : undefined;
+  // Whether to render a button at all — a coarse, presentational gate from
+  // the (possibly stale) plan snapshot. Fine to be stale here: worst case a
+  // button briefly shows or hides one render late. WHICH mode it opens is
+  // decided live by the caller (see onStart / studyDueCheck.ts) — that
+  // decision must never be stale, since it changes what screen opens.
+  const handleStart = plan.dueCount > 0 || plan.planItems.length > 0 ? onStart : undefined;
 
   return (
     <View style={styles.container}>

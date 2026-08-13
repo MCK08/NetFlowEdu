@@ -4,6 +4,7 @@ import { getClassMembers } from "@services/firebase/classes";
 import { getClassSourcedStudyItems } from "@features/study/services/studyService";
 import { resolveQuestionMetadata } from "@features/study/services/studyMetadataCache";
 import { mapStudyErrorToMessage } from "@features/study/services/studyErrorMapper";
+import { shouldApplyStaleResponse } from "@features/study/services/staleResponseGuard";
 import { ClassMember } from "@/types/class";
 
 import {
@@ -55,11 +56,11 @@ export function useClassPerformance(classId: string | undefined) {
       const itemsByStudent = await Promise.all(
         students.map((student) => getClassSourcedStudyItems(student.uid, classId)),
       );
-      if (requestIdRef.current !== requestId) return;
+      if (!shouldApplyStaleResponse(requestId, requestIdRef.current)) return;
 
       const allQuestionIds = [...new Set(itemsByStudent.flat().map((item) => item.questionId))];
       const questionsById = await resolveQuestionMetadata(allQuestionIds);
-      if (requestIdRef.current !== requestId) return;
+      if (!shouldApplyStaleResponse(requestId, requestIdRef.current)) return;
 
       const now = Date.now();
       const nextCards: StudentPerformanceCard[] = students.map((student, index) => {
@@ -75,10 +76,15 @@ export function useClassPerformance(classId: string | undefined) {
 
       setCards(sortStudentPerformanceCards(nextCards));
     } catch (err) {
-      if (requestIdRef.current !== requestId) return;
+      if (!shouldApplyStaleResponse(requestId, requestIdRef.current)) return;
       setError(mapStudyErrorToMessage(err));
     } finally {
-      if (requestIdRef.current === requestId) setIsLoading(false);
+      // Safe to gate here: load has no in-flight guard blocking a retry, so
+      // a superseded call is always followed by a newer one whose own
+      // finally settles isLoading — never stuck (unlike a loadMore-style
+      // hook with a synchronous in-flight lock; see
+      // useReviewSession.ts's loadMore for that case and its fix).
+      if (shouldApplyStaleResponse(requestId, requestIdRef.current)) setIsLoading(false);
     }
   }, [classId]);
 

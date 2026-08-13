@@ -11,6 +11,17 @@ import { Question } from "@/types/question";
 // for filtering: a pure reordering layer in front of reconcileFeedItems,
 // which already knows how to reconcile an arbitrary reorder of `questions`
 // without corrupting reshow pairs or producing duplicate keys (Phase 20).
+//
+// FEED vs. DAILY PLAN — an intentional contract, not a bug: this file is
+// DISCOVERY-oriented (the "discovery" tier below deliberately outranks
+// "developed", so never-studied questions surface promptly) — see
+// dailyPracticePlan.ts's own note on this, which is REINFORCEMENT-oriented
+// (a never-studied question can only ever enter via its lowest-priority
+// goal_fill tier, since it has no study item to rank by at all). Both read
+// the SAME underlying mastery/recency signals; they are not required to,
+// and by design do not, recommend the same thing in the same session. Do
+// not "fix" this by merging the two orderings — see
+// tests/unit/feedRanking.test.ts's cross-surface contract test.
 
 export interface QuestionSignal {
   // Whether the caller's OWN studyItem for this question is currently due

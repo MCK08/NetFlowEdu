@@ -124,5 +124,18 @@ export function useLearningInsights(uid: string | undefined, summary: StudySumma
   // already computed above — no new data, no invented text.
   const moment = useMemo(() => buildLearningMoment(trend, insights.weakTopics), [trend, insights.weakTopics]);
 
-  return { insights, plan, trend, moment, isLoading, error, refresh: load };
+  return {
+    // Exposed so callers can re-verify time-sensitive decisions (e.g. "is
+    // anything due right now") against a fresher clock reading than
+    // `plan`/`insights`' own memoized `now` — see studyDueCheck.ts. This is
+    // the SAME array already held in this hook's state, not a new fetch.
+    items,
+    insights,
+    plan,
+    trend,
+    moment,
+    isLoading,
+    error,
+    refresh: load,
+  };
 }

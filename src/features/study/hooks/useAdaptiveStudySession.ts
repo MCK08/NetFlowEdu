@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { StudySummary } from "../services/studyService";
 import { resolveQuestionMetadata } from "../services/studyMetadataCache";
 import { toAdaptiveSessionQuestions } from "../services/studySessionQuestions";
+import { shouldApplyStaleResponse } from "../services/staleResponseGuard";
 import { Question } from "@/types/question";
 
 import { useLearningInsights } from "./useLearningInsights";
@@ -30,7 +31,7 @@ export function useAdaptiveStudySession(uid: string | undefined, summary: StudyS
     async function resolve() {
       setIsResolving(true);
       const metadata = await resolveQuestionMetadata(plan.planItems.map((item) => item.questionId));
-      if (cancelled || requestIdRef.current !== requestId) return;
+      if (cancelled || !shouldApplyStaleResponse(requestId, requestIdRef.current)) return;
       setQuestions(toAdaptiveSessionQuestions(plan.planItems, metadata));
       setIsResolving(false);
     }

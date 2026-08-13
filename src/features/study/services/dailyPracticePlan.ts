@@ -13,6 +13,18 @@ import { buildRecencySignal, recencyPriorityIndex } from "./recencySignal";
 // (see useLearningInsights.ts) and that call's own weakTopics output — so
 // building a plan costs zero additional Firestore reads over what the
 // Learning Hub already fetches.
+//
+// FEED vs. DAILY PLAN — an intentional contract, not a bug: this module is
+// REINFORCEMENT-oriented — every tier (due/struggled/weak_topic/goal_fill)
+// requires an existing LearningInsightItem, i.e. the student has already
+// studied the question at least once. A genuinely never-studied question
+// therefore can NEVER appear here at all. Compare src/features/feed/
+// services/feedRanking.ts, which is DISCOVERY-oriented and deliberately
+// ranks never-studied questions ABOVE already-developed ones. Both read the
+// same underlying mastery/recency signals; they are not required to, and by
+// design do not, recommend the same thing in the same session. Do not
+// "fix" this by merging the two orderings — see
+// tests/unit/feedRanking.test.ts's cross-surface contract test.
 
 // How many non-due recommendation items the Hub renders at once. Not a
 // query limit — remainingGoal can be far larger; only what's surfaced here

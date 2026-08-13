@@ -9,6 +9,7 @@ import {
   subscribeToStudySummary,
 } from "../services/studyService";
 import { mapStudyErrorToMessage } from "../services/studyErrorMapper";
+import { shouldApplyStaleResponse } from "../services/staleResponseGuard";
 
 // Loads the due-review queue and the progress summary for one student.
 //
@@ -47,13 +48,17 @@ export function useStudyQueue(uid: string | undefined) {
         // the review session's job (see useReviewSession).
         const page = await getDueStudyItemsPage(uid, Date.now());
         const resolved = await resolveQueueEntries(page.items);
-        if (requestIdRef.current !== requestId || activeUidRef.current !== uid) return;
+        if (!shouldApplyStaleResponse(requestId, requestIdRef.current) || activeUidRef.current !== uid) return;
         setEntries(resolved);
       } catch (err) {
-        if (requestIdRef.current !== requestId || activeUidRef.current !== uid) return;
+        if (!shouldApplyStaleResponse(requestId, requestIdRef.current) || activeUidRef.current !== uid) return;
         setError(mapStudyErrorToMessage(err));
       } finally {
-        if (requestIdRef.current === requestId) {
+        // Safe to gate on the SAME predicate here (unlike loadMore-style
+        // hooks with an in-flight guard blocking a retry): `load` has no
+        // such guard, so a superseded call is always followed by a newer
+        // one whose own finally will settle these flags — never stuck.
+        if (shouldApplyStaleResponse(requestId, requestIdRef.current)) {
           setIsLoading(false);
           setIsRefreshing(false);
         }

@@ -19,6 +19,11 @@ interface StudySessionAdaptiveCardProps {
   question: Question;
   height: number;
   onOutcomeRecorded: (outcome: StudyOutcome, question: Question) => void;
+  // Mirrors PhotoAnswerForm's onUploadingChange (Phase 24): this card's
+  // useStudyQuestionState is entirely self-contained, so the screen has no
+  // other way to know a submission is in flight for the visible card —
+  // needed for StudySessionScreen's exit guard (studySessionExitGuard.ts).
+  onSubmittingChange?: (isSubmitting: boolean) => void;
 }
 
 // Phase 28 — one page of the ADAPTIVE (free/"Çalışmaya Devam Et") study
@@ -34,6 +39,7 @@ function StudySessionAdaptiveCardComponent({
   question,
   height,
   onOutcomeRecorded,
+  onSubmittingChange,
 }: StudySessionAdaptiveCardProps) {
   const study = useStudyQuestionState({ questionId: question.id, enabled: true });
   const [showFlourish, setShowFlourish] = useState(false);
@@ -44,6 +50,14 @@ function StudySessionAdaptiveCardComponent({
       if (dismissTimeoutRef.current) clearTimeout(dismissTimeoutRef.current);
     };
   }, []);
+
+  // pendingOutcome is non-null for exactly the network round-trip
+  // (useStudyQuestionState's submit sets it before the await, clears it in
+  // `finally`) — the same "in flight" window AnswerScreen's isUploading
+  // guards for photo/drawing submissions.
+  useEffect(() => {
+    onSubmittingChange?.(study.pendingOutcome !== null);
+  }, [study.pendingOutcome, onSubmittingChange]);
 
   async function handleSelect(outcome: StudyOutcome) {
     const succeeded = await study.submit(outcome);
