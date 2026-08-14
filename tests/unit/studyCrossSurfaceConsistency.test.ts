@@ -167,6 +167,55 @@ describe("every surface uses the one shared control", () => {
       .map(({ path }) => path);
     expect(offenders).toEqual([]);
   });
+
+  // Phase 38 — Ödev/Çalış (assignment/adaptive swipe sessions) had a
+  // self-assessment control (Tekrar Et/Zorlandım/Çözdüm) but no way to
+  // actually SUBMIT a real photo/drawing answer, unlike the Feed (FeedCard's
+  // "Çöz" pill -> QuestionDetailScreen's "Cevapla" -> AnswerScreen). Both
+  // swipe cards now render the same shared StudyAnswerButton, which reuses
+  // QuestionDetailScreen's own route/guard — never a second, independently
+  // maintained "answer" entry point.
+  it.each([
+    "src/features/study/components/StudySessionMandatoryCard.tsx",
+    "src/features/study/components/StudySessionAdaptiveCard.tsx",
+  ])("%s renders the shared StudyAnswerButton (Cevapla entry point)", (path) => {
+    const source = clientSources.find((file) => file.path === path);
+    expect(source).toBeDefined();
+    expect(source?.text).toContain("<StudyAnswerButton");
+  });
+
+  it("StudyAnswerButton pushes the exact same route QuestionDetailScreen's own Cevapla button uses", () => {
+    const answerButton = clientSources.find(
+      (file) => file.path === "src/features/study/components/StudyAnswerButton.tsx",
+    );
+    const questionDetail = clientSources.find(
+      (file) => file.path === "src/features/questions/screens/QuestionDetailScreen.tsx",
+    );
+    expect(answerButton).toBeDefined();
+    expect(questionDetail).toBeDefined();
+    const routePattern = /pathname:\s*"\/\(student\)\/answer\/\[questionId\]"/;
+    expect(answerButton?.text).toMatch(routePattern);
+    expect(questionDetail?.text).toMatch(routePattern);
+  });
+
+  it("leaves the answer-navigation route pushed from exactly its known consumers", () => {
+    // ClassFeedCard already pushed this route before this phase (the class
+    // feed's own "Cevapla"); QuestionDetailScreen is the question-detail
+    // entry point; StudyAnswerButton is this phase's addition. A NEW
+    // independently-typed push beyond these three is exactly how a future
+    // edit could drift from the guarded, double-tap-safe navigation
+    // QuestionDetailScreen's own doc comment describes.
+    const consumers = clientSources
+      .filter(({ text }) => /pathname:\s*"\/\(student\)\/answer\/\[questionId\]"/.test(text))
+      .map(({ path }) => path);
+    expect(consumers.sort()).toEqual(
+      [
+        "src/features/classes/components/ClassFeedCard.tsx",
+        "src/features/questions/screens/QuestionDetailScreen.tsx",
+        "src/features/study/components/StudyAnswerButton.tsx",
+      ].sort(),
+    );
+  });
 });
 
 describe("queue items and hydrated items describe state identically", () => {

@@ -59,10 +59,22 @@ export function computeSessionItemOffset(index: number, headerHeight: number, ca
   return headerHeight + cardHeight * index;
 }
 
-// The outcome area (description + Tekrar Et/Zorlandım/Çözdüm) never claims
-// more than this fraction of one card's height — see
-// StudySessionAdaptiveCard/StudySessionMandatoryCard's own use of this same
-// constant. Exported so it stays the single source both cards read, rather
-// than two independently-editable copies of the same number silently
-// drifting apart.
-export const SESSION_CONTROLS_MAX_HEIGHT_RATIO = 0.55;
+// Phase 37 — the question image never claims more than this fraction of the
+// page's own available height. Root cause of the "photo dominates the
+// screen" regression: the image box previously used flex: 1 inside a
+// fixed-height page, so it filled EVERY pixel the (usually much smaller)
+// outcome section below it didn't need — the Study Hub's own reference
+// card (StudyQueueCard) never does this; its image is a small, bounded box
+// inside the same card as the outcome controls, never a flex-filled hero.
+// contentFit="contain" still guarantees the photo itself is never cropped
+// or stretched inside this box — only the BOX's own height is capped.
+//
+// Phase 38 — raised from 0.45: with the fix capped that tightly, the whole
+// PAGE read as a small floating card centered in a sea of empty space
+// instead of a real, immersive full page like the rest of the app's swipe
+// surfaces (the Feed's own photo view). 0.45 avoided the overflow bug but
+// over-corrected into the opposite visual problem. Still well short of the
+// old flex: 1 (which had NO ceiling at all and could claim 90%+), and the
+// ScrollView safety net in both cards means this is never the only thing
+// standing between the outcome buttons and being unreachable.
+export const SESSION_IMAGE_MAX_HEIGHT_RATIO = 0.62;

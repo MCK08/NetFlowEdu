@@ -2,7 +2,7 @@ import {
   computeSessionCardHeight,
   computeSessionItemOffset,
   computeSessionSnapOffsets,
-  SESSION_CONTROLS_MAX_HEIGHT_RATIO,
+  SESSION_IMAGE_MAX_HEIGHT_RATIO,
 } from "../../src/features/study/services/studySessionLayout";
 
 // Phase 35 — regression coverage for the "Tekrar Et"/"Zorlandım"/"Çözdüm"
@@ -69,13 +69,13 @@ describe("computeSessionItemOffset", () => {
   });
 });
 
-describe("SESSION_CONTROLS_MAX_HEIGHT_RATIO", () => {
-  it("is a fraction strictly between 0 and 1 — the outcome area can never claim the whole card nor be reduced to nothing", () => {
-    expect(SESSION_CONTROLS_MAX_HEIGHT_RATIO).toBeGreaterThan(0);
-    expect(SESSION_CONTROLS_MAX_HEIGHT_RATIO).toBeLessThan(1);
+describe("SESSION_IMAGE_MAX_HEIGHT_RATIO", () => {
+  it("is a fraction strictly between 0 and 1 — the image can never claim the whole page nor be reduced to nothing", () => {
+    expect(SESSION_IMAGE_MAX_HEIGHT_RATIO).toBeGreaterThan(0);
+    expect(SESSION_IMAGE_MAX_HEIGHT_RATIO).toBeLessThan(1);
   });
 
-  it("leaves the image at least as much room as the controls area gets — the image must never be the smaller share by design", () => {
-    expect(SESSION_CONTROLS_MAX_HEIGHT_RATIO).toBeLessThanOrEqual(0.6);
+  it("still leaves real, guaranteed room for the outcome section (Cevapla + Tekrar Et/Zorlandım/Çözdüm) below the image — the image may be the visually larger share (Phase 38: it's the page's primary content, same as the Feed's own photo view), but never so tall it approaches the old uncapped flex: 1 behavior", () => {
+    expect(SESSION_IMAGE_MAX_HEIGHT_RATIO).toBeLessThanOrEqual(0.7);
   });
 });

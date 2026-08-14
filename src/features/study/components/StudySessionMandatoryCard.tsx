@@ -3,13 +3,15 @@ import { memo } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { colors } from "@theme/colors";
+import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
 
 import { StudyOutcome } from "../domain/studyTypes";
 import { ResolvedQueueEntry } from "../services/studyService";
 import { toHydratedStudyItem } from "../services/studyItemParser";
-import { SESSION_CONTROLS_MAX_HEIGHT_RATIO } from "../services/studySessionLayout";
+import { SESSION_IMAGE_MAX_HEIGHT_RATIO } from "../services/studySessionLayout";
+import { StudyAnswerButton } from "./StudyAnswerButton";
 import { StudyOutcomeCard } from "./StudyOutcomeCard";
 import { StudyOutcomeControls } from "./StudyOutcomeControls";
 import { StudyOutcomeSuccessFlourish } from "./StudyOutcomeSuccessFlourish";
@@ -42,7 +44,7 @@ function StudySessionMandatoryCardComponent({
 
   if (!question) {
     return (
-      <View style={[styles.card, { height }]}>
+      <View style={[styles.page, { height }]}>
         <View style={styles.unavailable}>
           <Text style={styles.unavailableTitle}>Bu soruya artık erişilemiyor.</Text>
           <Text style={styles.unavailableDescription}>
@@ -53,34 +55,33 @@ function StudySessionMandatoryCardComponent({
     );
   }
 
-  return (
-    <View style={[styles.card, { height }]}>
-      <View style={styles.imageWrap}>
-        <Image
-          source={{ uri: question.imageUrl }}
-          style={styles.image}
-          contentFit="contain"
-          transition={150}
-          accessibilityIgnoresInvertColors
-          accessibilityLabel="Soru görseli"
-        />
-      </View>
+  // Phase 37 — same structure as StudySessionAdaptiveCard's identical
+  // fix (see that component's doc comment for the full root-cause story):
+  // one ScrollView, one StudyOutcomeCard containing [capped image,
+  // description, outcome controls] as ONE cohesive card, exactly mirroring
+  // the Study Hub's own reference queue card instead of a flex-filled hero
+  // image with a separate button box floating below it.
+  const imageMaxHeight = Math.round(height * SESSION_IMAGE_MAX_HEIGHT_RATIO);
 
-      {/* Same reasoning as StudySessionAdaptiveCard's identical block: the
-          image already shrinks to fit via imageWrap's flex: 1; this
-          ScrollView guarantees the outcome buttons stay reachable even if
-          the description is pathologically long, capped so the image can
-          never be crushed to nothing by it. Behaves like a plain View
-          (nothing scrolls) whenever content already fits. StudyOutcomeCard
-          is the same "master" design as the Study Hub's own queue card —
-          see that component's doc comment. */}
+  return (
+    <View style={[styles.page, { height }]}>
       <ScrollView
-        style={[styles.controlsScroll, { maxHeight: Math.round(height * SESSION_CONTROLS_MAX_HEIGHT_RATIO) }]}
-        contentContainerStyle={styles.controlsContent}
-        bounces={false}
+        contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        bounces={false}
       >
         <StudyOutcomeCard>
+          <View style={[styles.imageWrap, { maxHeight: imageMaxHeight }]}>
+            <Image
+              source={{ uri: question.imageUrl }}
+              style={styles.image}
+              contentFit="contain"
+              transition={150}
+              accessibilityIgnoresInvertColors
+              accessibilityLabel="Soru görseli"
+            />
+          </View>
+          <StudyAnswerButton questionId={question.id} visibility={question.visibility} />
           {question.description ? <Text style={styles.description}>{question.description}</Text> : null}
           <StudyOutcomeControls
             item={toHydratedStudyItem(item)}
@@ -100,22 +101,26 @@ function StudySessionMandatoryCardComponent({
 export const StudySessionMandatoryCard = memo(StudySessionMandatoryCardComponent);
 
 const styles = StyleSheet.create({
-  card: {
+  page: {
     width: "100%",
     backgroundColor: colors.background,
   },
+  scrollContent: {
+    flexGrow: 1,
+    padding: spacing.lg,
+  },
   imageWrap: {
-    flex: 1,
+    width: "100%",
+    // Taller than square — see StudySessionAdaptiveCard's identical style
+    // for the full reasoning.
+    aspectRatio: 0.78,
+    borderRadius: radius.lg,
     backgroundColor: colors.surfaceMuted,
+    overflow: "hidden",
   },
   image: {
-    flex: 1,
-  },
-  controlsScroll: {
-    flexGrow: 0,
-  },
-  controlsContent: {
-    padding: spacing.lg,
+    width: "100%",
+    height: "100%",
   },
   description: {
     ...typography.body,

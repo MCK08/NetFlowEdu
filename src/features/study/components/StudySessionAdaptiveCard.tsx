@@ -4,6 +4,7 @@ import { ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { colors } from "@theme/colors";
 import { duration } from "@theme/animation";
+import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
@@ -11,8 +12,9 @@ import { Question } from "@/types/question";
 
 import { StudyOutcome } from "../domain/studyTypes";
 import { REVIEW_ADVANCE_DELAY_MS } from "../services/studyPresentation";
-import { SESSION_CONTROLS_MAX_HEIGHT_RATIO } from "../services/studySessionLayout";
+import { SESSION_IMAGE_MAX_HEIGHT_RATIO } from "../services/studySessionLayout";
 import { useStudyQuestionState } from "../hooks/useStudyQuestionState";
+import { StudyAnswerButton } from "./StudyAnswerButton";
 import { StudyOutcomeCard } from "./StudyOutcomeCard";
 import { StudyOutcomeControls } from "./StudyOutcomeControls";
 import { StudyOutcomeSuccessFlourish } from "./StudyOutcomeSuccessFlourish";
@@ -77,40 +79,45 @@ function StudySessionAdaptiveCardComponent({
   }, [opacity]);
   const fadeStyle = useAnimatedStyle(() => ({ opacity: opacity.value }));
 
-  return (
-    <Animated.View style={[styles.card, { height }, fadeStyle]}>
-      <View style={styles.imageWrap}>
-        <Image
-          source={{ uri: question.imageUrl }}
-          style={styles.image}
-          contentFit="contain"
-          transition={150}
-          accessibilityIgnoresInvertColors
-          accessibilityLabel="Soru görseli"
-        />
-      </View>
+  // Phase 37 — root cause of the photo dominating the screen: imageWrap
+  // used flex: 1 inside this fixed-height page, so it filled EVERY pixel
+  // the (usually much smaller) outcome section didn't need — a portrait
+  // photo in a box that tall reads as "the whole screen is the photo",
+  // exactly the reported screenshot. The Study Hub's own queue card
+  // (StudyQueueCard, the reference design) never does this: its image is a
+  // small, bounded box INSIDE the same card as the outcome controls, not a
+  // separate flex-filled hero above them. This mirrors that structure
+  // exactly: one ScrollView (the whole page can scroll, per the design
+  // audit — "fotoğraf yüksekliği içeriğin doğal bir parçası olmalı"), one
+  // StudyOutcomeCard containing the image (capped height, never flex-fills
+  // leftover space) then the description then the outcome controls, read as
+  // one cohesive card exactly like StudyQueueCard's own [image, meta,
+  // controls] structure — not an image floating above a separate button box.
+  const imageMaxHeight = Math.round(height * SESSION_IMAGE_MAX_HEIGHT_RATIO);
 
-      {/* The image already shrinks to fit via imageWrap's flex: 1 — this
-          ScrollView is the safety net for the OTHER direction: a
-          pathologically long description (or a future added field) that
-          would otherwise push "Tekrar Et"/"Zorlandım"/"Çözdüm" past the
-          bottom of the fixed-height card with no way back to them. Capped
-          at a fraction of the card's own height so the image can never be
-          crushed to nothing by it; when content fits (the normal case) this
-          renders and behaves exactly like a plain View — nothing scrolls,
-          nothing about today's layout changes.
-          The StudyOutcomeCard inside it is the same "master" design as the
-          Study Hub's own queue card (see that component's doc comment) —
-          same border/radius/padding/background as every other surface that
-          asks "Bu soruyu nasıl çözdün?", not a bespoke look for this swipe
-          screen. */}
+  return (
+    <Animated.View style={[styles.page, { height }, fadeStyle]}>
       <ScrollView
-        style={[styles.controlsScroll, { maxHeight: Math.round(height * SESSION_CONTROLS_MAX_HEIGHT_RATIO) }]}
-        contentContainerStyle={styles.controlsContent}
-        bounces={false}
+        contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        bounces={false}
       >
         <StudyOutcomeCard>
+          {/* contentFit="contain" + a capped, NON-flex box: the photo is
+              never cropped or stretched (its own aspect ratio always wins
+              inside this box) and never allowed to balloon past a sane
+              share of the screen either. */}
+          <View style={[styles.imageWrap, { maxHeight: imageMaxHeight }]}>
+            <Image
+              source={{ uri: question.imageUrl }}
+              style={styles.image}
+              contentFit="contain"
+              transition={150}
+              accessibilityIgnoresInvertColors
+              accessibilityLabel="Soru görseli"
+            />
+          </View>
+          <StudyAnswerButton questionId={question.id} visibility={question.visibility} />
           {question.description ? <Text style={styles.description}>{question.description}</Text> : null}
           <StudyOutcomeControls
             item={study.item}
@@ -131,22 +138,29 @@ function StudySessionAdaptiveCardComponent({
 export const StudySessionAdaptiveCard = memo(StudySessionAdaptiveCardComponent);
 
 const styles = StyleSheet.create({
-  card: {
+  page: {
     width: "100%",
     backgroundColor: colors.background,
   },
+  scrollContent: {
+    flexGrow: 1,
+    padding: spacing.lg,
+  },
   imageWrap: {
-    flex: 1,
+    width: "100%",
+    // Taller than square (most question photos — handwritten work shot
+    // portrait, like a notebook page — are themselves taller than wide);
+    // contentFit="contain" on the Image always shows the real photo
+    // un-cropped regardless, this just gives it more natural room before
+    // the maxHeight cap above ever has to letterbox it.
+    aspectRatio: 0.78,
+    borderRadius: radius.lg,
     backgroundColor: colors.surfaceMuted,
+    overflow: "hidden",
   },
   image: {
-    flex: 1,
-  },
-  controlsScroll: {
-    flexGrow: 0,
-  },
-  controlsContent: {
-    padding: spacing.lg,
+    width: "100%",
+    height: "100%",
   },
   description: {
     ...typography.body,
