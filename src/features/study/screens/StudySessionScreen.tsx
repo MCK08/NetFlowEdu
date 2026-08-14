@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router, useNavigation } from "expo-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -33,6 +33,11 @@ import { useAdaptiveStudySession } from "../hooks/useAdaptiveStudySession";
 import { useReviewSession } from "../hooks/useReviewSession";
 import { useStudyQueue } from "../hooks/useStudyQueue";
 import { ResolvedQueueEntry } from "../services/studyService";
+import {
+  computeSessionCardHeight,
+  computeSessionItemOffset,
+  computeSessionSnapOffsets,
+} from "../services/studySessionLayout";
 import {
   resolveStudySessionExitGuard,
   StudySessionExitGuardResult,
@@ -101,10 +106,39 @@ export function StudySessionScreen({ mode, assignmentId }: StudySessionScreenPro
   const swipeRefresh = isAssignmentMode ? assignmentSession.refresh : adaptive.refresh;
 
   const listRef = useRef<FlatList<ResolvedQueueEntry | Question>>(null);
-  // A real height, not the window's full height minus anything — this is
-  // its own stack screen (see app/(student)/study/session.tsx), with no
-  // tab bar to dodge, unlike FeedScreen.
-  const { height: pageHeight } = useWindowDimensions();
+  const { height: windowHeight } = useWindowDimensions();
+  // Phase 35 — the RAW window height used to be passed straight through as
+  // each card's own height (`pageHeight`), which is taller than what's
+  // actually visible: the header floats on top (position: absolute) and a
+  // ListHeaderComponent spacer of the same height pushes real content down
+  // by that much, and the bottom safe-area inset (home indicator) was never
+  // subtracted at all. A card sized to the full raw window therefore always
+  // extends past both the top (behind the header) and the bottom (under the
+  // home indicator) of what the student can actually see or reach — exactly
+  // the "Zorlandım"/"Çözdüm" buttons falling off-screen bug. `cardHeight` is
+  // the true visible budget between the header and the safe bottom edge;
+  // every card, and every offset computed against it, uses this instead.
+  const headerHeight = insets.top + HEADER_HEIGHT;
+  const cardHeight = computeSessionCardHeight({ windowHeight, headerHeight, insetsBottom: insets.bottom });
+
+  // snapToInterval alone snaps at multiples of ONE fixed interval measured
+  // from offset 0 — it has no way to represent "the header spacer is a
+  // different height than every card after it". With snapToInterval set to
+  // cardHeight, every snap point would land cardHeight*N from the top, which
+  // is headerHeight short of where item N actually starts once the header
+  // spacer's own height differs from cardHeight (it always does — the
+  // header is a small strip, not a full page). snapToOffsets is the correct
+  // FlatList API for this: an explicit list of real scroll-stop positions,
+  // so swiping always lands exactly on a card's top, never partway between
+  // the header and the first card.
+  const mandatorySnapOffsets = useMemo(
+    () => computeSessionSnapOffsets(mandatory.entries.length, headerHeight, cardHeight),
+    [mandatory.entries.length, headerHeight, cardHeight],
+  );
+  const swipeSnapOffsets = useMemo(
+    () => computeSessionSnapOffsets(swipeQuestions.length, headerHeight, cardHeight),
+    [swipeQuestions.length, headerHeight, cardHeight],
+  );
 
   function goBack() {
     if (router.canGoBack()) router.back();
@@ -160,8 +194,11 @@ export function StudySessionScreen({ mode, assignmentId }: StudySessionScreenPro
   // scrollToIndex has with RatingCard's auto-advance.
   useEffect(() => {
     if (mode !== "mandatory" || mandatory.isComplete) return;
-    listRef.current?.scrollToOffset({ offset: pageHeight * mandatory.index, animated: true });
-  }, [mode, mandatory.index, mandatory.isComplete, pageHeight]);
+    listRef.current?.scrollToOffset({
+      offset: computeSessionItemOffset(mandatory.index, headerHeight, cardHeight),
+      animated: true,
+    });
+  }, [mode, mandatory.index, mandatory.isComplete, headerHeight, cardHeight]);
 
   const handleMandatoryEndReached = useCallback(() => {
     if (mandatory.hasMore) mandatory.retryPagination();
@@ -278,16 +315,20 @@ export function StudySessionScreen({ mode, assignmentId }: StudySessionScreenPro
           renderItem={({ item, index }) => (
             <StudySessionMandatoryCard
               entry={item}
-              height={pageHeight}
+              height={cardHeight}
               pendingOutcome={index === mandatory.index ? mandatory.pendingOutcome : null}
               mutationError={index === mandatory.index ? mandatory.actionError : null}
               justSucceeded={index === mandatory.index && mandatory.justSucceededOutcome !== null}
               onSelectOutcome={(questionId, outcome) => mandatory.submitOutcome(questionId, outcome)}
             />
           )}
-          getItemLayout={(_, index) => ({ length: pageHeight, offset: pageHeight * index, index })}
+          getItemLayout={(_, index) => ({
+            length: cardHeight,
+            offset: computeSessionItemOffset(index, headerHeight, cardHeight),
+            index,
+          })}
           pagingEnabled
-          snapToInterval={pageHeight}
+          snapToOffsets={mandatorySnapOffsets}
           snapToAlignment="start"
           decelerationRate="fast"
           disableIntervalMomentum
@@ -298,7 +339,7 @@ export function StudySessionScreen({ mode, assignmentId }: StudySessionScreenPro
           maxToRenderPerBatch={2}
           windowSize={3}
           removeClippedSubviews
-          ListHeaderComponent={<View style={{ height: insets.top + HEADER_HEIGHT }} />}
+          ListHeaderComponent={<View style={{ height: headerHeight }} />}
         />
         {header}
       </View>
@@ -384,7 +425,7 @@ export function StudySessionScreen({ mode, assignmentId }: StudySessionScreenPro
         renderItem={({ item, index }) => (
           <StudySessionAdaptiveCard
             question={item}
-            height={pageHeight}
+            height={cardHeight}
             onOutcomeRecorded={(outcome, question) => {
               // recordStudyOutcome has ALREADY succeeded by the time this
               // fires (see StudySessionAdaptiveCard's own doc comment) —
@@ -395,14 +436,21 @@ export function StudySessionScreen({ mode, assignmentId }: StudySessionScreenPro
               // submission (Phase 31 — see questionOutcomes doc comment in
               // assignmentTypes.ts); it never feeds back into scheduling.
               if (isAssignmentMode) assignmentSession.recordProgress(question.id, outcome);
-              listRef.current?.scrollToOffset({ offset: pageHeight * (index + 1), animated: true });
+              listRef.current?.scrollToOffset({
+                offset: computeSessionItemOffset(index + 1, headerHeight, cardHeight),
+                animated: true,
+              });
             }}
             onSubmittingChange={(submitting) => handleSwipeSubmittingChange(item.id, submitting)}
           />
         )}
-        getItemLayout={(_, index) => ({ length: pageHeight, offset: pageHeight * index, index })}
+        getItemLayout={(_, index) => ({
+          length: cardHeight,
+          offset: computeSessionItemOffset(index, headerHeight, cardHeight),
+          index,
+        })}
         pagingEnabled
-        snapToInterval={pageHeight}
+        snapToOffsets={swipeSnapOffsets}
         snapToAlignment="start"
         decelerationRate="fast"
         disableIntervalMomentum
@@ -411,7 +459,7 @@ export function StudySessionScreen({ mode, assignmentId }: StudySessionScreenPro
         maxToRenderPerBatch={2}
         windowSize={3}
         removeClippedSubviews
-        ListHeaderComponent={<View style={{ height: insets.top + HEADER_HEIGHT }} />}
+        ListHeaderComponent={<View style={{ height: headerHeight }} />}
       />
       {header}
     </View>

@@ -1,6 +1,6 @@
 import { Image } from "expo-image";
 import { memo } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { colors } from "@theme/colors";
 import { spacing } from "@theme/spacing";
@@ -9,6 +9,7 @@ import { typography } from "@theme/typography";
 import { StudyOutcome } from "../domain/studyTypes";
 import { ResolvedQueueEntry } from "../services/studyService";
 import { toHydratedStudyItem } from "../services/studyItemParser";
+import { SESSION_CONTROLS_MAX_HEIGHT_RATIO } from "../services/studySessionLayout";
 import { StudyOutcomeControls } from "./StudyOutcomeControls";
 import { StudyOutcomeSuccessFlourish } from "./StudyOutcomeSuccessFlourish";
 
@@ -64,7 +65,18 @@ function StudySessionMandatoryCardComponent({
         />
       </View>
 
-      <View style={styles.controlsWrap}>
+      {/* Same reasoning as StudySessionAdaptiveCard's identical block: the
+          image already shrinks to fit via imageWrap's flex: 1; this
+          ScrollView guarantees the outcome buttons stay reachable even if
+          the description is pathologically long, capped so the image can
+          never be crushed to nothing by it. Behaves like a plain View
+          (nothing scrolls) whenever content already fits. */}
+      <ScrollView
+        style={[styles.controlsScroll, { maxHeight: Math.round(height * SESSION_CONTROLS_MAX_HEIGHT_RATIO) }]}
+        contentContainerStyle={styles.controlsContent}
+        bounces={false}
+        showsVerticalScrollIndicator={false}
+      >
         {question.description ? <Text style={styles.description}>{question.description}</Text> : null}
         <StudyOutcomeControls
           item={toHydratedStudyItem(item)}
@@ -75,7 +87,7 @@ function StudySessionMandatoryCardComponent({
           showLastOutcome={false}
         />
         <StudyOutcomeSuccessFlourish visible={justSucceeded} />
-      </View>
+      </ScrollView>
     </View>
   );
 }
@@ -94,7 +106,10 @@ const styles = StyleSheet.create({
   image: {
     flex: 1,
   },
-  controlsWrap: {
+  controlsScroll: {
+    flexGrow: 0,
+  },
+  controlsContent: {
     padding: spacing.lg,
     gap: spacing.sm,
   },

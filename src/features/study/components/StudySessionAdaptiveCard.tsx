@@ -1,6 +1,6 @@
 import { Image } from "expo-image";
 import { memo, useEffect, useRef, useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { colors } from "@theme/colors";
 import { duration } from "@theme/animation";
@@ -11,6 +11,7 @@ import { Question } from "@/types/question";
 
 import { StudyOutcome } from "../domain/studyTypes";
 import { REVIEW_ADVANCE_DELAY_MS } from "../services/studyPresentation";
+import { SESSION_CONTROLS_MAX_HEIGHT_RATIO } from "../services/studySessionLayout";
 import { useStudyQuestionState } from "../hooks/useStudyQuestionState";
 import { StudyOutcomeControls } from "./StudyOutcomeControls";
 import { StudyOutcomeSuccessFlourish } from "./StudyOutcomeSuccessFlourish";
@@ -88,7 +89,21 @@ function StudySessionAdaptiveCardComponent({
         />
       </View>
 
-      <View style={styles.controlsWrap}>
+      {/* The image already shrinks to fit via imageWrap's flex: 1 — this
+          ScrollView is the safety net for the OTHER direction: a
+          pathologically long description (or a future added field) that
+          would otherwise push "Tekrar Et"/"Zorlandım"/"Çözdüm" past the
+          bottom of the fixed-height card with no way back to them. Capped
+          at a fraction of the card's own height so the image can never be
+          crushed to nothing by it; when content fits (the normal case) this
+          renders and behaves exactly like a plain View — nothing scrolls,
+          nothing about today's layout changes. */}
+      <ScrollView
+        style={[styles.controlsScroll, { maxHeight: Math.round(height * SESSION_CONTROLS_MAX_HEIGHT_RATIO) }]}
+        contentContainerStyle={styles.controlsContent}
+        bounces={false}
+        showsVerticalScrollIndicator={false}
+      >
         {question.description ? <Text style={styles.description}>{question.description}</Text> : null}
         <StudyOutcomeControls
           item={study.item}
@@ -100,7 +115,7 @@ function StudySessionAdaptiveCardComponent({
           showLastOutcome={false}
         />
         <StudyOutcomeSuccessFlourish visible={showFlourish} />
-      </View>
+      </ScrollView>
     </Animated.View>
   );
 }
@@ -119,7 +134,10 @@ const styles = StyleSheet.create({
   image: {
     flex: 1,
   },
-  controlsWrap: {
+  controlsScroll: {
+    flexGrow: 0,
+  },
+  controlsContent: {
     padding: spacing.lg,
     gap: spacing.sm,
   },
