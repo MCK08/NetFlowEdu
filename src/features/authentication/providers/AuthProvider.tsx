@@ -297,6 +297,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async (uid: string): Promise<boolean> => {
       const user = await switchToStoredAccount(uid);
       if (!user) return false;
+      // Phase 34 — the reactivated user's cached ID token can be arbitrarily
+      // old (it was minted whenever this account was last actively signed
+      // in, possibly days ago), and custom claims (role, organizationId)
+      // only change server-side: the client's cached token keeps whatever
+      // claims it had at mint time until it's force-refreshed. signIn()
+      // already guards this exact gap after a fresh password login (see
+      // refreshIdToken(user) above) — switching back to an ALREADY-STORED
+      // account is just as much a "this account might have been promoted/
+      // reassigned since its token was last minted" moment, and was the one
+      // reactivation path with no such guard. Without this, a teacher whose
+      // role or organizationId changed while this device had them cached
+      // (e.g. a multi-account dev/QA setup switching between personas)
+      // keeps failing every teacher-only write (assignments/create, class
+      // creation, ...) with permission-denied until the token happens to
+      // expire naturally — exactly the "isTeacher()/organizationId() claim
+      // is stale" failure mode, indistinguishable from a real rules bug
+      // without this fix.
+      await refreshIdToken(user);
       // Phase 25 §15/§9 — studyMetadataCache is module-level and keyed only
       // by questionId, with no per-user namespace: without this, a private
       // question the PREVIOUS account could read (and had cached) could
