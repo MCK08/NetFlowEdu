@@ -25,6 +25,7 @@ interface CreateAssignmentScreenProps {
   classId: string;
   initialSubject?: string;
   initialTopic?: string;
+  initialGradeLevel?: string;
   // Phase 31 follow-up flow — comma-joined student uids from the "Takip
   // Ödevi Oluştur" CTA (AssignmentDetailScreen). Same "teacher can still
   // change it" suggestion contract as initialTopic (§12 "DO NOT
@@ -72,6 +73,7 @@ export function CreateAssignmentScreen({
   classId,
   initialSubject,
   initialTopic,
+  initialGradeLevel,
   initialTargetStudentIds,
 }: CreateAssignmentScreenProps) {
   const { firebaseUser } = useAuth();
@@ -109,7 +111,11 @@ export function CreateAssignmentScreen({
   const [topic, setTopic] = useState(
     initialTopic && topicOptions.includes(initialTopic) ? initialTopic : topicOptions[0] ?? "",
   );
-  const [gradeLevel, setGradeLevel] = useState<string>(GRADE_LEVELS[0]);
+  const [gradeLevel, setGradeLevel] = useState<string>(
+    initialGradeLevel && (GRADE_LEVELS as readonly string[]).includes(initialGradeLevel)
+      ? initialGradeLevel
+      : GRADE_LEVELS[0],
+  );
   const prefilledStudentIds = useMemo(
     () => (initialTargetStudentIds ? initialTargetStudentIds.split(",").filter((id) => id.length > 0) : []),
     [initialTargetStudentIds],

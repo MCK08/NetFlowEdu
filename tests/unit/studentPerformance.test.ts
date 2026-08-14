@@ -224,7 +224,7 @@ describe("buildStudentPerformanceSnapshot — dayBuckets", () => {
       studyItem({ questionId: "b", lastReviewedAt: NOW, lastOutcome: "struggled" }),
     ];
     const snapshot = snapshotFor(items, [question("a"), question("b")]);
-    expect(snapshot.dayBuckets).toEqual(bucketItemsByDay(items));
+    expect(snapshot.dayBuckets).toEqual(bucketItemsByDay(items, NOW));
   });
 
   it("daysActiveRecently equals dayBuckets.length", () => {
@@ -234,6 +234,137 @@ describe("buildStudentPerformanceSnapshot — dayBuckets", () => {
     ];
     const snapshot = snapshotFor(items, [question("a"), question("b")]);
     expect(snapshot.daysActiveRecently).toBe(snapshot.dayBuckets.length);
+  });
+});
+
+// PHASE 32 REGRESSION — every test below fails against the pre-fix
+// implementation, where bucketItemsByDay had no time window at all.
+describe("buildStudentPerformanceSnapshot — dayBuckets are windowed to the last 14 days", () => {
+  it("EXCLUDES activity older than the 14-day window the UI label promises", () => {
+    const items = [
+      studyItem({ questionId: "old1", lastReviewedAt: NOW - 180 * DAY_MS }),
+      studyItem({ questionId: "old2", lastReviewedAt: NOW - 179 * DAY_MS }),
+      studyItem({ questionId: "old3", lastReviewedAt: NOW - 178 * DAY_MS }),
+    ];
+    const snapshot = snapshotFor(items, [question("old1"), question("old2"), question("old3")]);
+    // Pre-fix this reported 3 "aktif gün" under the label "son 14 gün içinde"
+    // for a student who had not touched the class in six months.
+    expect(snapshot.daysActiveRecently).toBe(0);
+    expect(snapshot.dayBuckets).toEqual([]);
+    // The student's real totals are NOT erased — only the recency window is
+    // corrected. The teacher still sees that work happened, and when.
+    expect(snapshot.totalCount).toBe(3);
+    expect(snapshot.lastStudiedAt).toBe(NOW - 178 * DAY_MS);
+  });
+
+  it("KEEPS activity inside the window", () => {
+    const items = [
+      studyItem({ questionId: "recent", lastReviewedAt: NOW - 2 * DAY_MS }),
+      studyItem({ questionId: "old", lastReviewedAt: NOW - 60 * DAY_MS }),
+    ];
+    const snapshot = snapshotFor(items, [question("recent"), question("old")]);
+    expect(snapshot.daysActiveRecently).toBe(1);
+    expect(snapshot.totalCount).toBe(2);
+  });
+
+  it("never reports more active days than the window itself contains", () => {
+    const items = Array.from({ length: 40 }, (_, i) =>
+      studyItem({ questionId: `q${i}`, lastReviewedAt: NOW - i * DAY_MS }),
+    );
+    const snapshot = snapshotFor(
+      items,
+      items.map((item) => question(item.questionId)),
+    );
+    expect(snapshot.daysActiveRecently).toBeLessThanOrEqual(14);
+  });
+});
+
+describe("buildStudentPerformanceSnapshot — thisWeek (Phase 32)", () => {
+  // 2026-08-14 is a Friday; that week's Monday is 2026-08-10.
+  const FRIDAY = new Date(2026, 7, 14, 10, 0, 0).getTime();
+  const MONDAY = new Date(2026, 7, 10, 9, 0, 0).getTime();
+  const LAST_THURSDAY = new Date(2026, 7, 6, 9, 0, 0).getTime();
+
+  it("reports a student who studied EARLIER THIS WEEK as having studied this week", () => {
+    const items = [studyItem({ questionId: "a", lastReviewedAt: MONDAY, lastOutcome: "solved" })];
+    const snapshot = snapshotFor(items, [question("a")], FRIDAY);
+    // The core reported bug: on Friday, Monday's work must still count.
+    expect(snapshot.thisWeek.studiedThisWeek).toBe(true);
+    expect(snapshot.thisWeek.reviewedThisWeek).toBe(1);
+    expect(snapshot.thisWeek.activeDaysThisWeek).toBe(1);
+    // ...even though "today" is correctly zero.
+    expect(snapshot.today.reviewedToday).toBe(0);
+  });
+
+  it("counts solved and struggled separately from real outcomes", () => {
+    const items = [
+      studyItem({ questionId: "a", lastReviewedAt: MONDAY, lastOutcome: "solved" }),
+      studyItem({ questionId: "b", lastReviewedAt: MONDAY, lastOutcome: "struggled" }),
+      studyItem({ questionId: "c", lastReviewedAt: FRIDAY - 3600_000, lastOutcome: "again" }),
+    ];
+    const snapshot = snapshotFor(items, [question("a"), question("b"), question("c")], FRIDAY);
+    expect(snapshot.thisWeek.reviewedThisWeek).toBe(3);
+    expect(snapshot.thisWeek.solvedThisWeek).toBe(1);
+    expect(snapshot.thisWeek.struggledThisWeek).toBe(1);
+    expect(snapshot.thisWeek.activeDaysThisWeek).toBe(2);
+  });
+
+  it("EXCLUDES last week's activity", () => {
+    const items = [studyItem({ questionId: "a", lastReviewedAt: LAST_THURSDAY })];
+    const snapshot = snapshotFor(items, [question("a")], FRIDAY);
+    expect(snapshot.thisWeek.studiedThisWeek).toBe(false);
+    expect(snapshot.thisWeek.reviewedThisWeek).toBe(0);
+  });
+
+  it("is all-zero for a student with no activity at all, never a fake default", () => {
+    const snapshot = snapshotFor([], [], FRIDAY);
+    expect(snapshot.thisWeek).toEqual({
+      reviewedThisWeek: 0,
+      solvedThisWeek: 0,
+      struggledThisWeek: 0,
+      activeDaysThisWeek: 0,
+      studiedThisWeek: false,
+    });
+  });
+
+  it("excludes never-reviewed items (lastReviewedAt 0)", () => {
+    const items = [studyItem({ questionId: "a", lastReviewedAt: 0 })];
+    const snapshot = snapshotFor(items, [question("a")], FRIDAY);
+    expect(snapshot.thisWeek.studiedThisWeek).toBe(false);
+  });
+
+  it("counts Monday 00:00 exactly as this week (inclusive boundary)", () => {
+    const mondayMidnight = new Date(2026, 7, 10, 0, 0, 0, 0).getTime();
+    const items = [studyItem({ questionId: "a", lastReviewedAt: mondayMidnight })];
+    expect(snapshotFor(items, [question("a")], FRIDAY).thisWeek.studiedThisWeek).toBe(true);
+  });
+
+  it("counts the instant before Monday 00:00 as LAST week (exclusive boundary)", () => {
+    const justBefore = new Date(2026, 7, 10, 0, 0, 0, 0).getTime() - 1;
+    const items = [studyItem({ questionId: "a", lastReviewedAt: justBefore })];
+    expect(snapshotFor(items, [question("a")], FRIDAY).thisWeek.studiedThisWeek).toBe(false);
+  });
+
+  it("still reports this week correctly when the teacher looks on a SUNDAY", () => {
+    const sunday = new Date(2026, 7, 16, 20, 0, 0).getTime();
+    const items = [studyItem({ questionId: "a", lastReviewedAt: MONDAY })];
+    expect(snapshotFor(items, [question("a")], sunday).thisWeek.studiedThisWeek).toBe(true);
+  });
+
+  it("is deterministic for the same input", () => {
+    const items = [studyItem({ questionId: "a", lastReviewedAt: MONDAY })];
+    const a = snapshotFor(items, [question("a")], FRIDAY);
+    const b = snapshotFor(items, [question("a")], FRIDAY);
+    expect(a.thisWeek).toEqual(b.thisWeek);
+  });
+
+  it("does not depend on question metadata resolving (activity is independent of topics)", () => {
+    const items = [studyItem({ questionId: "a", lastReviewedAt: MONDAY, lastOutcome: "struggled" })];
+    // Metadata deliberately unresolved — a legacy/deleted question.
+    const snapshot = buildStudentPerformanceSnapshot(items, new Map([["a", null]]), FRIDAY);
+    expect(snapshot.thisWeek.studiedThisWeek).toBe(true);
+    expect(snapshot.thisWeek.struggledThisWeek).toBe(1);
+    expect(snapshot.allTopics).toEqual([]);
   });
 });
 

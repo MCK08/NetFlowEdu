@@ -115,6 +115,29 @@ export function StudentPerformanceScreen({ classId, studentId, studentName }: St
             </Card>
           ) : null}
 
+          {/* Phase 32 — the question a teacher opens this screen to answer.
+              Placed ABOVE "bugünkü durum" because a student who studied
+              Monday–Thursday reads as completely inactive on a Friday if
+              "today" is the first thing shown. */}
+          <Card style={styles.card}>
+            <Text style={styles.sectionLabel}>Bu hafta</Text>
+            {snapshot.thisWeek.studiedThisWeek ? (
+              <>
+                <Text style={styles.bodyText}>
+                  {snapshot.thisWeek.reviewedThisWeek} soru · {snapshot.thisWeek.activeDaysThisWeek} gün
+                </Text>
+                <Text style={styles.bodyTextMuted}>{snapshot.thisWeek.solvedThisWeek} doğru</Text>
+                {snapshot.thisWeek.struggledThisWeek > 0 ? (
+                  <Text style={styles.bodyTextDanger}>
+                    {snapshot.thisWeek.struggledThisWeek} zorlanılan soru
+                  </Text>
+                ) : null}
+              </>
+            ) : (
+              <Text style={styles.bodyTextMuted}>Bu hafta bu sınıfta çalışmadı</Text>
+            )}
+          </Card>
+
           <Card style={styles.card}>
             <Text style={styles.sectionLabel}>Bugünkü durum</Text>
             <Text style={styles.bodyText}>{snapshot.today.reviewedToday} soru çözüldü</Text>

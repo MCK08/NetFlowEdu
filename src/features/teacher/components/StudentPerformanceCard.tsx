@@ -38,11 +38,18 @@ export const StudentPerformanceCard = memo(function StudentPerformanceCard({
   const successLabel =
     snapshot.successRatePercent === null ? "Henüz veri yok" : `%${snapshot.successRatePercent} başarı`;
 
+  // Phase 32 — a teacher scanning the class list needs "who has actually
+  // worked this week" without opening each student. Real counts only (see
+  // WeekActivity in studentPerformance.ts); never a placeholder number.
+  const weekLabel = snapshot.thisWeek.studiedThisWeek
+    ? `Bu hafta ${snapshot.thisWeek.reviewedThisWeek} soru · ${snapshot.thisWeek.activeDaysThisWeek} gün`
+    : "Bu hafta çalışmadı";
+
   return (
     <AnimatedPressable
       onPress={() => onPress(card.studentUid)}
       accessibilityRole="button"
-      accessibilityLabel={`${card.displayName}. ${successLabel}. ${snapshot.dueCount} bekleyen tekrar. ${snapshot.weakTopics.length} zayıf konu.`}
+      accessibilityLabel={`${card.displayName}. ${successLabel}. ${weekLabel}. ${snapshot.dueCount} bekleyen tekrar. ${snapshot.weakTopics.length} zayıf konu.`}
     >
       <Card style={styles.card}>
         <View style={styles.headerRow}>
@@ -53,6 +60,12 @@ export const StudentPerformanceCard = memo(function StudentPerformanceCard({
             </Text>
             <Text style={styles.statsLine} numberOfLines={1}>
               {successLabel} · {snapshot.dueCount} tekrar · {snapshot.weakTopics.length} zayıf konu
+            </Text>
+            <Text
+              style={[styles.statsLine, snapshot.thisWeek.studiedThisWeek ? null : styles.inactiveWeek]}
+              numberOfLines={1}
+            >
+              {weekLabel}
             </Text>
           </View>
         </View>
@@ -92,6 +105,9 @@ const styles = StyleSheet.create({
   statsLine: {
     ...typography.caption,
     color: colors.textSecondary,
+  },
+  inactiveWeek: {
+    color: colors.textTertiary,
   },
   progressTrack: {
     height: 8,

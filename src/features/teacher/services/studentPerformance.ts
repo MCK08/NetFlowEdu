@@ -5,6 +5,11 @@ import {
 } from "@features/study/services/learningInsights";
 import { buildLearningTrend, LearningTrend } from "@features/study/services/learningTrend";
 import { StudyDay, StudyItem } from "@features/study/services/studyService";
+import {
+  isInCurrentLocalWeek,
+  isWithinRecentDays,
+  RECENT_STUDY_DAYS_WINDOW,
+} from "@features/study/services/studyWeek";
 import { StudyOutcome } from "@features/study/domain/studyTypes";
 import { Question } from "@/types/question";
 
@@ -29,6 +34,27 @@ export interface TodayActivity {
   struggledToday: number;
 }
 
+// Phase 32 — the signal a teacher actually asks for ("bu hafta çalıştı
+// mı?"), which no field on this snapshot could previously answer: `today`
+// is too narrow (a student who studied hard Monday–Thursday reads as
+// completely inactive on Friday), and `lastStudiedAt` is a raw timestamp
+// the caller had to interpret itself. Week boundary is local-Monday — see
+// studyWeek.ts.
+export interface WeekActivity {
+  // Distinct class-sourced questions whose LAST review falls in the current
+  // local week. Same "one item contributes its last outcome only"
+  // approximation `dayBuckets` documents below — never a claim about the
+  // student's true total review count, which only studyDays holds.
+  reviewedThisWeek: number;
+  solvedThisWeek: number;
+  struggledThisWeek: number;
+  // Distinct local days within the current week carrying at least one such
+  // review.
+  activeDaysThisWeek: number;
+  // The plain question a teacher opens this screen to answer.
+  studiedThisWeek: boolean;
+}
+
 export interface StudentPerformanceSnapshot {
   totalCount: number;
   masteredCount: number;
@@ -38,6 +64,7 @@ export interface StudentPerformanceSnapshot {
   // so the UI can render "henüz veri yok" instead of a misleading 0%.
   successRatePercent: number | null;
   today: TodayActivity;
+  thisWeek: WeekActivity;
   weakTopics: TopicInsight[];
   strongTopics: TopicInsight[];
   allTopics: TopicInsight[];
@@ -63,6 +90,7 @@ export interface StudentPerformanceSnapshot {
   // never a second trend engine. Already computed for `trend`; this is a
   // zero-cost exposure, not a new calculation.
   dayBuckets: readonly StudyDay[];
+  // Phase 32 — WINDOWED to RECENT_STUDY_DAYS_WINDOW (see bucketItemsByDay).
   // Deliberately NOT "streak" — the real currentStreak/longestStreak lives
   // only in users/{uid}/studyMeta/summary, which has no sourceClassId (or
   // any other field) a rule could use to prove a specific teacher may read
@@ -106,10 +134,33 @@ function localDayKey(epochMs: number): string {
 // the results into one class-wide StudyDay[] — the exact same bucketing
 // rule this file already uses for one student's own trend, never a second
 // implementation of it.
-export function bucketItemsByDay(items: readonly StudyItem[]): StudyDay[] {
+//
+// Phase 32 BUGFIX — `now` is now REQUIRED and the buckets are windowed to
+// RECENT_STUDY_DAYS_WINDOW. Before this, the window was unbounded, which
+// produced two real, teacher-visible defects:
+//
+//   1. `daysActiveRecently` (= buckets.length) counted EVERY distinct day
+//      the student had ever studied in this class, while the UI rendered it
+//      under the label "son 14 gün içinde". A student whose last activity
+//      was six months ago displayed "3 aktif gün / son 14 gün içinde" —
+//      the teacher was shown activity that did not happen in that window.
+//   2. buildLearningTrend was handed an unbounded history, while the
+//      student-facing Learning Hub hands it exactly 14 days
+//      (getRecentStudyDays' own limit(RECENT_STUDY_DAYS_WINDOW)). The same
+//      "recent half vs earlier half" comparison therefore meant something
+//      different on the teacher's side than on the student's.
+//
+// This does NOT touch buildLearningTrend's own thresholds: a class-sourced
+// item still contributes exactly one review to exactly one day (a genuine
+// undercount versus real studyDays reviewCounts, documented on
+// `dayBuckets`), so a small class legitimately still reports
+// "insufficient_data" rather than a manufactured direction.
+export function bucketItemsByDay(items: readonly StudyItem[], now: number): StudyDay[] {
+  const safeNow = Number.isFinite(now) ? now : Date.now();
   const buckets = new Map<string, { reviewCount: number; solvedCount: number; struggledCount: number }>();
   for (const item of items) {
     if (!item.lastReviewedAt || item.lastReviewedAt <= 0) continue;
+    if (!isWithinRecentDays(item.lastReviewedAt, safeNow, RECENT_STUDY_DAYS_WINDOW)) continue;
     const key = localDayKey(item.lastReviewedAt);
     const bucket = buckets.get(key) ?? { reviewCount: 0, solvedCount: 0, struggledCount: 0 };
     bucket.reviewCount += 1;
@@ -177,10 +228,23 @@ export function buildStudentPerformanceSnapshot(
     struggledToday: todayItems.filter((item) => item.lastOutcome === "struggled").length,
   };
 
+  // Phase 32 — the current local week (Monday-start, see studyWeek.ts).
+  // Computed from the SAME lastReviewedAt/lastOutcome fields `today` above
+  // already uses, so the two can never disagree about what counts as a
+  // review; nothing here is estimated or back-filled.
+  const weekItems = items.filter((item) => isInCurrentLocalWeek(item.lastReviewedAt, safeNow));
+  const thisWeek: WeekActivity = {
+    reviewedThisWeek: weekItems.length,
+    solvedThisWeek: weekItems.filter((item) => item.lastOutcome === "solved").length,
+    struggledThisWeek: weekItems.filter((item) => item.lastOutcome === "struggled").length,
+    activeDaysThisWeek: new Set(weekItems.map((item) => localDayKey(item.lastReviewedAt))).size,
+    studiedThisWeek: weekItems.length > 0,
+  };
+
   const lastReviewedTimestamps = items.map((item) => item.lastReviewedAt).filter((ts) => ts > 0);
   const lastStudiedAt = lastReviewedTimestamps.length > 0 ? Math.max(...lastReviewedTimestamps) : null;
 
-  const dayBuckets = bucketItemsByDay(items);
+  const dayBuckets = bucketItemsByDay(items, safeNow);
 
   // Most-recently-reviewed first. A stable sort so two items reviewed at
   // the identical timestamp (e.g. backfilled/legacy data) always order the
@@ -202,6 +266,7 @@ export function buildStudentPerformanceSnapshot(
     dueCount: insights.dueCount,
     successRatePercent,
     today,
+    thisWeek,
     weakTopics: insights.weakTopics,
     strongTopics: insights.strongTopics,
     allTopics: insights.allTopics,

@@ -22,6 +22,7 @@ import { Question } from "@/types/question";
 import { StudyOutcome, StudyStatus } from "../domain/studyTypes";
 import { createOperationId } from "./gestureOperationId";
 import { resolveQuestionMetadata } from "./studyMetadataCache";
+import { RECENT_STUDY_DAYS_WINDOW } from "./studyWeek";
 
 // Review sessions load 10 at a time and fetch the next page with a REAL
 // Firestore cursor (startAfter) — never a client-side slice of a big array.
@@ -177,7 +178,10 @@ function toStudyDay(id: string, data: DocumentData): StudyDay {
 // percentage — a fixed, small window chosen so buildLearningTrend always has
 // enough real days to split into a "recent half" vs an "earlier half" (see
 // learningTrend.ts) while staying a single cheap, uncapped-by-cursor read.
-export const RECENT_STUDY_DAYS_WINDOW = 14;
+// Re-exported (not redefined) from the pure studyWeek.ts — see its own doc
+// comment for why the constant lives there. Every existing importer of
+// RECENT_STUDY_DAYS_WINDOW from this module keeps working unchanged.
+export { RECENT_STUDY_DAYS_WINDOW };
 
 // users/{uid}/studyDays/{dayKey} — firestore.rules already allows
 // `isOwner(uid)` to read this (no rule change needed; it simply had no

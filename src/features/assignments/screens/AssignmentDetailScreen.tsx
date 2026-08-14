@@ -79,6 +79,13 @@ export function AssignmentDetailScreen({ assignmentId }: AssignmentDetailScreenP
         classId: assignment.classId,
         subject: assignment.subject,
         topic: assignment.topic,
+        // Phase 32 — carried through as well: without it the follow-up form
+        // silently reset to the FIRST grade level in the taxonomy, so a
+        // follow-up to a 9th-grade assignment was prepared as a 5th-grade
+        // one. gradeLevel is a real selection input (see
+        // smartAssignmentSelection's baseMatchScore), so dropping it
+        // changed which questions got picked.
+        gradeLevel: assignment.gradeLevel,
         studentIds: followUp.map((entry) => entry.studentUid).join(","),
       },
     });
