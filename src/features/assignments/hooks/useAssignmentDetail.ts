@@ -6,6 +6,8 @@ import { shouldApplyStaleResponse } from "@features/study/services/staleResponse
 import { Assignment } from "../domain/assignmentTypes";
 import { getAssignmentById, getAssignmentSubmissions } from "../services/assignmentService";
 import { buildTeacherAssignmentProgress, TeacherAssignmentProgressSummary } from "../services/teacherAssignmentProgress";
+import { buildAssignmentOutcomeInsights, AssignmentOutcomeInsights } from "../services/assignmentOutcomeInsights";
+import { buildAssignmentFollowUp, AssignmentFollowUpEntry } from "../services/assignmentFollowUp";
 
 // Standalone (like useStudentPerformanceDetail) — works from a direct
 // navigation, does not depend on useClassAssignments having already run.
@@ -16,6 +18,8 @@ import { buildTeacherAssignmentProgress, TeacherAssignmentProgressSummary } from
 export function useAssignmentDetail(assignmentId: string | undefined) {
   const [assignment, setAssignment] = useState<Assignment | null>(null);
   const [progress, setProgress] = useState<TeacherAssignmentProgressSummary | null>(null);
+  const [outcomeInsights, setOutcomeInsights] = useState<AssignmentOutcomeInsights | null>(null);
+  const [followUp, setFollowUp] = useState<AssignmentFollowUpEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const requestIdRef = useRef(0);
@@ -55,6 +59,7 @@ export function useAssignmentDetail(assignmentId: string | undefined) {
       }));
       const submissionsByStudent = new Map(submissions.map((submission) => [submission.studentId, submission]));
 
+      const now = Date.now();
       setAssignment(loadedAssignment);
       setProgress(
         buildTeacherAssignmentProgress({
@@ -62,7 +67,19 @@ export function useAssignmentDetail(assignmentId: string | undefined) {
           submissionsByStudent,
           targetCount: loadedAssignment.targetCount,
           dueAt: loadedAssignment.dueAt,
-          now: Date.now(),
+          now,
+        }),
+      );
+      // Phase 31 — zero extra reads: both derived entirely from the
+      // assignment doc + submissions already fetched above.
+      setOutcomeInsights(buildAssignmentOutcomeInsights({ assignment: loadedAssignment, submissions }));
+      setFollowUp(
+        buildAssignmentFollowUp({
+          targetStudents,
+          submissionsByStudent,
+          targetCount: loadedAssignment.targetCount,
+          dueAt: loadedAssignment.dueAt,
+          now,
         }),
       );
     } catch {
@@ -77,5 +94,5 @@ export function useAssignmentDetail(assignmentId: string | undefined) {
     load();
   }, [load]);
 
-  return { assignment, progress, isLoading, error, refresh: load };
+  return { assignment, progress, outcomeInsights, followUp, isLoading, error, refresh: load };
 }

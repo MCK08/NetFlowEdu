@@ -4100,6 +4100,54 @@ describe("firestore.rules — assignments/{assignmentId} and submissions (Phase 
     );
   });
 
+  // ---- questionOutcomes (Phase 31) -----------------------------------
+
+  it("lets a student write a submission that includes valid questionOutcomes", async () => {
+    await seedClass("class-1", "teacher-1");
+    await seedAssignment("a1"); // questionIds: q1, q2, q3
+    const student = studentCtx("student-1");
+    await assertSucceeds(
+      setDoc(
+        doc(student.firestore(), "assignments", "a1", "submissions", "student-1"),
+        submissionDoc("student-1", { questionOutcomes: { q1: "struggled" } }),
+      ),
+    );
+  });
+
+  it("still lets a student write a submission with NO questionOutcomes field at all (backward compatible)", async () => {
+    await seedClass("class-1", "teacher-1");
+    await seedAssignment("a1");
+    const student = studentCtx("student-1");
+    const doc_ = submissionDoc("student-1");
+    await assertSucceeds(
+      setDoc(doc(student.firestore(), "assignments", "a1", "submissions", "student-1"), doc_),
+    );
+  });
+
+  it("denies questionOutcomes keyed by a questionId that isn't in the assignment", async () => {
+    await seedClass("class-1", "teacher-1");
+    await seedAssignment("a1");
+    const student = studentCtx("student-1");
+    await assertFails(
+      setDoc(
+        doc(student.firestore(), "assignments", "a1", "submissions", "student-1"),
+        submissionDoc("student-1", { questionOutcomes: { "q-not-in-assignment": "struggled" } }),
+      ),
+    );
+  });
+
+  it("denies questionOutcomes that isn't a map", async () => {
+    await seedClass("class-1", "teacher-1");
+    await seedAssignment("a1");
+    const student = studentCtx("student-1");
+    await assertFails(
+      setDoc(
+        doc(student.firestore(), "assignments", "a1", "submissions", "student-1"),
+        submissionDoc("student-1", { questionOutcomes: "struggled" }),
+      ),
+    );
+  });
+
   it("lets the owning teacher read a student's submission", async () => {
     await seedClass("class-1", "teacher-1");
     await seedAssignment("a1");

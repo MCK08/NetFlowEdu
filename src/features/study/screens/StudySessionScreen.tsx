@@ -385,13 +385,16 @@ export function StudySessionScreen({ mode, assignmentId }: StudySessionScreenPro
           <StudySessionAdaptiveCard
             question={item}
             height={pageHeight}
-            onOutcomeRecorded={(_outcome, question) => {
+            onOutcomeRecorded={(outcome, question) => {
               // recordStudyOutcome has ALREADY succeeded by the time this
               // fires (see StudySessionAdaptiveCard's own doc comment) —
               // recording assignment progress here never changes, delays,
               // or gates that outcome; it's a parallel, independent,
               // idempotent write (see useAssignmentSession.recordProgress).
-              if (isAssignmentMode) assignmentSession.recordProgress(question.id);
+              // The outcome is passed through so it can be frozen onto the
+              // submission (Phase 31 — see questionOutcomes doc comment in
+              // assignmentTypes.ts); it never feeds back into scheduling.
+              if (isAssignmentMode) assignmentSession.recordProgress(question.id, outcome);
               listRef.current?.scrollToOffset({ offset: pageHeight * (index + 1), animated: true });
             }}
             onSubmittingChange={(submitting) => handleSwipeSubmittingChange(item.id, submitting)}

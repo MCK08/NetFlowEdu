@@ -1,3 +1,5 @@
+import { StudyOutcome } from "@features/study/domain/studyTypes";
+
 // Assignment is an ORCHESTRATION layer, not a second learning engine — see
 // this feature's services for the full reasoning. It never stores
 // mastery/interval/scheduling data (that stays exclusively reviewScheduler
@@ -71,4 +73,17 @@ export interface AssignmentSubmission {
   // never this field alone, so it can never itself become a source of
   // drift.
   completedAt: number | null;
+  // Phase 31 — the outcome (from the SAME recordStudyOutcome call that
+  // already succeeded before this write, see useAssignmentSession.ts) for
+  // each question, captured ONCE at the moment it was first completed
+  // within this assignment. Never updated again after that (mirrors
+  // completedQuestionIds' own append-only/no-overwrite behavior in
+  // applyAssignmentCompletion) — this deliberately freezes the
+  // assignment-time outcome even if the student later reviews the same
+  // question again through their normal spaced-repetition queue and
+  // StudyItem.lastOutcome changes. Without this field, "which questions
+  // were hard IN THIS ASSIGNMENT" could not be reconstructed reliably
+  // (StudyItem only ever keeps the most recent attempt, with no
+  // assignment linkage — see assignmentOutcomeInsights.ts's doc comment).
+  questionOutcomes: Record<string, StudyOutcome>;
 }

@@ -12,6 +12,7 @@ function sub(overrides: Partial<AssignmentSubmission> = {}): AssignmentSubmissio
     startedAt: null,
     lastCompletedAt: null,
     completedAt: null,
+    questionOutcomes: {},
     ...overrides,
   };
 }

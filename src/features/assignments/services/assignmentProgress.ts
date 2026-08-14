@@ -1,3 +1,5 @@
+import { StudyOutcome } from "@features/study/domain/studyTypes";
+
 import { AssignmentSubmission } from "../domain/assignmentTypes";
 import { isPastDue } from "./assignmentDueDate";
 
@@ -55,6 +57,7 @@ export function applyAssignmentCompletion(
   questionId: string,
   targetCount: number,
   now: number,
+  outcome?: StudyOutcome,
 ): AssignmentSubmission {
   const previous: AssignmentSubmission = submission ?? {
     studentId: "",
@@ -63,6 +66,7 @@ export function applyAssignmentCompletion(
     startedAt: null,
     lastCompletedAt: null,
     completedAt: null,
+    questionOutcomes: {},
   };
 
   if (previous.completedQuestionIds.includes(questionId)) {
@@ -72,6 +76,12 @@ export function applyAssignmentCompletion(
   const completedQuestionIds = [...previous.completedQuestionIds, questionId];
   const safeTarget = Number.isFinite(targetCount) && targetCount > 0 ? Math.floor(targetCount) : 0;
   const isNowComplete = safeTarget > 0 && completedQuestionIds.length >= safeTarget;
+  // Only ever SET on first completion (the branch above already returns
+  // early for a repeat) — never overwritten, so this stays a true,
+  // permanent record of "what happened the first time, in this
+  // assignment" (see the questionOutcomes doc comment in assignmentTypes.ts).
+  const questionOutcomes =
+    outcome !== undefined ? { ...previous.questionOutcomes, [questionId]: outcome } : previous.questionOutcomes;
 
   return {
     ...previous,
@@ -80,5 +90,6 @@ export function applyAssignmentCompletion(
     startedAt: previous.startedAt ?? now,
     lastCompletedAt: now,
     completedAt: isNowComplete ? (previous.completedAt ?? now) : previous.completedAt,
+    questionOutcomes,
   };
 }

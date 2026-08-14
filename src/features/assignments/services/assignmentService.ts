@@ -14,9 +14,23 @@ import {
 } from "firebase/firestore";
 
 import { db } from "@services/firebase/config";
+import { StudyOutcome } from "@features/study/domain/studyTypes";
 
 import { Assignment, AssignmentStatus, AssignmentSubmission } from "../domain/assignmentTypes";
 import { applyAssignmentCompletion } from "./assignmentProgress";
+
+const VALID_OUTCOMES: readonly StudyOutcome[] = ["again", "struggled", "solved"];
+
+function toQuestionOutcomes(value: unknown): Record<string, StudyOutcome> {
+  if (value == null || typeof value !== "object") return {};
+  const result: Record<string, StudyOutcome> = {};
+  for (const [questionId, outcome] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof outcome === "string" && (VALID_OUTCOMES as readonly string[]).includes(outcome)) {
+      result[questionId] = outcome as StudyOutcome;
+    }
+  }
+  return result;
+}
 
 function toMillis(value: unknown): number {
   return value instanceof Timestamp ? value.toMillis() : 0;
@@ -51,6 +65,7 @@ function toSubmission(data: DocumentData): AssignmentSubmission {
     startedAt: typeof data.startedAt === "number" ? data.startedAt : null,
     lastCompletedAt: typeof data.lastCompletedAt === "number" ? data.lastCompletedAt : null,
     completedAt: typeof data.completedAt === "number" ? data.completedAt : null,
+    questionOutcomes: toQuestionOutcomes(data.questionOutcomes),
   };
 }
 
@@ -142,12 +157,13 @@ export async function recordAssignmentProgress(
   studentId: string,
   questionId: string,
   targetCount: number,
+  outcome?: StudyOutcome,
 ): Promise<AssignmentSubmission> {
   const ref = doc(db, "assignments", assignmentId, "submissions", studentId);
   return runTransaction(db, async (tx) => {
     const snap = await tx.get(ref);
     const previous = snap.exists() ? toSubmission(snap.data()) : null;
-    const next = applyAssignmentCompletion(previous, questionId, targetCount, Date.now());
+    const next = applyAssignmentCompletion(previous, questionId, targetCount, Date.now(), outcome);
     const withId: AssignmentSubmission = { ...next, studentId };
     tx.set(ref, withId);
     return withId;

@@ -15,6 +15,8 @@ import { typography } from "@theme/typography";
 import { useAssignmentDetail } from "../hooks/useAssignmentDetail";
 import { StudentAssignmentRow } from "../services/teacherAssignmentProgress";
 import { StudentAssignmentStatus } from "../services/assignmentProgress";
+import { AssignmentEffectiveness } from "../services/assignmentOutcomeInsights";
+import { AssignmentFollowUpEntry, FollowUpReason } from "../services/assignmentFollowUp";
 
 interface AssignmentDetailScreenProps {
   assignmentId: string;
@@ -40,11 +42,47 @@ function statusColor(status: StudentAssignmentStatus): string {
   return colors.textTertiary;
 }
 
+function effectivenessLabel(effectiveness: AssignmentEffectiveness): string {
+  switch (effectiveness) {
+    case "effective":
+      return "🟢 Çoğu öğrenci ilerledi";
+    case "mixed":
+      return "🟡 Sonuçlar karışık";
+    case "needs_follow_up":
+      return "🔴 Bu konuda hâlâ zorlanılıyor";
+    case "insufficient_data":
+      return "Yeterli veri yok";
+  }
+}
+
+const FOLLOW_UP_REASON_LABEL: Record<FollowUpReason, string> = {
+  incomplete: "Tamamlamadı",
+  stale: "Süresi geçti",
+  repeated_struggle: "Tekrar tekrar zorlandı",
+};
+
 // Read-only, same invariant as ClassPerformanceScreen/StudentPerformanceScreen
 // — a teacher can see every student's real progress here, but nothing on
 // this screen can change a student's own study state.
 export function AssignmentDetailScreen({ assignmentId }: AssignmentDetailScreenProps) {
-  const { assignment, progress, isLoading, error, refresh } = useAssignmentDetail(assignmentId);
+  const { assignment, progress, outcomeInsights, followUp, isLoading, error, refresh } =
+    useAssignmentDetail(assignmentId);
+
+  // System only ever SUGGESTS a follow-up (§12 "DO NOT AUTO-PUBLISH") — this
+  // navigates to the exact same CreateAssignmentScreen a teacher would open
+  // manually, prefilled, never itself creating or publishing anything.
+  function handleCreateFollowUp() {
+    if (!assignment) return;
+    router.push({
+      pathname: "/(teacher)/class/[classId]/assignment/create",
+      params: {
+        classId: assignment.classId,
+        subject: assignment.subject,
+        topic: assignment.topic,
+        studentIds: followUp.map((entry) => entry.studentUid).join(","),
+      },
+    });
+  }
 
   return (
     <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
@@ -95,18 +133,50 @@ export function AssignmentDetailScreen({ assignmentId }: AssignmentDetailScreenP
             </Card>
           )}
           ListHeaderComponent={
-            <View style={styles.summaryCard}>
-              <Text style={styles.summarySubject}>
-                {assignment.subject} · {assignment.topic}
-              </Text>
-              {assignment.description ? (
-                <Text style={styles.summaryDescription}>{assignment.description}</Text>
-              ) : null}
-              <View style={styles.summaryRow}>
-                <SummaryStat value={String(progress.totalStudents)} label="öğrenci" />
-                <SummaryStat value={String(progress.startedCount)} label="başladı" />
-                <SummaryStat value={String(progress.completedCount)} label="tamamladı" />
+            <View style={styles.headerSections}>
+              <View style={styles.summaryCard}>
+                <Text style={styles.summarySubject}>
+                  {assignment.subject} · {assignment.topic}
+                </Text>
+                {assignment.description ? (
+                  <Text style={styles.summaryDescription}>{assignment.description}</Text>
+                ) : null}
+                <View style={styles.summaryRow}>
+                  <SummaryStat value={String(progress.totalStudents)} label="öğrenci" />
+                  <SummaryStat value={String(progress.startedCount)} label="başladı" />
+                  <SummaryStat value={String(progress.completedCount)} label="tamamladı" />
+                </View>
               </View>
+
+              {outcomeInsights && outcomeInsights.effectiveness !== "insufficient_data" ? (
+                <View style={styles.summaryCard}>
+                  <Text style={styles.sectionTitle}>Bu Ödevde Ne Oldu?</Text>
+                  <Text style={styles.previewLine}>{effectivenessLabel(outcomeInsights.effectiveness)}</Text>
+                  {outcomeInsights.topicOutcome.struggleRate !== null ? (
+                    <Text style={styles.previewLine}>
+                      {Math.round(outcomeInsights.topicOutcome.struggleRate * 100)}% zorlanma oranı
+                    </Text>
+                  ) : null}
+                </View>
+              ) : null}
+
+              {followUp.length > 0 ? (
+                <View style={styles.summaryCard}>
+                  <Text style={styles.sectionTitle}>Takip Gerekenler</Text>
+                  {followUp.map((entry: AssignmentFollowUpEntry) => (
+                    <Text key={entry.studentUid} style={styles.previewLine}>
+                      {entry.displayName} · {entry.reasons.map((reason) => FOLLOW_UP_REASON_LABEL[reason]).join(", ")}
+                    </Text>
+                  ))}
+                  <Pressable
+                    onPress={handleCreateFollowUp}
+                    style={styles.followUpButton}
+                    accessibilityRole="button"
+                  >
+                    <Text style={styles.followUpButtonText}>Takip Ödevi Oluştur</Text>
+                  </Pressable>
+                </View>
+              ) : null}
             </View>
           }
         />
@@ -164,12 +234,37 @@ const styles = StyleSheet.create({
     paddingTop: 0,
     gap: spacing.sm,
   },
+  headerSections: {
+    gap: spacing.md,
+    marginBottom: spacing.md,
+  },
   summaryCard: {
     backgroundColor: colors.surface,
     borderRadius: radius.xl,
     padding: spacing.lg,
     gap: spacing.xs,
-    marginBottom: spacing.md,
+  },
+  sectionTitle: {
+    ...typography.bodyStrong,
+    color: colors.textPrimary,
+    marginBottom: 2,
+  },
+  previewLine: {
+    ...typography.caption,
+    color: colors.textSecondary,
+  },
+  followUpButton: {
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: spacing.xs,
+    backgroundColor: colors.primary,
+    borderRadius: radius.md,
+  },
+  followUpButtonText: {
+    ...typography.body,
+    fontWeight: "700",
+    color: colors.textInverse,
   },
   summarySubject: {
     ...typography.bodyStrong,

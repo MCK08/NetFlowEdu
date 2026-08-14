@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { resolveQuestionMetadata } from "@features/study/services/studyMetadataCache";
 import { shouldApplyStaleResponse } from "@features/study/services/staleResponseGuard";
+import { StudyOutcome } from "@features/study/domain/studyTypes";
 import { Question } from "@/types/question";
 
 import { AssignmentSubmission } from "../domain/assignmentTypes";
@@ -76,10 +77,10 @@ export function useAssignmentSession(assignmentId: string | undefined, uid: stri
   // assignmentService.ts's recordAssignmentProgress), so no duplicate
   // completion can ever result from retrying.
   const recordProgress = useCallback(
-    async (questionId: string) => {
+    async (questionId: string, outcome?: StudyOutcome) => {
       if (!assignmentId || !uid) return;
       try {
-        const next = await recordAssignmentProgress(assignmentId, uid, questionId, targetCount);
+        const next = await recordAssignmentProgress(assignmentId, uid, questionId, targetCount, outcome);
         setSubmission(next);
       } catch {
         // Best-effort — see doc comment above.

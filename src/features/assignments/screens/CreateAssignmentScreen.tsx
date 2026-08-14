@@ -25,6 +25,11 @@ interface CreateAssignmentScreenProps {
   classId: string;
   initialSubject?: string;
   initialTopic?: string;
+  // Phase 31 follow-up flow — comma-joined student uids from the "Takip
+  // Ödevi Oluştur" CTA (AssignmentDetailScreen). Same "teacher can still
+  // change it" suggestion contract as initialTopic (§12 "DO NOT
+  // AUTO-PUBLISH" — this only prefills the form, never submits it).
+  initialTargetStudentIds?: string;
 }
 
 const MAX_TITLE_LENGTH = 80;
@@ -63,7 +68,12 @@ function dueAtFromOffset(daysFromNow: number | null): number | null {
 // install this phase) — due date selection is a small set of real, useful
 // offsets (Chip rows, the same selection pattern already used everywhere
 // else in this app), not a full calendar.
-export function CreateAssignmentScreen({ classId, initialSubject, initialTopic }: CreateAssignmentScreenProps) {
+export function CreateAssignmentScreen({
+  classId,
+  initialSubject,
+  initialTopic,
+  initialTargetStudentIds,
+}: CreateAssignmentScreenProps) {
   const { firebaseUser } = useAuth();
   const [organizationId, setOrganizationId] = useState<string | null>(null);
   const [members, setMembers] = useState<ClassMember[]>([]);
@@ -100,8 +110,14 @@ export function CreateAssignmentScreen({ classId, initialSubject, initialTopic }
     initialTopic && topicOptions.includes(initialTopic) ? initialTopic : topicOptions[0] ?? "",
   );
   const [gradeLevel, setGradeLevel] = useState<string>(GRADE_LEVELS[0]);
-  const [targetMode, setTargetMode] = useState<TargetStudentMode>("all");
-  const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
+  const prefilledStudentIds = useMemo(
+    () => (initialTargetStudentIds ? initialTargetStudentIds.split(",").filter((id) => id.length > 0) : []),
+    [initialTargetStudentIds],
+  );
+  const [targetMode, setTargetMode] = useState<TargetStudentMode>(
+    prefilledStudentIds.length > 0 ? "selected" : "all",
+  );
+  const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set(prefilledStudentIds));
   const [questionCount, setQuestionCount] = useState(QUESTION_COUNT_OPTIONS[1] ?? 10);
   const [dueDaysFromNow, setDueDaysFromNow] = useState<number | null>(7);
   // Arriving from a Topic Hotspot (a real class-wide struggle signal

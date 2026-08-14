@@ -16,6 +16,7 @@ function submission(overrides: Partial<AssignmentSubmission> = {}): AssignmentSu
     startedAt: null,
     lastCompletedAt: null,
     completedAt: null,
+    questionOutcomes: {},
     ...overrides,
   };
 }
@@ -164,5 +165,29 @@ describe("applyAssignmentCompletion — idempotency and duplicate protection", (
     const attempt1 = applyAssignmentCompletion(null, "q1", 3, NOW);
     const retryOfSameAttempt = applyAssignmentCompletion(attempt1, "q1", 3, NOW + 2000);
     expect(retryOfSameAttempt.completedCount).toBe(1);
+  });
+});
+
+describe("applyAssignmentCompletion — questionOutcomes (Phase 31)", () => {
+  it("records the outcome for a new question when provided", () => {
+    const result = applyAssignmentCompletion(null, "q1", 5, NOW, "struggled");
+    expect(result.questionOutcomes).toEqual({ q1: "struggled" });
+  });
+
+  it("leaves questionOutcomes untouched when no outcome is provided", () => {
+    const result = applyAssignmentCompletion(null, "q1", 5, NOW);
+    expect(result.questionOutcomes).toEqual({});
+  });
+
+  it("accumulates outcomes across multiple different questions", () => {
+    const first = applyAssignmentCompletion(null, "q1", 5, NOW, "solved");
+    const second = applyAssignmentCompletion(first, "q2", 5, NOW + 1000, "again");
+    expect(second.questionOutcomes).toEqual({ q1: "solved", q2: "again" });
+  });
+
+  it("never overwrites an already-recorded outcome on a duplicate completion", () => {
+    const first = applyAssignmentCompletion(null, "q1", 5, NOW, "struggled");
+    const dup = applyAssignmentCompletion(first, "q1", 5, NOW + 1000, "solved");
+    expect(dup.questionOutcomes).toEqual({ q1: "struggled" });
   });
 });

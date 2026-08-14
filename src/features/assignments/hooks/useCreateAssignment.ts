@@ -7,13 +7,18 @@ import { AssignmentStatus } from "../domain/assignmentTypes";
 import { resolveTargetStudentIds, TargetStudentMode, validateAssignmentDraft } from "../services/assignmentCreation";
 import { fetchAssignmentQuestionPool } from "../services/assignmentQuestionPool";
 import {
+  buildHistoricalQuestionSignals,
+  mergeQuestionSignals,
+  selectRecentTopicAssignments,
+} from "../services/assignmentHistorySignals";
+import {
   AssignmentSelectionStrategy,
   buildTargetedQuestionSignals,
   selectSmartAssignmentQuestions,
   SmartSelectionResult,
   TargetedQuestionSignal,
 } from "../services/smartAssignmentSelection";
-import { createAssignment } from "../services/assignmentService";
+import { createAssignment, getAssignmentSubmissions, getClassAssignments } from "../services/assignmentService";
 
 // Caps how many targeted-student studyItems reads are ever simultaneously
 // in flight for "reinforce" strategy — same helper, same reasoning as
@@ -73,16 +78,33 @@ export function useCreateAssignment(params: {
       const criteria = { subject: input.subject, topic: input.topic, gradeLevel: input.gradeLevel };
       const pool = await fetchAssignmentQuestionPool(params.classId, criteria, input.requestedQuestionCount);
 
-      // Only "reinforce" pays for the extra per-student read — "focus" and
-      // "balanced" never touch a targeted student's own study history.
+      // Only "reinforce" pays for the extra per-student read (and the
+      // Phase 31 assignment-history read below) — "focus" and "balanced"
+      // never touch a targeted student's own study history or past
+      // assignments.
       let signals: ReadonlyMap<string, TargetedQuestionSignal> = new Map();
       if (input.strategy === "reinforce") {
-        const studyItemsByStudent = await mapWithConcurrency(
-          targetStudentIds,
-          SIGNAL_FETCH_CONCURRENCY,
-          (studentUid) => getClassSourcedStudyItems(studentUid, params.classId),
+        const [studyItemsByStudent, classAssignments] = await Promise.all([
+          mapWithConcurrency(targetStudentIds, SIGNAL_FETCH_CONCURRENCY, (studentUid) =>
+            getClassSourcedStudyItems(studentUid, params.classId),
+          ),
+          getClassAssignments(params.classId),
+        ]);
+        const liveSignals = buildTargetedQuestionSignals(studyItemsByStudent);
+
+        // Bounded (see MAX_HISTORY_ASSIGNMENTS) — at most a handful of
+        // extra submissions-subcollection reads, never per-student, never
+        // unbounded (§14 "N+1 YOK").
+        const historyAssignments = selectRecentTopicAssignments(classAssignments, input.topic, null);
+        const historySubmissions = await Promise.all(
+          historyAssignments.map((assignment) => getAssignmentSubmissions(assignment.id)),
         );
-        signals = buildTargetedQuestionSignals(studyItemsByStudent);
+        const submissionsByAssignmentId = new Map(
+          historyAssignments.map((assignment, index) => [assignment.id, historySubmissions[index] ?? []]),
+        );
+        const historicalSignals = buildHistoricalQuestionSignals(historyAssignments, submissionsByAssignmentId);
+
+        signals = mergeQuestionSignals(liveSignals, historicalSignals);
       }
 
       const result = selectSmartAssignmentQuestions({

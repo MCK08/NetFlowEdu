@@ -828,6 +828,11 @@ service cloud.firestore {
       // partial merge — see assignmentService.ts), so create/update share
       // one rule. hasOnly(...) rejects a student ever claiming to have
       // completed a question that isn't actually part of THIS assignment.
+      // Phase 31 — questionOutcomes is OPTIONAL (older/simpler writes with
+      // no such field still pass, so this never breaks the write path
+      // above) but, when present, its keys must be a real subset of THIS
+      // assignment's own questionIds — same hasOnly() containment check
+      // completedQuestionIds already uses, applied to the map's keys.
       allow create, update: if isSignedIn()
                     && studentId == uid()
                     && studentId in assignmentData(assignmentId).targetStudentIds
@@ -836,7 +841,11 @@ service cloud.firestore {
                     && request.resource.data.completedQuestionIds
                        .hasOnly(assignmentData(assignmentId).questionIds)
                     && request.resource.data.completedCount
-                       == request.resource.data.completedQuestionIds.size();
+                       == request.resource.data.completedQuestionIds.size()
+                    && (!("questionOutcomes" in request.resource.data)
+                        || (request.resource.data.questionOutcomes is map
+                            && request.resource.data.questionOutcomes.keys()
+                               .hasOnly(assignmentData(assignmentId).questionIds)));
 
       allow delete: if false;
     }
