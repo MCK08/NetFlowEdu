@@ -133,6 +133,40 @@ describe("every surface uses the one shared control", () => {
     }
     expect([...prompts]).toEqual(["Bu soruyu nasıl çözdün?"]);
   });
+
+  // Phase 36 — the Ödev (assignment) and Çalış (adaptive) swipe cards used
+  // to wrap StudyOutcomeControls in a bare, unstyled View: visually
+  // inconsistent with the Study Hub's own queue card (StudyQueueCard),
+  // which the design audit named as the reference/"master" look (bordered
+  // card, radius.xl, hairline border, colors.background). Both now render
+  // through the SAME StudyOutcomeCard wrapper StudyQueueCard itself uses —
+  // this locks that in as a permanent guard, not a one-time visual match
+  // that could quietly drift the next time either file is touched.
+  it.each([
+    "src/features/study/components/StudyQueueCard.tsx",
+    "src/features/study/components/StudySessionMandatoryCard.tsx",
+    "src/features/study/components/StudySessionAdaptiveCard.tsx",
+  ])("%s renders the outcome section inside the shared StudyOutcomeCard", (path) => {
+    const source = clientSources.find((file) => file.path === path);
+    expect(source).toBeDefined();
+    expect(source?.text).toContain("<StudyOutcomeCard");
+  });
+
+  it("StudyOutcomeCard's card styling is defined in exactly one place", () => {
+    // borderRadius: radius.xl paired with a hairline border is this card
+    // box's own visual signature — a second independent definition of it
+    // (rather than importing StudyOutcomeCard) is exactly how the swipe
+    // cards drifted from the Study Hub's design before this phase.
+    const offenders = clientSources
+      .filter(
+        ({ path, text }) =>
+          path !== "src/features/study/components/StudyOutcomeCard.tsx" &&
+          /borderRadius:\s*radius\.xl/.test(text) &&
+          /StyleSheet\.hairlineWidth/.test(text),
+      )
+      .map(({ path }) => path);
+    expect(offenders).toEqual([]);
+  });
 });
 
 describe("queue items and hydrated items describe state identically", () => {

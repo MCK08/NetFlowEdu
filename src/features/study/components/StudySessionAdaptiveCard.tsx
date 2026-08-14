@@ -13,6 +13,7 @@ import { StudyOutcome } from "../domain/studyTypes";
 import { REVIEW_ADVANCE_DELAY_MS } from "../services/studyPresentation";
 import { SESSION_CONTROLS_MAX_HEIGHT_RATIO } from "../services/studySessionLayout";
 import { useStudyQuestionState } from "../hooks/useStudyQuestionState";
+import { StudyOutcomeCard } from "./StudyOutcomeCard";
 import { StudyOutcomeControls } from "./StudyOutcomeControls";
 import { StudyOutcomeSuccessFlourish } from "./StudyOutcomeSuccessFlourish";
 
@@ -97,24 +98,31 @@ function StudySessionAdaptiveCardComponent({
           at a fraction of the card's own height so the image can never be
           crushed to nothing by it; when content fits (the normal case) this
           renders and behaves exactly like a plain View — nothing scrolls,
-          nothing about today's layout changes. */}
+          nothing about today's layout changes.
+          The StudyOutcomeCard inside it is the same "master" design as the
+          Study Hub's own queue card (see that component's doc comment) —
+          same border/radius/padding/background as every other surface that
+          asks "Bu soruyu nasıl çözdün?", not a bespoke look for this swipe
+          screen. */}
       <ScrollView
         style={[styles.controlsScroll, { maxHeight: Math.round(height * SESSION_CONTROLS_MAX_HEIGHT_RATIO) }]}
         contentContainerStyle={styles.controlsContent}
         bounces={false}
         showsVerticalScrollIndicator={false}
       >
-        {question.description ? <Text style={styles.description}>{question.description}</Text> : null}
-        <StudyOutcomeControls
-          item={study.item}
-          isHydrating={study.isHydrating}
-          hydrationError={study.hydrationError}
-          pendingOutcome={study.pendingOutcome}
-          onSelect={handleSelect}
-          mutationError={study.mutationError}
-          showLastOutcome={false}
-        />
-        <StudyOutcomeSuccessFlourish visible={showFlourish} />
+        <StudyOutcomeCard>
+          {question.description ? <Text style={styles.description}>{question.description}</Text> : null}
+          <StudyOutcomeControls
+            item={study.item}
+            isHydrating={study.isHydrating}
+            hydrationError={study.hydrationError}
+            pendingOutcome={study.pendingOutcome}
+            onSelect={handleSelect}
+            mutationError={study.mutationError}
+            showLastOutcome={false}
+          />
+          <StudyOutcomeSuccessFlourish visible={showFlourish} />
+        </StudyOutcomeCard>
       </ScrollView>
     </Animated.View>
   );
@@ -139,7 +147,6 @@ const styles = StyleSheet.create({
   },
   controlsContent: {
     padding: spacing.lg,
-    gap: spacing.sm,
   },
   description: {
     ...typography.body,

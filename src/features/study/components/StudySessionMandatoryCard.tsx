@@ -10,6 +10,7 @@ import { StudyOutcome } from "../domain/studyTypes";
 import { ResolvedQueueEntry } from "../services/studyService";
 import { toHydratedStudyItem } from "../services/studyItemParser";
 import { SESSION_CONTROLS_MAX_HEIGHT_RATIO } from "../services/studySessionLayout";
+import { StudyOutcomeCard } from "./StudyOutcomeCard";
 import { StudyOutcomeControls } from "./StudyOutcomeControls";
 import { StudyOutcomeSuccessFlourish } from "./StudyOutcomeSuccessFlourish";
 
@@ -70,23 +71,27 @@ function StudySessionMandatoryCardComponent({
           ScrollView guarantees the outcome buttons stay reachable even if
           the description is pathologically long, capped so the image can
           never be crushed to nothing by it. Behaves like a plain View
-          (nothing scrolls) whenever content already fits. */}
+          (nothing scrolls) whenever content already fits. StudyOutcomeCard
+          is the same "master" design as the Study Hub's own queue card —
+          see that component's doc comment. */}
       <ScrollView
         style={[styles.controlsScroll, { maxHeight: Math.round(height * SESSION_CONTROLS_MAX_HEIGHT_RATIO) }]}
         contentContainerStyle={styles.controlsContent}
         bounces={false}
         showsVerticalScrollIndicator={false}
       >
-        {question.description ? <Text style={styles.description}>{question.description}</Text> : null}
-        <StudyOutcomeControls
-          item={toHydratedStudyItem(item)}
-          isHydrating={false}
-          pendingOutcome={pendingOutcome}
-          onSelect={(outcome) => onSelectOutcome(item.questionId, outcome)}
-          mutationError={mutationError}
-          showLastOutcome={false}
-        />
-        <StudyOutcomeSuccessFlourish visible={justSucceeded} />
+        <StudyOutcomeCard>
+          {question.description ? <Text style={styles.description}>{question.description}</Text> : null}
+          <StudyOutcomeControls
+            item={toHydratedStudyItem(item)}
+            isHydrating={false}
+            pendingOutcome={pendingOutcome}
+            onSelect={(outcome) => onSelectOutcome(item.questionId, outcome)}
+            mutationError={mutationError}
+            showLastOutcome={false}
+          />
+          <StudyOutcomeSuccessFlourish visible={justSucceeded} />
+        </StudyOutcomeCard>
       </ScrollView>
     </View>
   );
@@ -111,7 +116,6 @@ const styles = StyleSheet.create({
   },
   controlsContent: {
     padding: spacing.lg,
-    gap: spacing.sm,
   },
   description: {
     ...typography.body,

@@ -14,6 +14,7 @@ import { StudyOutcome } from "../domain/studyTypes";
 import { ResolvedQueueEntry } from "../services/studyService";
 import { studyStatusLabel } from "../services/studyPresentation";
 import { toHydratedStudyItem } from "../services/studyItemParser";
+import { StudyOutcomeCard } from "./StudyOutcomeCard";
 import { StudyOutcomeControls } from "./StudyOutcomeControls";
 
 interface StudyQueueCardProps {
@@ -39,7 +40,7 @@ export const StudyQueueCard = memo(function StudyQueueCard({
 
   if (!question) {
     return (
-      <View style={[styles.card, styles.unavailableCard]}>
+      <StudyOutcomeCard style={styles.unavailableCard}>
         <Ionicons name="alert-circle-outline" size={20} color={colors.textTertiary} />
         <View style={styles.unavailableText}>
           <Text style={styles.unavailableTitle}>Bu soru artık görüntülenemiyor</Text>
@@ -47,12 +48,12 @@ export const StudyQueueCard = memo(function StudyQueueCard({
             Soru silinmiş veya erişimin kaldırılmış olabilir.
           </Text>
         </View>
-      </View>
+      </StudyOutcomeCard>
     );
   }
 
   return (
-    <View style={styles.card}>
+    <StudyOutcomeCard>
       <AnimatedPressable
         onPress={() => onOpen(question.id)}
         style={styles.preview}
@@ -88,19 +89,11 @@ export const StudyQueueCard = memo(function StudyQueueCard({
         mutationError={error}
         showLastOutcome={false}
       />
-    </View>
+    </StudyOutcomeCard>
   );
 });
 
 const styles = StyleSheet.create({
-  card: {
-    backgroundColor: colors.background,
-    borderRadius: radius.xl,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-    padding: spacing.sm,
-    gap: spacing.sm,
-  },
   preview: {
     gap: spacing.xs,
   },
