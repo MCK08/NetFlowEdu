@@ -2,6 +2,7 @@ import { useState } from "react";
 
 import { mapWithConcurrency } from "@features/teacher/services/boundedConcurrency";
 import { getClassSourcedStudyItems } from "@features/study/services/studyService";
+import { auth } from "@services/firebase/config";
 
 import { AssignmentStatus } from "../domain/assignmentTypes";
 import { resolveTargetStudentIds, TargetStudentMode, validateAssignmentDraft } from "../services/assignmentCreation";
@@ -156,6 +157,48 @@ export function useCreateAssignment(params: {
       if (!validation.valid) {
         setError(validation.error);
         return null;
+      }
+
+      // Phase 34 §2 — dumps the EXACT runtime state the create rule
+      // actually evaluates against, at the exact moment of the write: which
+      // uid/claims Firebase Auth currently has active on THIS device, and
+      // every field of the payload about to be sent. Dev-only, never in the
+      // production bundle's user-visible path. This is what actually found
+      // the real Phase 34 root cause: uid/claims/payload were all provably
+      // correct, yet Firestore still returned permission-denied — proving
+      // the local firestore.rules file (already correct, already tested
+      // against the emulator) was never actually DEPLOYED to production.
+      // Kept permanently: it is the fastest way to tell "the client is
+      // wrong" apart from "the deployed rules are stale", the exact
+      // distinction that took real evidence, not guessing, to make here.
+      if (__DEV__) {
+        const tokenResult = await auth.currentUser?.getIdTokenResult(true).catch(() => null);
+        // eslint-disable-next-line no-console
+        console.log("[assignment publish] auth.currentUser.uid=", auth.currentUser?.uid ?? null);
+        // eslint-disable-next-line no-console
+        console.log("[assignment publish] token claims.role=", tokenResult?.claims?.role ?? null);
+        // eslint-disable-next-line no-console
+        console.log(
+          "[assignment publish] token claims.organizationId=",
+          tokenResult?.claims?.organizationId ?? null,
+        );
+        // eslint-disable-next-line no-console
+        console.log(
+          "[assignment publish] payload=",
+          JSON.stringify({
+            classId: params.classId,
+            organizationId: params.organizationId,
+            teacherId: params.teacherId,
+            subject: preparedSubject,
+            topic: preparedTopic,
+            gradeLevel: preparedGradeLevel,
+            targetStudentIdsCount: preparedTargetStudentIds.length,
+            questionIdsCount: questionIds.length,
+            dueAt: input.dueAt,
+            status: input.status,
+            titleLength: input.title.trim().length,
+          }),
+        );
       }
 
       const assignmentId = await createAssignment({
