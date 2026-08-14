@@ -19,6 +19,7 @@ import { ClassMember } from "@/types/class";
 import { endOfLocalDay } from "../services/assignmentDueDate";
 import { useCreateAssignment } from "../hooks/useCreateAssignment";
 import { TargetStudentMode } from "../services/assignmentCreation";
+import { AssignmentSelectionStrategy } from "../services/smartAssignmentSelection";
 
 interface CreateAssignmentScreenProps {
   classId: string;
@@ -29,6 +30,12 @@ interface CreateAssignmentScreenProps {
 const MAX_TITLE_LENGTH = 80;
 const MAX_DESCRIPTION_LENGTH = 300;
 const QUESTION_COUNT_OPTIONS = [5, 10, 15, 20];
+
+const STRATEGY_OPTIONS: { value: AssignmentSelectionStrategy; label: string }[] = [
+  { value: "balanced", label: "Dengeli" },
+  { value: "focus", label: "Odaklan" },
+  { value: "reinforce", label: "Güçlendir" },
+];
 
 interface DueOption {
   label: string;
@@ -75,7 +82,7 @@ export function CreateAssignmentScreen({ classId, initialSubject, initialTopic }
     };
   }, [classId]);
 
-  const { create, isCreating, error } = useCreateAssignment({
+  const { prepare, publish, resetPreview, preview, isPreparing, isPublishing, error } = useCreateAssignment({
     classId,
     organizationId,
     teacherId: firebaseUser?.uid,
@@ -97,12 +104,54 @@ export function CreateAssignmentScreen({ classId, initialSubject, initialTopic }
   const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
   const [questionCount, setQuestionCount] = useState(QUESTION_COUNT_OPTIONS[1] ?? 10);
   const [dueDaysFromNow, setDueDaysFromNow] = useState<number | null>(7);
+  // Arriving from a Topic Hotspot (a real class-wide struggle signal
+  // already established, see classTopicInsights.ts) defaults to
+  // "reinforce" — the teacher can still change it; this is a suggestion,
+  // not a lock, matching every other prefill in this app (§10).
+  const [strategy, setStrategy] = useState<AssignmentSelectionStrategy>(
+    initialTopic ? "reinforce" : "balanced",
+  );
   const [validationError, setValidationError] = useState<string | null>(null);
+
+  // Any change to a field that affects WHICH questions get selected
+  // invalidates a previously-generated preview — publish() only ever
+  // writes the exact snapshot the teacher last previewed (§14), so an
+  // edit after preview must force a fresh "Soruları Hazırla" tap rather
+  // than silently publishing a stale or mismatched set.
+  function invalidatePreview() {
+    if (preview) resetPreview();
+  }
 
   function handleSubjectChange(next: string) {
     setSubject(next);
     const nextTopics = getTopicsForSubject(next);
     if (!nextTopics.includes(topic)) setTopic(nextTopics[0] ?? "");
+    invalidatePreview();
+  }
+
+  function handleTopicChange(next: string) {
+    setTopic(next);
+    invalidatePreview();
+  }
+
+  function handleGradeChange(next: string) {
+    setGradeLevel(next);
+    invalidatePreview();
+  }
+
+  function handleStrategyChange(next: AssignmentSelectionStrategy) {
+    setStrategy(next);
+    invalidatePreview();
+  }
+
+  function handleQuestionCountChange(next: number) {
+    setQuestionCount(next);
+    invalidatePreview();
+  }
+
+  function handleTargetModeChange(next: TargetStudentMode) {
+    setTargetMode(next);
+    invalidatePreview();
   }
 
   function toggleStudent(uid: string) {
@@ -112,17 +161,16 @@ export function CreateAssignmentScreen({ classId, initialSubject, initialTopic }
       else next.add(uid);
       return next;
     });
+    invalidatePreview();
   }
 
-  async function handlePublish(status: "draft" | "published") {
+  async function handlePrepare() {
     if (title.trim().length === 0) {
       setValidationError("Lütfen bir başlık girin.");
       return;
     }
     setValidationError(null);
-    const assignmentId = await create({
-      title,
-      description: description.trim().length > 0 ? description.trim() : null,
+    await prepare({
       subject,
       topic,
       gradeLevel,
@@ -130,6 +178,14 @@ export function CreateAssignmentScreen({ classId, initialSubject, initialTopic }
       allClassStudentIds: members.map((member) => member.uid),
       selectedStudentIds: [...selectedStudentIds],
       requestedQuestionCount: questionCount,
+      strategy,
+    });
+  }
+
+  async function handlePublish(status: "draft" | "published") {
+    const assignmentId = await publish({
+      title,
+      description: description.trim().length > 0 ? description.trim() : null,
       dueAt: dueAtFromOffset(dueDaysFromNow),
       status,
     });
@@ -142,6 +198,20 @@ export function CreateAssignmentScreen({ classId, initialSubject, initialTopic }
   }
 
   const displayError = validationError ?? error;
+  const isBusy = isPreparing || isPublishing;
+
+  const reasonCounts = useMemo(() => {
+    if (!preview) return [];
+    const counts = new Map<string, number>();
+    for (const entry of preview.selected) {
+      counts.set(entry.reasonLabel, (counts.get(entry.reasonLabel) ?? 0) + 1);
+    }
+    return [...counts.entries()];
+  }, [preview]);
+  const mcCount = useMemo(
+    () => (preview ? preview.selected.filter((entry) => entry.isMultipleChoice).length : 0),
+    [preview],
+  );
 
   if (isLoadingContext) {
     return (
@@ -196,10 +266,22 @@ export function CreateAssignmentScreen({ classId, initialSubject, initialTopic }
         <ChipRow options={QUESTION_SUBJECTS} selected={subject} onSelect={handleSubjectChange} />
 
         <Text style={styles.label}>Konu</Text>
-        <ChipRow options={topicOptions} selected={topic} onSelect={setTopic} />
+        <ChipRow options={topicOptions} selected={topic} onSelect={handleTopicChange} />
 
         <Text style={styles.label}>Sınıf Seviyesi</Text>
-        <ChipRow options={GRADE_LEVELS} selected={gradeLevel} onSelect={setGradeLevel} />
+        <ChipRow options={GRADE_LEVELS} selected={gradeLevel} onSelect={handleGradeChange} />
+
+        <Text style={styles.label}>Seçim Stratejisi</Text>
+        <View style={styles.chipRow}>
+          {STRATEGY_OPTIONS.map((option) => (
+            <Chip
+              key={option.value}
+              label={option.label}
+              selected={strategy === option.value}
+              onPress={() => handleStrategyChange(option.value)}
+            />
+          ))}
+        </View>
 
         <Text style={styles.label}>Soru Sayısı</Text>
         <View style={styles.chipRow}>
@@ -208,7 +290,7 @@ export function CreateAssignmentScreen({ classId, initialSubject, initialTopic }
               key={count}
               label={String(count)}
               selected={questionCount === count}
-              onPress={() => setQuestionCount(count)}
+              onPress={() => handleQuestionCountChange(count)}
             />
           ))}
         </View>
@@ -227,8 +309,12 @@ export function CreateAssignmentScreen({ classId, initialSubject, initialTopic }
 
         <Text style={styles.label}>Öğrenciler</Text>
         <View style={styles.chipRow}>
-          <Chip label="Tüm sınıf" selected={targetMode === "all"} onPress={() => setTargetMode("all")} />
-          <Chip label="Öğrenci seç" selected={targetMode === "selected"} onPress={() => setTargetMode("selected")} />
+          <Chip label="Tüm sınıf" selected={targetMode === "all"} onPress={() => handleTargetModeChange("all")} />
+          <Chip
+            label="Öğrenci seç"
+            selected={targetMode === "selected"}
+            onPress={() => handleTargetModeChange("selected")}
+          />
         </View>
         {targetMode === "selected" ? (
           <View style={styles.chipRow}>
@@ -245,15 +331,38 @@ export function CreateAssignmentScreen({ classId, initialSubject, initialTopic }
 
         {displayError ? <Text style={styles.error}>{displayError}</Text> : null}
 
-        <PrimaryButton label="Yayınla" onPress={() => handlePublish("published")} isLoading={isCreating} />
-        <Pressable
-          onPress={() => handlePublish("draft")}
-          disabled={isCreating}
-          style={styles.draftButton}
-          accessibilityRole="button"
-        >
-          <Text style={styles.draftButtonText}>Taslak olarak kaydet</Text>
-        </Pressable>
+        {preview ? (
+          <View style={styles.previewCard}>
+            <Text style={styles.previewTitle}>
+              {preview.selected.length} soru hazırlandı
+              {preview.selected.length < questionCount
+                ? ` (bu kriterlerle yalnızca ${preview.selected.length} soru bulundu)`
+                : ""}
+            </Text>
+            {reasonCounts.map(([label, count]) => (
+              <Text key={label} style={styles.previewLine}>
+                {count} · {label}
+              </Text>
+            ))}
+            {mcCount > 0 ? <Text style={styles.previewLine}>{mcCount} · Çoktan seçmeli</Text> : null}
+          </View>
+        ) : null}
+
+        {!preview ? (
+          <PrimaryButton label="Soruları Hazırla" onPress={handlePrepare} isLoading={isPreparing} />
+        ) : (
+          <>
+            <PrimaryButton label="Yayınla" onPress={() => handlePublish("published")} isLoading={isPublishing} />
+            <Pressable
+              onPress={() => handlePublish("draft")}
+              disabled={isBusy}
+              style={styles.draftButton}
+              accessibilityRole="button"
+            >
+              <Text style={styles.draftButtonText}>Taslak olarak kaydet</Text>
+            </Pressable>
+          </>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -346,6 +455,22 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textAlign: "center",
     marginTop: spacing.sm,
+  },
+  previewCard: {
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radius.md,
+    padding: spacing.sm,
+    marginTop: spacing.sm,
+    gap: 2,
+  },
+  previewTitle: {
+    ...typography.bodyStrong,
+    color: colors.textPrimary,
+    marginBottom: 2,
+  },
+  previewLine: {
+    ...typography.caption,
+    color: colors.textSecondary,
   },
   draftButton: {
     minHeight: 44,

@@ -34,7 +34,7 @@ export interface AssignmentValidationResult {
 }
 
 // Validates the ACTUAL resolved draft — questionIds here is what
-// selectAssignmentQuestions actually found, not what the teacher
+// selectSmartAssignmentQuestions actually found, not what the teacher
 // requested, so "fewer available than requested" surfaces as a real,
 // honest validation message rather than silently publishing a
 // smaller-than-expected assignment.
