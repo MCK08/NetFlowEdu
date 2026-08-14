@@ -19,6 +19,7 @@ import {
   TargetedQuestionSignal,
 } from "../services/smartAssignmentSelection";
 import { createAssignment, getAssignmentSubmissions, getClassAssignments } from "../services/assignmentService";
+import { logAssignmentError, mapAssignmentPrepareError, mapAssignmentPublishError } from "../services/assignmentPublishMessages";
 
 // Caps how many targeted-student studyItems reads are ever simultaneously
 // in flight for "reinforce" strategy — same helper, same reasoning as
@@ -127,8 +128,13 @@ export function useCreateAssignment(params: {
       setPreparedTopic(input.topic);
       setPreparedGradeLevel(input.gradeLevel);
       return result;
-    } catch {
-      setError("Sorular hazırlanamadı. Lütfen tekrar deneyin.");
+    } catch (err) {
+      // The real Firebase error (code/message) must never be discarded by a
+      // bare `catch {}` — that is exactly what made a real prepare/publish
+      // failure unreproducible from a user report alone (Phase 33 audit).
+      // Logged in dev only; the user always sees the safe mapped message.
+      logAssignmentError("prepare", err);
+      setError(mapAssignmentPrepareError(err));
       return null;
     } finally {
       setIsPreparing(false);
@@ -167,8 +173,9 @@ export function useCreateAssignment(params: {
         status: input.status,
       });
       return assignmentId;
-    } catch {
-      setError("Ödev oluşturulamadı. Lütfen tekrar deneyin.");
+    } catch (err) {
+      logAssignmentError("publish", err);
+      setError(mapAssignmentPublishError(err));
       return null;
     } finally {
       setIsPublishing(false);

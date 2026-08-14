@@ -3910,6 +3910,64 @@ describe("firestore.rules — assignments/{assignmentId} and submissions (Phase 
     );
   });
 
+  // ---- Phase 33 — publish path regression coverage -------------------------
+  //
+  // A real user report: prepare()/preview succeeded ("2 soru hazırlandı —
+  // bu kriterlerle yalnızca 2 soru bulundu" for a requested count of 20),
+  // but publish() failed with a generic "Ödev oluşturulamadı" error. Audit
+  // traced the full chain (CreateAssignmentScreen -> useCreateAssignment ->
+  // assignmentService.createAssignment -> this exact rule) end to end with
+  // the REAL production modules against this exact rule file, using a
+  // realistic fixture (teacher a genuine member of their own class, exactly
+  // as createClass's Cloud Function creates one) — publish succeeded. These
+  // tests lock that verified-working shape in as a permanent regression
+  // guard; the rule itself was not changed.
+
+  it("[Phase 33] a small selection (fewer questions than requested) is a valid create — the rule has no minimum beyond >0", async () => {
+    await seedClass("class-1", "teacher-1");
+    const teacher = teacherCtx("teacher-1");
+    // Mirrors the exact reported scenario: 20 requested, only 2 real
+    // questions matched the criteria. Nothing in the create rule ever knows
+    // or cares what was originally REQUESTED — only the actually-resolved
+    // questionIds array, which selectSmartAssignmentQuestions already
+    // guarantees is non-empty before publish() is ever called (see
+    // validateAssignmentDraft / assignmentCreation.ts).
+    await assertSucceeds(
+      addDoc(
+        collection(teacher.firestore(), "assignments"),
+        assignmentDoc({ questionIds: ["phys-q1", "phys-q2"], targetCount: 2 }),
+      ),
+    );
+  });
+
+  it("[Phase 33] dueAt = 1 hafta (7 days out, end-of-local-day) is a valid create", async () => {
+    await seedClass("class-1", "teacher-1");
+    const teacher = teacherCtx("teacher-1");
+    const target = new Date();
+    target.setDate(target.getDate() + 7);
+    const dueAt = new Date(
+      target.getFullYear(),
+      target.getMonth(),
+      target.getDate(),
+      23,
+      59,
+      59,
+      999,
+    ).getTime();
+    await assertSucceeds(
+      addDoc(collection(teacher.firestore(), "assignments"), assignmentDoc({ dueAt })),
+    );
+  });
+
+  it("[Phase 33] 'Tüm sınıf' (a full-roster-sized targetStudentIds snapshot) is a valid create", async () => {
+    await seedClass("class-1", "teacher-1");
+    const teacher = teacherCtx("teacher-1");
+    const wholeClass = Array.from({ length: 24 }, (_, i) => `student-${i}`);
+    await assertSucceeds(
+      addDoc(collection(teacher.firestore(), "assignments"), assignmentDoc({ targetStudentIds: wholeClass })),
+    );
+  });
+
   // ---- read -----------------------------------------------------------------
 
   it("lets the owning teacher read their own class's assignment", async () => {
