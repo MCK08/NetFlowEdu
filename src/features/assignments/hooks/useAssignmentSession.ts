@@ -47,7 +47,14 @@ export function useAssignmentSession(assignmentId: string | undefined, uid: stri
       if (!shouldApplyStaleResponse(requestId, requestIdRef.current)) return;
 
       const completedSet = new Set(mySubmission?.completedQuestionIds ?? []);
-      const resolved = assignment.questionIds
+      // Deduped BEFORE resolving: questionIds is a snapshot array and
+      // firestore.rules only constrains its size and membership, not its
+      // uniqueness. A repeated id used to resolve to the same Question
+      // twice, which FlatList then rendered under two identical keys — a
+      // duplicate-key warning plus genuinely unstable virtualization
+      // (removeClippedSubviews recycling the wrong row).
+      const uniqueQuestionIds = [...new Set(assignment.questionIds)];
+      const resolved = uniqueQuestionIds
         .map((id) => metadata.get(id))
         .filter((question): question is Question => question != null);
       const ordered = [
@@ -79,11 +86,30 @@ export function useAssignmentSession(assignmentId: string | undefined, uid: stri
   const recordProgress = useCallback(
     async (questionId: string, outcome?: StudyOutcome) => {
       if (!assignmentId || !uid) return;
-      try {
-        const next = await recordAssignmentProgress(assignmentId, uid, questionId, targetCount, outcome);
-        setSubmission(next);
-      } catch {
-        // Best-effort — see doc comment above.
+      // Phase 38 — ONE bounded retry rather than a bare `catch {}`. The
+      // write is idempotent by construction (applyAssignmentCompletion
+      // returns the previous submission unchanged for an already-completed
+      // questionId), so retrying can never double-count; what it does fix
+      // is the common case this used to swallow completely — a single
+      // transient network failure leaving the student's visible progress
+      // behind the outcome they just successfully recorded.
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        try {
+          const next = await recordAssignmentProgress(assignmentId, uid, questionId, targetCount, outcome);
+          setSubmission(next);
+          return;
+        } catch (error) {
+          if (attempt === 1) {
+            // Still not swallowed silently: surfaced in dev, and the next
+            // session load re-reads the authoritative submission from the
+            // server, so the student's real progress is never lost — only
+            // this render's optimistic copy of it is stale.
+            if (__DEV__) {
+              // eslint-disable-next-line no-console
+              console.warn("[ASSIGNMENT_PROGRESS] write failed after retry", questionId, error);
+            }
+          }
+        }
       }
     },
     [assignmentId, uid, targetCount],

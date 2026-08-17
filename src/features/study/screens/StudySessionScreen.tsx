@@ -26,6 +26,7 @@ import { Question } from "@/types/question";
 
 import { useAssignmentSession } from "@features/assignments/hooks/useAssignmentSession";
 import { computeAssignmentProgress } from "@features/assignments/services/assignmentProgress";
+import { resolveAssignmentSessionCompletion } from "@features/assignments/services/assignmentSessionCompletion";
 
 import { StudySessionAdaptiveCard } from "../components/StudySessionAdaptiveCard";
 import { StudySessionMandatoryCard } from "../components/StudySessionMandatoryCard";
@@ -35,7 +36,8 @@ import { useStudyQueue } from "../hooks/useStudyQueue";
 import { ResolvedQueueEntry } from "../services/studyService";
 import {
   computeSessionCardHeight,
-  computeSessionItemOffset,
+  computeSessionItemContentOffset,
+  computeSessionScrollOffset,
   computeSessionSnapOffsets,
 } from "../services/studySessionLayout";
 import {
@@ -132,12 +134,12 @@ export function StudySessionScreen({ mode, assignmentId }: StudySessionScreenPro
   // so swiping always lands exactly on a card's top, never partway between
   // the header and the first card.
   const mandatorySnapOffsets = useMemo(
-    () => computeSessionSnapOffsets(mandatory.entries.length, headerHeight, cardHeight),
-    [mandatory.entries.length, headerHeight, cardHeight],
+    () => computeSessionSnapOffsets(mandatory.entries.length, cardHeight),
+    [mandatory.entries.length, cardHeight],
   );
   const swipeSnapOffsets = useMemo(
-    () => computeSessionSnapOffsets(swipeQuestions.length, headerHeight, cardHeight),
-    [swipeQuestions.length, headerHeight, cardHeight],
+    () => computeSessionSnapOffsets(swipeQuestions.length, cardHeight),
+    [swipeQuestions.length, cardHeight],
   );
 
   function goBack() {
@@ -195,10 +197,10 @@ export function StudySessionScreen({ mode, assignmentId }: StudySessionScreenPro
   useEffect(() => {
     if (mode !== "mandatory" || mandatory.isComplete) return;
     listRef.current?.scrollToOffset({
-      offset: computeSessionItemOffset(mandatory.index, headerHeight, cardHeight),
+      offset: computeSessionScrollOffset(mandatory.index, cardHeight),
       animated: true,
     });
-  }, [mode, mandatory.index, mandatory.isComplete, headerHeight, cardHeight]);
+  }, [mode, mandatory.index, mandatory.isComplete, cardHeight]);
 
   const handleMandatoryEndReached = useCallback(() => {
     if (mandatory.hasMore) mandatory.retryPagination();
@@ -218,8 +220,21 @@ export function StudySessionScreen({ mode, assignmentId }: StudySessionScreenPro
   const assignmentProgress = isAssignmentMode
     ? computeAssignmentProgress(assignmentSession.submission, assignmentSession.targetCount)
     : null;
+  // Phase 38 — completion is decided against what the student can ACTUALLY
+  // answer, not against the teacher's targetCount alone. An assignment whose
+  // snapshot names a since-deleted question could otherwise never reach
+  // completedCount >= targetCount, leaving the student stuck at (say) "2/4"
+  // at the end of the list with no completion screen — reproduced against
+  // the emulator, see assignmentSessionCompletion.ts.
+  const assignmentCompletion = isAssignmentMode
+    ? resolveAssignmentSessionCompletion({
+        resolvableQuestionIds: assignmentSession.questions.map((question) => question.id),
+        completedQuestionIds: assignmentSession.submission?.completedQuestionIds ?? [],
+        targetCount: assignmentSession.targetCount,
+      })
+    : null;
   const isAssignmentComplete =
-    isAssignmentMode && !assignmentSession.isLoading && (assignmentProgress?.isComplete ?? false);
+    isAssignmentMode && !assignmentSession.isLoading && (assignmentCompletion?.isComplete ?? false);
   const isAssignmentEmpty =
     isAssignmentMode &&
     !assignmentSession.isLoading &&
@@ -324,10 +339,9 @@ export function StudySessionScreen({ mode, assignmentId }: StudySessionScreenPro
           )}
           getItemLayout={(_, index) => ({
             length: cardHeight,
-            offset: computeSessionItemOffset(index, headerHeight, cardHeight),
+            offset: computeSessionItemContentOffset(index, headerHeight, cardHeight),
             index,
           })}
-          pagingEnabled
           snapToOffsets={mandatorySnapOffsets}
           snapToAlignment="start"
           decelerationRate="fast"
@@ -410,6 +424,15 @@ export function StudySessionScreen({ mode, assignmentId }: StudySessionScreenPro
           <Text style={styles.completionSubtitle}>
             {assignmentProgress?.completedCount ?? 0} / {assignmentProgress?.targetCount ?? 0} soru çözüldü.
           </Text>
+          {/* Stated plainly rather than quietly rounded away: the student
+              finished everything they could open, and the shortfall against
+              the teacher's count is not work they skipped. */}
+          {assignmentCompletion && assignmentCompletion.unavailableCount > 0 ? (
+            <Text style={styles.completionHint}>
+              {assignmentCompletion.unavailableCount} soru artık görüntülenemiyor, bu yüzden ödevin
+              tamamı bu kadar.
+            </Text>
+          ) : null}
           <PrimaryButton label="Öğrenme Merkezine Dön" onPress={goBack} />
         </View>
       </View>
@@ -437,7 +460,7 @@ export function StudySessionScreen({ mode, assignmentId }: StudySessionScreenPro
               // assignmentTypes.ts); it never feeds back into scheduling.
               if (isAssignmentMode) assignmentSession.recordProgress(question.id, outcome);
               listRef.current?.scrollToOffset({
-                offset: computeSessionItemOffset(index + 1, headerHeight, cardHeight),
+                offset: computeSessionScrollOffset(index + 1, cardHeight),
                 animated: true,
               });
             }}
@@ -446,10 +469,9 @@ export function StudySessionScreen({ mode, assignmentId }: StudySessionScreenPro
         )}
         getItemLayout={(_, index) => ({
           length: cardHeight,
-          offset: computeSessionItemOffset(index, headerHeight, cardHeight),
+          offset: computeSessionItemContentOffset(index, headerHeight, cardHeight),
           index,
         })}
-        pagingEnabled
         snapToOffsets={swipeSnapOffsets}
         snapToAlignment="start"
         decelerationRate="fast"

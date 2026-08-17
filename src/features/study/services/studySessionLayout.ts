@@ -34,29 +34,61 @@ export function computeSessionCardHeight(input: SessionCardHeightInput): number 
 }
 
 /**
- * Real FlatList scroll-stop positions for a vertical swipe feed whose first
- * item is offset by a header spacer taller (or shorter) than every card
- * after it — snapToInterval cannot represent this (it only knows one fixed
- * interval measured from offset 0); snapToOffsets needs the explicit list
- * this produces. Item `i` always starts at `headerHeight + cardHeight * i`.
+ * Where item `index` actually SITS inside the list's content, measured from
+ * the very top of the content (the header spacer's own top). This is what
+ * FlatList's `getItemLayout` describes — a statement about layout, not a
+ * place to scroll to.
+ *
+ * NOT interchangeable with computeSessionScrollOffset below. See its doc
+ * comment for the (measured) reason those are two different numbers.
  */
-export function computeSessionSnapOffsets(
-  itemCount: number,
+export function computeSessionItemContentOffset(
+  index: number,
   headerHeight: number,
   cardHeight: number,
-): number[] {
-  if (itemCount <= 0) return [];
-  return Array.from({ length: itemCount }, (_, index) => headerHeight + cardHeight * index);
+): number {
+  return headerHeight + cardHeight * index;
 }
 
 /**
- * The scroll offset for the top of item `index` in the same coordinate
- * space computeSessionSnapOffsets uses — what auto-advance
- * (scrollToOffset) must target after an outcome is recorded, or when the
- * mandatory session's own `index` moves on.
+ * The scroll offset that brings item `index` to rest exactly BELOW the
+ * floating header — what `scrollToOffset` and `snapToOffsets` must use.
+ *
+ * Phase 38 root cause. These two numbers were previously the same function,
+ * and that conflation shifted every card up by exactly `headerHeight`:
+ *
+ *   item i's content position  = headerHeight + cardHeight * i
+ *   item i's on-screen top     = contentPosition - scrollOffset
+ *
+ * Scrolling to the CONTENT position therefore puts the card's top at
+ * screen y = 0 — underneath the opaque floating header (which covers
+ * y ∈ [0, headerHeight)) — instead of at y = headerHeight. Measured
+ * directly in the running app: with headerHeight 48 and cardHeight 672, the
+ * DOM reports item 1 at content y 720, and the old math scrolled to 720,
+ * landing its top at screen y 0 with the top 48px hidden behind the header.
+ * On a notched phone headerHeight is ~95-107, so roughly the top hundred
+ * pixels of every card after the first — the top of the question image —
+ * was cropped by the header on every auto-advance and every swipe.
+ *
+ * Subtracting the header spacer is the whole fix: the spacer exists so the
+ * FIRST card starts below the header at rest (scroll offset 0); every
+ * subsequent card reaches that same resting place at `cardHeight * index`.
  */
-export function computeSessionItemOffset(index: number, headerHeight: number, cardHeight: number): number {
-  return headerHeight + cardHeight * index;
+export function computeSessionScrollOffset(index: number, cardHeight: number): number {
+  if (index <= 0) return 0;
+  return Math.max(0, cardHeight * index);
+}
+
+/**
+ * Real FlatList scroll-stop positions for the vertical swipe feed — the
+ * SCROLL-offset space (see computeSessionScrollOffset), not the content
+ * space. snapToInterval cannot express this list on its own once a header
+ * spacer of a different height sits above the cards, which is why the
+ * explicit offsets are computed here.
+ */
+export function computeSessionSnapOffsets(itemCount: number, cardHeight: number): number[] {
+  if (itemCount <= 0) return [];
+  return Array.from({ length: itemCount }, (_, index) => computeSessionScrollOffset(index, cardHeight));
 }
 
 // Phase 37 — the question image never claims more than this fraction of the

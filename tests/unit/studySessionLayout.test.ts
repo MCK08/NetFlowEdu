@@ -1,6 +1,7 @@
 import {
   computeSessionCardHeight,
-  computeSessionItemOffset,
+  computeSessionItemContentOffset,
+  computeSessionScrollOffset,
   computeSessionSnapOffsets,
   SESSION_IMAGE_MAX_HEIGHT_RATIO,
 } from "../../src/features/study/services/studySessionLayout";
@@ -41,31 +42,62 @@ describe("computeSessionCardHeight", () => {
 
 describe("computeSessionSnapOffsets", () => {
   it("returns an empty array for zero items", () => {
-    expect(computeSessionSnapOffsets(0, 92, 575)).toEqual([]);
+    expect(computeSessionSnapOffsets(0, 575)).toEqual([]);
   });
 
-  it("offsets every item by the header height, then by cardHeight per index — never snapToInterval's uniform-from-zero assumption", () => {
-    expect(computeSessionSnapOffsets(3, 92, 575)).toEqual([92, 667, 1242]);
+  // Phase 38 — this assertion previously read [92, 667, 1242] (the CONTENT
+  // positions). Those are the wrong numbers to SCROLL to: scrolling to an
+  // item's content position lands its top at screen y=0, underneath the
+  // floating header, hiding the top `headerHeight` pixels of every card
+  // after the first. Measured directly in the running app before the fix.
+  it("snaps in SCROLL space — a plain multiple of cardHeight, header spacer excluded", () => {
+    expect(computeSessionSnapOffsets(3, 575)).toEqual([0, 575, 1150]);
   });
 
-  it("matches computeSessionItemOffset for every index it produces", () => {
-    const headerHeight = 107;
+  it("matches computeSessionScrollOffset for every index it produces", () => {
     const cardHeight = 791;
-    const offsets = computeSessionSnapOffsets(4, headerHeight, cardHeight);
+    const offsets = computeSessionSnapOffsets(4, cardHeight);
     offsets.forEach((offset, index) => {
-      expect(offset).toBe(computeSessionItemOffset(index, headerHeight, cardHeight));
+      expect(offset).toBe(computeSessionScrollOffset(index, cardHeight));
     });
   });
 });
 
-describe("computeSessionItemOffset", () => {
-  it("the first item starts exactly at the header's own height, not at 0", () => {
-    expect(computeSessionItemOffset(0, 92, 575)).toBe(92);
+describe("computeSessionScrollOffset", () => {
+  it("the first item rests at scroll offset 0 — the header spacer already holds it below the header", () => {
+    expect(computeSessionScrollOffset(0, 575)).toBe(0);
   });
 
   it("advances by exactly one cardHeight per index", () => {
-    expect(computeSessionItemOffset(1, 92, 575)).toBe(667);
-    expect(computeSessionItemOffset(2, 92, 575)).toBe(1242);
+    expect(computeSessionScrollOffset(1, 575)).toBe(575);
+    expect(computeSessionScrollOffset(2, 575)).toBe(1150);
+  });
+
+  it("never returns a negative offset for a defensive negative index", () => {
+    expect(computeSessionScrollOffset(-1, 575)).toBe(0);
+  });
+
+  // The regression itself, stated as an invariant: the scroll offset must
+  // be exactly headerHeight LESS than the content offset, for every index.
+  it.each([
+    [0, 92, 575],
+    [1, 92, 575],
+    [5, 107, 791],
+  ])("index %i: scrollOffset === contentOffset - headerHeight", (index, headerHeight, cardHeight) => {
+    expect(computeSessionScrollOffset(index, cardHeight)).toBe(
+      computeSessionItemContentOffset(index, headerHeight, cardHeight) - headerHeight,
+    );
+  });
+});
+
+describe("computeSessionItemContentOffset", () => {
+  it("describes where the item SITS in content space — the first item after the header spacer", () => {
+    expect(computeSessionItemContentOffset(0, 92, 575)).toBe(92);
+  });
+
+  it("advances by exactly one cardHeight per index", () => {
+    expect(computeSessionItemContentOffset(1, 92, 575)).toBe(667);
+    expect(computeSessionItemContentOffset(2, 92, 575)).toBe(1242);
   });
 });
 
