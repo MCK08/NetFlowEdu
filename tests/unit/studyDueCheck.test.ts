@@ -1,4 +1,5 @@
 import {
+  countDueNow,
   isAnythingDueNow,
   resolveStudyStartTarget,
 } from "../../src/features/study/services/studyDueCheck";
@@ -97,5 +98,51 @@ describe("resolveStudyStartTarget — tap-time routing, overrides any stale snap
   it("routes to none when nothing is due and the plan has no items", () => {
     const items = [{ nextReviewAt: NOW + DAY_MS }];
     expect(resolveStudyStartTarget({ items, now: NOW, hasPlanItems: false })).toBe("none");
+  });
+});
+
+// Phase 39 — the recommendation surface needs the NUMBER of due items, not
+// just the predicate, and must derive it from the same fresh clock reading
+// isAnythingDueNow uses rather than from plan.dueCount's memoized snapshot.
+describe("countDueNow", () => {
+  it("is 0 for an empty list", () => {
+    expect(countDueNow([], NOW)).toBe(0);
+  });
+
+  it("counts every item whose review time has passed", () => {
+    const items = [
+      { nextReviewAt: NOW - DAY_MS },
+      { nextReviewAt: NOW - 1 },
+      { nextReviewAt: NOW + DAY_MS },
+    ];
+    expect(countDueNow(items, NOW)).toBe(2);
+  });
+
+  it("includes the exact boundary — same inclusive rule as isAnythingDueNow", () => {
+    expect(countDueNow([{ nextReviewAt: NOW }], NOW)).toBe(1);
+  });
+
+  it("skips missing and invalid timestamps instead of counting them as due", () => {
+    const items = [
+      { nextReviewAt: Number.NaN },
+      { nextReviewAt: null },
+      { nextReviewAt: undefined },
+      { nextReviewAt: NOW - DAY_MS },
+    ];
+    expect(countDueNow(items, NOW)).toBe(1);
+  });
+
+  // The two must never be able to disagree about what "due" means.
+  it("is positive exactly when isAnythingDueNow is true", () => {
+    const cases = [
+      [],
+      [{ nextReviewAt: NOW + DAY_MS }],
+      [{ nextReviewAt: NOW }],
+      [{ nextReviewAt: Number.NaN }],
+      [{ nextReviewAt: NOW - DAY_MS }, { nextReviewAt: NOW + DAY_MS }],
+    ];
+    for (const items of cases) {
+      expect(countDueNow(items, NOW) > 0).toBe(isAnythingDueNow(items, NOW));
+    }
   });
 });

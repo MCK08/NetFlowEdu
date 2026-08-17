@@ -1,5 +1,5 @@
 import { router, useFocusEffect } from "expo-router";
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { FlatList, RefreshControl, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -19,6 +19,7 @@ import { StudyOutcome } from "../domain/studyTypes";
 import { AssignedWorkSection } from "../components/AssignedWorkSection";
 import { DailyGoalEditor } from "../components/DailyGoalEditor";
 import { DailyPracticePlanSection } from "../components/DailyPracticePlanSection";
+import { NextActionSection } from "../components/NextActionSection";
 import { StudyProgressCard } from "../components/StudyProgressCard";
 import { StudyQueueCard } from "../components/StudyQueueCard";
 import { SubjectBreakdownSection } from "../components/SubjectBreakdownSection";
@@ -30,6 +31,7 @@ import { mapStudyErrorToMessage } from "../services/studyErrorMapper";
 import { queueEmptyCopy } from "../services/studyPresentation";
 import { recordStudyOutcome } from "../services/studyService";
 import { ResolvedQueueEntry } from "../services/studyService";
+import { resolveStudentNextAction } from "../services/studentNextAction";
 import { resolveStudyStartTarget } from "../services/studyDueCheck";
 
 function keyExtractor(entry: ResolvedQueueEntry) {
@@ -140,6 +142,78 @@ export function StudyScreen() {
     [guardedNavigate],
   );
 
+  // Phase 39 — "Şimdi Ne Yapmalısın?". Derived from the data this screen
+  // ALREADY holds (items, plan, weakTopics, assignmentCards) — zero
+  // additional Firestore reads, and it refreshes on exactly the triggers
+  // those already refresh on. Memoized like `plan`/`insights`, so its `now`
+  // is a snapshot: fine for what's DISPLAYED, never trusted for routing.
+  const nextAction = useMemo(
+    () =>
+      resolveStudentNextAction({
+        items,
+        plan,
+        weakTopics: insights.weakTopics,
+        assignmentCards,
+        now: Date.now(),
+      }),
+    [items, plan, insights.weakTopics, assignmentCards],
+  );
+
+  // Same tap-time discipline handleStartPlan already uses, for the same
+  // reason: the rendered recommendation can be minutes old, and a deadline
+  // or a nextReviewAt can cross "now" purely from the clock ticking. The
+  // decision that actually opens a screen is re-derived here against a
+  // fresh clock from the same in-memory data — no new fetch, no second
+  // engine — and when it disagrees with what was on screen, the display
+  // self-corrects through the refreshes this Hub already has.
+  const handleStartNextAction = useCallback(() => {
+    const live = resolveStudentNextAction({
+      items,
+      plan,
+      weakTopics: insights.weakTopics,
+      assignmentCards,
+      now: Date.now(),
+    });
+
+    if (live.kind !== nextAction.kind) {
+      refreshInsights();
+      refreshAssignments();
+    }
+
+    switch (live.target.kind) {
+      case "assignment":
+        openAssignment(live.target.assignmentId);
+        break;
+      case "review_session":
+        startSession();
+        break;
+      case "adaptive_session":
+        startAdaptiveSession();
+        break;
+      case "question":
+        handleOpen(live.target.questionId);
+        break;
+      case "none":
+        // Nothing left to open — the card that was tapped is already stale.
+        // Re-derive it rather than silently doing nothing.
+        refreshInsights();
+        refreshAssignments();
+        break;
+    }
+  }, [
+    items,
+    plan,
+    insights.weakTopics,
+    assignmentCards,
+    nextAction.kind,
+    refreshInsights,
+    refreshAssignments,
+    openAssignment,
+    startSession,
+    startAdaptiveSession,
+    handleOpen,
+  ]);
+
   // A weak/strong topic card opens the same, already-existing Question
   // Detail route StudyQueueCard's own "open" action uses (handleOpen above)
   // — reusing it here rather than wiring a topic-filtered Feed keeps this
@@ -222,6 +296,10 @@ export function StudyScreen() {
             {/* Phase 25 §10 — one deterministic sentence, real trend data,
                 no invented text. See learningMoment.ts. */}
             {moment ? <Text style={styles.moment}>{moment}</Text> : null}
+            {/* Phase 39 §4 — the Hub's single headline answer, above the
+                per-category sections it summarizes. Those sections stay as
+                the breakdown; this one names the one next step. */}
+            <NextActionSection action={nextAction} onStart={handleStartNextAction} />
             <AssignedWorkSection cards={assignmentCards} onOpen={openAssignment} />
             <DailyPracticePlanSection plan={plan} onStart={handleStartPlan} />
             <StudyProgressCard summary={summary} dueCount={insights.dueCount} />

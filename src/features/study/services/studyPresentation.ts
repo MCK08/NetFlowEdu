@@ -1,7 +1,10 @@
 import { Ionicons } from "@expo/vector-icons";
 
+import { assignmentDueLabel } from "@features/assignments/services/assignmentUrgency";
+
 import { StudyOutcome, StudyStatus } from "../domain/studyTypes";
 import { PlanReason } from "./dailyPracticePlan";
+import { NoActionReason, StudentNextAction } from "./studentNextAction";
 
 // Pure presentation mapping — no React, no Firebase, directly unit-testable.
 
@@ -104,6 +107,109 @@ const PLAN_REASON_LABELS: Record<PlanReason, string> = {
 
 export function planReasonLabel(reason: PlanReason): string {
   return PLAN_REASON_LABELS[reason];
+}
+
+// Phase 39 — the copy for the Hub's "Şimdi ne yapmalısın?" card. Kept here,
+// next to planReasonLabel and queueEmptyCopy, because this file is already
+// the study feature's one presentation-mapping module — the decision itself
+// lives in studentNextAction.ts and carries no strings at all.
+//
+// Every sentence below states a fact the app actually recorded: a real
+// remaining count, a real due count, a real struggled count, a real stored
+// deadline. There is no score, no percentage, no probability, and nothing
+// phrased as a system opinion ("AI sana bunu öneriyor") — the student can
+// always check the number against what they did.
+export interface NextActionCopy {
+  // The category, at a glance — the "why" before the "what".
+  label: string;
+  title: string;
+  // The recorded fact that justifies the recommendation.
+  detail: string;
+  // null when there is genuinely nothing to open.
+  cta: string | null;
+}
+
+function joinDetail(parts: readonly (string | null)[]): string {
+  return parts.filter((part): part is string => part !== null && part !== "").join(" · ");
+}
+
+export function nextActionCopy(action: StudentNextAction, now: number): NextActionCopy {
+  switch (action.kind) {
+    case "continue_assignment":
+      return {
+        label: "Ödev",
+        title: action.title,
+        detail: joinDetail([
+          `${action.remainingCount} soru kaldı`,
+          assignmentDueLabel(action.dueAt, now),
+        ]),
+        cta: action.isStarted ? "Ödeve Devam Et" : "Ödeve Başla",
+      };
+
+    case "due_review":
+      return {
+        label: "Tekrar",
+        title: "Tekrar zamanı gelen sorular",
+        detail: `${action.dueCount} soru tekrar için hazır`,
+        cta: "Tekrara Başla",
+      };
+
+    case "struggled_topic":
+      return {
+        label: "Zorlandığın konu",
+        title: action.topic,
+        detail: joinDetail([
+          action.subject,
+          action.struggledCount > 0 ? `${action.struggledCount} soruda zorlandın` : null,
+        ]),
+        cta: action.target.kind === "question" ? "Soruyu Aç" : "Bu Konuyu Çalış",
+      };
+
+    case "adaptive_practice":
+      return {
+        label: "Güçlendir",
+        title: "Zorlandığın sorular",
+        detail: `${action.itemCount} soru seni bekliyor`,
+        cta: "Çalışmaya Başla",
+      };
+
+    case "goal_fill":
+      return {
+        label: "Günlük hedef",
+        title: "Günlük hedefini tamamla",
+        detail: `${goalProgressLabel(action.reviewedToday, action.dailyGoal)} tamamlandı`,
+        cta: "Çalışmaya Devam Et",
+      };
+
+    case "no_action":
+      return noActionCopy(action.reason);
+  }
+}
+
+function noActionCopy(reason: NoActionReason): NextActionCopy {
+  switch (reason) {
+    case "goal_complete":
+      return {
+        label: "Bugün",
+        title: "Bugünlük tamamsın",
+        detail: "Günlük hedefini tamamladın ve tekrar zamanı gelen soru yok",
+        cta: null,
+      };
+    case "no_study_data":
+      return {
+        label: "Başlangıç",
+        title: "Henüz çalışma verin yok",
+        detail: "Bir soruyu çözüp sonucunu işaretlediğinde ne çalışman gerektiğini burada göreceksin",
+        cta: null,
+      };
+    case "nothing_pending":
+      return {
+        label: "Bugün",
+        title: "Şu an bekleyen bir şey yok",
+        detail: "Tekrar zamanı gelen soru ya da açık ödev bulunmuyor",
+        cta: null,
+      };
+  }
 }
 
 export function queueEmptyCopy(hasAnyStudyItem: boolean): { title: string; description: string } {

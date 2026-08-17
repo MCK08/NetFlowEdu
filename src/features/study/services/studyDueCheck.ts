@@ -16,17 +16,38 @@ export interface DueCheckItem {
   nextReviewAt: number | null | undefined;
 }
 
+// The ONE definition of "due" in this module — isAnythingDueNow and
+// countDueNow must never be able to disagree with each other, nor with
+// dailyPracticePlan.ts's own `item.nextReviewAt <= now` tier-1 predicate.
+// Boundary is inclusive (nextReviewAt === now counts as due), matching that
+// predicate exactly; this file only re-evaluates the same rule against a
+// fresher clock reading.
+function isDueNow(item: DueCheckItem, now: number): boolean {
+  if (typeof item.nextReviewAt !== "number" || !Number.isFinite(item.nextReviewAt)) return false;
+  return item.nextReviewAt <= now;
+}
+
 // True if at least one item's nextReviewAt has already passed `now`.
-// Boundary is inclusive (nextReviewAt === now counts as due), matching
-// dailyPracticePlan.ts's own `item.nextReviewAt <= now` tier-1 predicate —
-// this must never disagree with that rule about what "due" means, only
-// re-evaluate it against a fresher clock reading.
+// Short-circuits — the caller only asked whether anything is due, not how
+// much, so a long queue costs one comparison here.
 export function isAnythingDueNow(items: readonly DueCheckItem[], now: number): boolean {
   for (const item of items) {
-    if (typeof item.nextReviewAt !== "number" || !Number.isFinite(item.nextReviewAt)) continue;
-    if (item.nextReviewAt <= now) return true;
+    if (isDueNow(item, now)) return true;
   }
   return false;
+}
+
+// Phase 39 — how MANY items are due against a fresh clock reading. Same
+// inclusive boundary and same clock-freshness rationale as isAnythingDueNow;
+// the recommendation surface needs the number, not just the predicate, and
+// must not read it from plan.dueCount (a memoized snapshot — see this
+// module's own header comment for why that number drifts).
+export function countDueNow(items: readonly DueCheckItem[], now: number): number {
+  let count = 0;
+  for (const item of items) {
+    if (isDueNow(item, now)) count += 1;
+  }
+  return count;
 }
 
 export type StudyStartTarget = "mandatory" | "adaptive" | "none";

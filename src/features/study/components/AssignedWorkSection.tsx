@@ -5,6 +5,7 @@ import { Card } from "@components/ui/Card";
 import { PrimaryButton } from "@components/ui/PrimaryButton";
 import { SectionHeader } from "@components/ui/SectionHeader";
 import { StudentAssignmentCard } from "@features/assignments/hooks/useStudentAssignments";
+import { assignmentDueLabel } from "@features/assignments/services/assignmentUrgency";
 import { colors } from "@theme/colors";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
@@ -12,15 +13,6 @@ import { typography } from "@theme/typography";
 interface AssignedWorkSectionProps {
   cards: readonly StudentAssignmentCard[];
   onOpen: (assignmentId: string) => void;
-}
-
-function dueLabel(dueAt: number | null): string | null {
-  if (dueAt === null) return null;
-  const days = Math.ceil((dueAt - Date.now()) / (24 * 60 * 60 * 1000));
-  if (days < 0) return "Süresi geçti";
-  if (days === 0) return "Son tarih: Bugün";
-  if (days === 1) return "Son tarih: Yarın";
-  return `Son tarih: ${days} gün sonra`;
 }
 
 // "Atanan Çalışmalar" — never a second question-solving engine: "Devam Et"
@@ -35,13 +27,20 @@ export const AssignedWorkSection = memo(function AssignedWorkSection({
 }: AssignedWorkSectionProps) {
   if (cards.length === 0) return null;
 
+  // One clock reading for the whole list, so two cards rendered in the same
+  // pass can never straddle a day boundary and disagree.
+  const now = Date.now();
+
   return (
     <View style={styles.container}>
       <SectionHeader title="Atanan Çalışmalar" />
       <View style={styles.list}>
         {cards.map(({ assignment, submission, status }) => {
           const completedCount = submission?.completedCount ?? 0;
-          const due = dueLabel(assignment.dueAt);
+          // Phase 39 — shared with the "Şimdi Ne Yapmalısın?" card, so the
+          // same assignment can never carry two different deadline labels
+          // on the same screen (see assignmentUrgency.ts).
+          const due = assignmentDueLabel(assignment.dueAt, now);
           return (
             <Card key={assignment.id} style={styles.card}>
               <Pressable onPress={() => onOpen(assignment.id)} accessibilityRole="button">
