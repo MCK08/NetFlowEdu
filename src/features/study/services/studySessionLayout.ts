@@ -80,6 +80,83 @@ export function computeSessionScrollOffset(index: number, cardHeight: number): n
 }
 
 /**
+ * Whether the session's auto-advance scroll may be ANIMATED on this
+ * platform.
+ *
+ * Phase 38.1 root cause, isolated experimentally against the running app
+ * (not inferred): after an outcome was recorded, the session never moved to
+ * the next question on Expo web. Instrumentation proved the ref was live
+ * (`refExists: true`, `refCtor: "FlatList"`), the target offset was correct
+ * (index 0 -> targetOffset 672), and the call executed. Probing the SAME
+ * ref by hand then isolated the single differing variable:
+ *
+ *   scrollToOffset({ offset: 672, animated: true  })  -> scrollTop stayed 0
+ *   scrollToOffset({ offset: 672, animated: false })  -> scrollTop became 672
+ *
+ * react-native-web's FlatList honours scrollToOffset, but its ANIMATED path
+ * is a no-op in this configuration, so the student was silently left on the
+ * card they had just answered.
+ *
+ * Native keeps the animated scroll it has always had — this narrows only
+ * the platform that demonstrably cannot perform it. Kept here (rather than
+ * inlined at the two call sites) so the rule has one definition and one
+ * test, and so the reasoning above lives with it.
+ */
+export function shouldAnimateSessionScroll(platformOS: string): boolean {
+  return platformOS !== "web";
+}
+
+// Phase 38.1 — hard ceiling for the WEB compatibility fallback below. Not a
+// tuned performance number and not invented: it is the real, already-enforced
+// upper bound on the largest session this screen can ever show —
+// MAX_ASSIGNMENT_QUESTIONS (assignmentTypes.ts), which firestore.rules
+// independently enforces as `questionIds.size() <= 30`.
+export const WEB_SESSION_MAX_INITIAL_RENDER = 30;
+
+// The value the two session lists have always passed on native. Named so the
+// fallback below can state explicitly that native is left untouched.
+export const NATIVE_SESSION_INITIAL_NUM_TO_RENDER = 1;
+
+/**
+ * How many session cards the list should render up front.
+ *
+ * This is a WEB COMPATIBILITY FALLBACK, not an optimisation — it deliberately
+ * gives up virtualisation on web because virtualisation there is already
+ * broken:
+ *
+ * On react-native-web 0.21.2 the session FlatList's own measurement callbacks
+ * (`onLayout` / `onContentSizeChange`) never fire, so VirtualizedList's
+ * `_scrollMetrics` stay `{visibleLength: 0, contentLength: 0}` even though the
+ * DOM is correctly sized (scroller 720px, content 3408px, handlers attached,
+ * ResizeObserver available). Its own guard then refuses to grow the window:
+ *
+ *   // Wait until the scroll view metrics have been set up. And until then,
+ *   // we will trust the initialNumToRender suggestion
+ *   if (visibleLength <= 0 || contentLength <= 0) { return cellsAroundViewport; }
+ *
+ * So on web `initialNumToRender` IS the render window, permanently: with the
+ * previous value of 1, only the first card ever mounted and every advance
+ * landed the student on blank space. No prop or state an app can set writes
+ * `_scrollMetrics` (the only writers are those two callbacks, plus a
+ * nested-list-only path), so rendering the session's real item count is the
+ * only app-level fix available without changing dependencies.
+ *
+ * It stays BOUNDED: assignments are capped at 30 questions and the adaptive
+ * plan at MAX_PLAN_ITEMS (5), so those sessions are fully covered. The
+ * mandatory review queue is the one list that accumulates pages without a cap
+ * (see useReviewSession's mergeResolvedPages), which is exactly why the
+ * ceiling above exists — it can never mount more than 30 cards regardless.
+ *
+ * Native is deliberately unchanged: its metrics work, its virtualisation
+ * works, and it keeps rendering one card up front as it always has.
+ */
+export function resolveSessionInitialNumToRender(platformOS: string, itemCount: number): number {
+  if (platformOS !== "web") return NATIVE_SESSION_INITIAL_NUM_TO_RENDER;
+  const safeCount = Number.isFinite(itemCount) && itemCount > 0 ? Math.floor(itemCount) : 1;
+  return Math.min(Math.max(1, safeCount), WEB_SESSION_MAX_INITIAL_RENDER);
+}
+
+/**
  * Real FlatList scroll-stop positions for the vertical swipe feed — the
  * SCROLL-offset space (see computeSessionScrollOffset), not the content
  * space. snapToInterval cannot express this list on its own once a header

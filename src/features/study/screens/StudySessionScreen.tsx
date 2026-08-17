@@ -5,6 +5,7 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -39,6 +40,8 @@ import {
   computeSessionItemContentOffset,
   computeSessionScrollOffset,
   computeSessionSnapOffsets,
+  resolveSessionInitialNumToRender,
+  shouldAnimateSessionScroll,
 } from "../services/studySessionLayout";
 import {
   resolveStudySessionExitGuard,
@@ -59,6 +62,11 @@ interface StudySessionScreenProps {
   // Required when mode === "assignment", ignored otherwise.
   assignmentId?: string;
 }
+
+// Module-level: the platform cannot change while the app is running, so this
+// is a constant, not per-render state. See shouldAnimateSessionScroll for the
+// measured reason web opts out of the animated scroll.
+const animateSessionScroll = shouldAnimateSessionScroll(Platform.OS);
 
 function mandatoryKeyExtractor(entry: ResolvedQueueEntry) {
   return entry.item.questionId;
@@ -198,7 +206,7 @@ export function StudySessionScreen({ mode, assignmentId }: StudySessionScreenPro
     if (mode !== "mandatory" || mandatory.isComplete) return;
     listRef.current?.scrollToOffset({
       offset: computeSessionScrollOffset(mandatory.index, cardHeight),
-      animated: true,
+      animated: animateSessionScroll,
     });
   }, [mode, mandatory.index, mandatory.isComplete, cardHeight]);
 
@@ -349,7 +357,7 @@ export function StudySessionScreen({ mode, assignmentId }: StudySessionScreenPro
           showsVerticalScrollIndicator={false}
           onEndReachedThreshold={0.5}
           onEndReached={handleMandatoryEndReached}
-          initialNumToRender={1}
+          initialNumToRender={resolveSessionInitialNumToRender(Platform.OS, mandatory.entries.length)}
           maxToRenderPerBatch={2}
           windowSize={3}
           removeClippedSubviews
@@ -461,7 +469,7 @@ export function StudySessionScreen({ mode, assignmentId }: StudySessionScreenPro
               if (isAssignmentMode) assignmentSession.recordProgress(question.id, outcome);
               listRef.current?.scrollToOffset({
                 offset: computeSessionScrollOffset(index + 1, cardHeight),
-                animated: true,
+                animated: animateSessionScroll,
               });
             }}
             onSubmittingChange={(submitting) => handleSwipeSubmittingChange(item.id, submitting)}
@@ -477,7 +485,7 @@ export function StudySessionScreen({ mode, assignmentId }: StudySessionScreenPro
         decelerationRate="fast"
         disableIntervalMomentum
         showsVerticalScrollIndicator={false}
-        initialNumToRender={1}
+        initialNumToRender={resolveSessionInitialNumToRender(Platform.OS, swipeQuestions.length)}
         maxToRenderPerBatch={2}
         windowSize={3}
         removeClippedSubviews

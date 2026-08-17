@@ -3,7 +3,11 @@ import {
   computeSessionItemContentOffset,
   computeSessionScrollOffset,
   computeSessionSnapOffsets,
+  NATIVE_SESSION_INITIAL_NUM_TO_RENDER,
+  resolveSessionInitialNumToRender,
   SESSION_IMAGE_MAX_HEIGHT_RATIO,
+  shouldAnimateSessionScroll,
+  WEB_SESSION_MAX_INITIAL_RENDER,
 } from "../../src/features/study/services/studySessionLayout";
 
 // Phase 35 — regression coverage for the "Tekrar Et"/"Zorlandım"/"Çözdüm"
@@ -98,6 +102,113 @@ describe("computeSessionItemContentOffset", () => {
   it("advances by exactly one cardHeight per index", () => {
     expect(computeSessionItemContentOffset(1, 92, 575)).toBe(667);
     expect(computeSessionItemContentOffset(2, 92, 575)).toBe(1242);
+  });
+});
+
+// Phase 38.1 — the auto-advance regression. Proven experimentally against
+// the running app: react-native-web's FlatList honours scrollToOffset with
+// `animated: false` (scrollTop 0 -> 672) but its `animated: true` path is a
+// no-op (scrollTop stayed 0), so after recording an outcome the student was
+// silently left on the card they had just answered.
+describe("shouldAnimateSessionScroll", () => {
+  it("does NOT animate on web — the platform where the animated path is a proven no-op", () => {
+    expect(shouldAnimateSessionScroll("web")).toBe(false);
+  });
+
+  it.each(["ios", "android"])("keeps the animated scroll on %s — native behavior is unchanged", (os) => {
+    expect(shouldAnimateSessionScroll(os)).toBe(true);
+  });
+
+  it("defaults to animating on any other/unknown platform rather than degrading it", () => {
+    expect(shouldAnimateSessionScroll("windows")).toBe(true);
+    expect(shouldAnimateSessionScroll("macos")).toBe(true);
+  });
+
+  it("is a pure function of the platform string", () => {
+    expect(shouldAnimateSessionScroll("web")).toBe(shouldAnimateSessionScroll("web"));
+    expect(shouldAnimateSessionScroll("ios")).toBe(shouldAnimateSessionScroll("ios"));
+  });
+});
+
+// Phase 38.1 — the bounded WEB compatibility fallback. On react-native-web
+// 0.21.2 the session list's measurement callbacks never fire, so
+// VirtualizedList pins its render window to `initialNumToRender` forever;
+// with the previous value of 1 only the first card ever mounted.
+describe("resolveSessionInitialNumToRender — web fallback", () => {
+  it.each([
+    [0, 1],
+    [1, 1],
+    [3, 3],
+    [5, 5],
+    [10, 10],
+    [30, 30],
+  ])("renders the whole bounded session: %i items -> %i", (itemCount, expected) => {
+    expect(resolveSessionInitialNumToRender("web", itemCount)).toBe(expected);
+  });
+
+  it.each([
+    [31, 30],
+    [150, 30],
+    [10000, 30],
+  ])("clamps an unbounded list at the cap: %i items -> %i", (itemCount, expected) => {
+    expect(resolveSessionInitialNumToRender("web", itemCount)).toBe(expected);
+  });
+
+  it("never returns more than the real item count for a bounded session", () => {
+    for (const count of [1, 2, 7, 29, 30]) {
+      expect(resolveSessionInitialNumToRender("web", count)).toBeLessThanOrEqual(count);
+    }
+  });
+
+  it("never returns more than the cap, for any input", () => {
+    for (const count of [0, 1, 30, 31, 500, Number.MAX_SAFE_INTEGER]) {
+      expect(resolveSessionInitialNumToRender("web", count)).toBeLessThanOrEqual(
+        WEB_SESSION_MAX_INITIAL_RENDER,
+      );
+    }
+  });
+
+  it("never returns less than 1, so a list always renders something", () => {
+    for (const count of [0, -1, -100, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(resolveSessionInitialNumToRender("web", count)).toBeGreaterThanOrEqual(1);
+    }
+  });
+
+  it("floors a fractional count rather than passing a non-integer to FlatList", () => {
+    expect(resolveSessionInitialNumToRender("web", 4.9)).toBe(4);
+  });
+
+  it("the cap is the assignment contract's own maximum, not an invented number", () => {
+    expect(WEB_SESSION_MAX_INITIAL_RENDER).toBe(30);
+  });
+});
+
+describe("resolveSessionInitialNumToRender — native is untouched", () => {
+  it.each([
+    ["ios", 0],
+    ["ios", 5],
+    ["ios", 30],
+    ["ios", 150],
+    ["android", 0],
+    ["android", 5],
+    ["android", 30],
+    ["android", 150],
+  ])("%s with %i items keeps the existing native value", (os, itemCount) => {
+    expect(resolveSessionInitialNumToRender(os, itemCount)).toBe(NATIVE_SESSION_INITIAL_NUM_TO_RENDER);
+  });
+
+  it("an unknown platform is treated as native, never as web", () => {
+    expect(resolveSessionInitialNumToRender("windows", 150)).toBe(NATIVE_SESSION_INITIAL_NUM_TO_RENDER);
+    expect(resolveSessionInitialNumToRender("macos", 150)).toBe(NATIVE_SESSION_INITIAL_NUM_TO_RENDER);
+  });
+
+  it("preserves the exact value both lists shipped before this phase", () => {
+    expect(NATIVE_SESSION_INITIAL_NUM_TO_RENDER).toBe(1);
+  });
+
+  it("is deterministic", () => {
+    expect(resolveSessionInitialNumToRender("web", 12)).toBe(resolveSessionInitialNumToRender("web", 12));
+    expect(resolveSessionInitialNumToRender("ios", 12)).toBe(resolveSessionInitialNumToRender("ios", 12));
   });
 });
 
