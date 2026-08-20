@@ -19,6 +19,20 @@ export interface ClassTopicHotspot {
   // Distinct students with at least one real struggled outcome in this
   // topic (their own per-student TopicInsight.struggledCount > 0).
   strugglingStudents: number;
+  // Phase 42 — the total number of struggled OUTCOMES this class recorded
+  // in this topic, summed from each student's own
+  // TopicInsight.struggledAttemptCount (Phase 41's server counters).
+  //
+  // A count of EVENTS, unlike strugglingStudents above which counts
+  // PEOPLE: five students who each struggled once and five students who
+  // each struggled eight times produce the same strugglingStudents (5) and
+  // were previously indistinguishable here.
+  //
+  // null — never 0 — when no contributing student has trustworthy
+  // cumulative history for this topic (e.g. every item predates the
+  // counters). Deliberately NOT part of the sort below; see the ranking
+  // note there.
+  struggledAttemptCount: number | null;
   // Distinct students whose per-student mastery band for this topic is
   // "mastered" — the server-derived verdict topicMastery.ts already
   // produces, never a second one.
@@ -51,6 +65,11 @@ interface TopicAggregate {
   masteredStudents: Set<string>;
   dueStudents: Set<string>;
   sampleQuestionId: string;
+  // Phase 42 — running total of struggled events, and whether ANY student
+  // contributed a trustworthy count. The flag is what keeps "nobody has
+  // usable history" (null) distinct from "the history says zero" (0).
+  struggledAttemptTotal: number;
+  hasStruggleAttemptEvidence: boolean;
 }
 
 function aggregateKey(subject: string, topic: string): string {
@@ -82,12 +101,22 @@ export function buildClassTopicHotspots(
           masteredStudents: new Set(),
           dueStudents: new Set(),
           sampleQuestionId: topicInsight.sampleQuestionId,
+          struggledAttemptTotal: 0,
+          hasStruggleAttemptEvidence: false,
         } satisfies TopicAggregate);
 
       if (topicInsight.totalCount > 0) aggregate.studentsWithAttempts.add(student.studentUid);
       if (topicInsight.struggledCount > 0) aggregate.strugglingStudents.add(student.studentUid);
       if (topicInsight.masteryBand === "mastered") aggregate.masteredStudents.add(student.studentUid);
       if (topicInsight.dueCount > 0) aggregate.dueStudents.add(student.studentUid);
+
+      // Phase 42 — a student whose items all predate the counters
+      // contributes nothing rather than a zero, so one legacy student can
+      // never dilute a real class-wide event count.
+      if (topicInsight.struggledAttemptCount !== null) {
+        aggregate.struggledAttemptTotal += topicInsight.struggledAttemptCount;
+        aggregate.hasStruggleAttemptEvidence = true;
+      }
 
       aggregates.set(key, aggregate);
     }
@@ -103,8 +132,16 @@ export function buildClassTopicHotspots(
         masteredStudents: aggregate.masteredStudents.size,
         dueStudents: aggregate.dueStudents.size,
         sampleQuestionId: aggregate.sampleQuestionId,
+        struggledAttemptCount: aggregate.hasStruggleAttemptEvidence
+          ? aggregate.struggledAttemptTotal
+          : null,
       }),
     )
+    // Phase 42 — the sort below is UNCHANGED on purpose. struggledAttemptCount
+    // is additional EVIDENCE the teacher can read, not a new ranking key:
+    // reordering the hotspot list would silently change what every teacher
+    // sees first, mid-phase, with no evidence that event-count order serves
+    // them better than people-affected order.
     .sort((a, b) => {
       if (a.strugglingStudents !== b.strugglingStudents) return b.strugglingStudents - a.strugglingStudents;
       if (a.studentsWithAttempts !== b.studentsWithAttempts) return b.studentsWithAttempts - a.studentsWithAttempts;

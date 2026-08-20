@@ -640,3 +640,84 @@ describe("buildClassPerformanceSummary", () => {
     expect(buildClassPerformanceSummary(cards).studentCount).toBe(30);
   });
 });
+
+// Phase 42 — struggle EVIDENCE carried onto the snapshot: how many
+// questions show a repeated, unresolved struggle, and the worst single one.
+// Both are pure derivations of items already fetched; no new read.
+describe("buildStudentPerformanceSnapshot — persistent struggle evidence", () => {
+  it("counts one question failed repeatedly as a persistent struggle", () => {
+    const items = [withOutcomes(0, 8, 0, { questionId: "a", lastOutcome: "struggled", successfulReviews: 0 })];
+    const snapshot = buildStudentPerformanceSnapshot(items, questionsMap(question("a")), NOW);
+    expect(snapshot.persistentStruggleCount).toBe(1);
+    expect(snapshot.maxItemStruggleEvents).toBe(8);
+  });
+
+  // The distinction the dashboard could not previously draw.
+  it("separates four questions struggled once from one question struggled four times", () => {
+    const spread = ["a", "b", "c", "d"].map((id) =>
+      withOutcomes(3, 1, 0, { questionId: id, lastOutcome: "struggled", successfulReviews: 0 }),
+    );
+    const concentrated = [
+      withOutcomes(0, 4, 0, { questionId: "a", lastOutcome: "struggled", successfulReviews: 0 }),
+    ];
+    const spreadSnap = buildStudentPerformanceSnapshot(
+      spread,
+      questionsMap(...spread.map((i) => question(i.questionId))),
+      NOW,
+    );
+    const concentratedSnap = buildStudentPerformanceSnapshot(
+      concentrated,
+      questionsMap(question("a")),
+      NOW,
+    );
+    expect(spreadSnap.persistentStruggleCount).toBe(0);
+    expect(spreadSnap.maxItemStruggleEvents).toBe(1);
+    expect(concentratedSnap.persistentStruggleCount).toBe(1);
+    expect(concentratedSnap.maxItemStruggleEvents).toBe(4);
+  });
+
+  it("does not count a question the student has since recovered on", () => {
+    const items = [withOutcomes(3, 3, 0, { questionId: "a", lastOutcome: "solved", successfulReviews: 2 })];
+    const snapshot = buildStudentPerformanceSnapshot(items, questionsMap(question("a")), NOW);
+    expect(snapshot.persistentStruggleCount).toBe(0);
+    // The events still happened, and the teacher can still see them.
+    expect(snapshot.maxItemStruggleEvents).toBe(3);
+  });
+
+  it("reports null — never 0 — for a student whose items all predate the counters", () => {
+    const items = [legacyItem({ questionId: "a", attemptCount: 20, lastOutcome: "struggled" })];
+    const snapshot = buildStudentPerformanceSnapshot(items, questionsMap(question("a")), NOW);
+    expect(snapshot.persistentStruggleCount).toBe(0);
+    expect(snapshot.maxItemStruggleEvents).toBeNull();
+  });
+
+  it("distinguishes 'no struggles recorded' (0) from 'no history' (null)", () => {
+    const clean = buildStudentPerformanceSnapshot(
+      [withOutcomes(4, 0, 0, { questionId: "a" })],
+      questionsMap(question("a")),
+      NOW,
+    );
+    expect(clean.maxItemStruggleEvents).toBe(0);
+    expect(clean.persistentStruggleCount).toBe(0);
+  });
+
+  it("carries the real struggled-event count onto the weak topic itself", () => {
+    const items = [withOutcomes(0, 8, 0, { questionId: "a", lastOutcome: "struggled", successfulReviews: 0 })];
+    const snapshot = buildStudentPerformanceSnapshot(items, questionsMap(question("a")), NOW);
+    expect(snapshot.weakTopics[0]?.struggledCount).toBe(1);
+    expect(snapshot.weakTopics[0]?.struggledAttemptCount).toBe(8);
+  });
+
+  it("is deterministic and does not mutate the items it is given", () => {
+    const items = [
+      withOutcomes(0, 5, 0, { questionId: "a", lastOutcome: "struggled", successfulReviews: 0 }),
+      withOutcomes(4, 0, 0, { questionId: "b" }),
+    ];
+    const before = JSON.stringify(items);
+    const first = buildStudentPerformanceSnapshot(items, questionsMap(question("a"), question("b")), NOW);
+    const second = buildStudentPerformanceSnapshot(items, questionsMap(question("a"), question("b")), NOW);
+    expect(first.persistentStruggleCount).toBe(second.persistentStruggleCount);
+    expect(first.maxItemStruggleEvents).toBe(second.maxItemStruggleEvents);
+    expect(JSON.stringify(items)).toBe(before);
+  });
+});

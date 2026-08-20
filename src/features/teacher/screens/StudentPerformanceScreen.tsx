@@ -9,6 +9,7 @@ import { Chip } from "@components/ui/Chip";
 import { EmptyState } from "@components/ui/EmptyState";
 import { LoadingSkeleton } from "@components/ui/LoadingSkeleton";
 import { PrimaryButton } from "@components/ui/PrimaryButton";
+import { TopicInsight } from "@features/study/services/learningInsights";
 import { LearningTrend } from "@features/study/services/learningTrend";
 import { colors } from "@theme/colors";
 import { spacing } from "@theme/spacing";
@@ -34,6 +35,20 @@ function trendLabel(trend: LearningTrend): string {
     case "insufficient_data":
       return "Henüz yeterli veri yok";
   }
+}
+
+// Phase 42 — what a weak-topic chip is allowed to claim.
+//
+// Before this, the chip showed only "Konu (Ders)", so a teacher could not
+// tell a topic the student stumbled on once from one they have failed
+// repeatedly. struggledAttemptCount is the real number of struggled
+// outcomes recorded in that topic (Phase 41's server counters); it is null
+// for topics whose questions all predate those counters, and in that case
+// the chip stays exactly as it was rather than inventing a count.
+function topicChipLabel(topic: TopicInsight): string {
+  const base = `${topic.topic} (${topic.subject})`;
+  if (topic.struggledAttemptCount === null || topic.struggledAttemptCount <= 0) return base;
+  return `${base} · ${topic.struggledAttemptCount} kez`;
 }
 
 function formatLastStudied(timestampMs: number | null): string {
@@ -160,12 +175,31 @@ export function StudentPerformanceScreen({ classId, studentId, studentName }: St
             </Card>
           </View>
 
+          {/* Phase 42 — the distinction the dashboard could not previously
+              draw: repeated, unresolved struggle on the SAME question vs a
+              handful of one-off slips. Rendered only when there is real
+              evidence; a student whose items all predate the counters shows
+              nothing here rather than a zero. */}
+          {snapshot.persistentStruggleCount > 0 ? (
+            <Card style={styles.card}>
+              <Text style={styles.sectionLabel}>Tekrarlayan zorlanma</Text>
+              <Text style={styles.bodyTextDanger}>
+                {snapshot.persistentStruggleCount} soruda tekrar tekrar zorlanıyor
+              </Text>
+              {snapshot.maxItemStruggleEvents !== null ? (
+                <Text style={styles.bodyTextMuted}>
+                  En çok zorlandığı soruda {snapshot.maxItemStruggleEvents} kez zorlandı
+                </Text>
+              ) : null}
+            </Card>
+          ) : null}
+
           {snapshot.weakTopics.length > 0 ? (
             <Card style={styles.card}>
               <Text style={styles.sectionLabel}>Zayıf konular</Text>
               <View style={styles.chipRow}>
                 {snapshot.weakTopics.map((topic) => (
-                  <Chip key={`${topic.subject}-${topic.topic}`} label={`${topic.topic} (${topic.subject})`} />
+                  <Chip key={`${topic.subject}-${topic.topic}`} label={topicChipLabel(topic)} />
                 ))}
               </View>
             </Card>

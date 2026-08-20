@@ -59,6 +59,11 @@ function daysSince(timestampMs: number, now: number): number {
 // real, checkable fact.
 const REASONS = {
   repeatedStruggle: "Son çalışmalarında çoğunlukla zorlandı",
+  // Phase 42 — a DIFFERENT fact from the one above, deliberately worded
+  // differently: not "most of the recent work went badly" but "the same
+  // question keeps going badly". Interpolates the real event count from the
+  // server's cumulative counters, never an estimate.
+  persistentStruggle: (events: number) => `Aynı soruda ${events} kez zorlandı`,
   staleReview: (days: number) => `${days} gündür tekrar yapmadı`,
   reviewDue: "Bu konuda tekrar zamanı geldi",
   declining: "Son dönemde performansı düşüyor",
@@ -103,6 +108,34 @@ export function buildStudentAttentionInsight(
     if (struggledCount / recentSample.length >= SEVERE_RECENT_STRUGGLE_RATIO) {
       return { category: "needs_attention", reasons: [REASONS.repeatedStruggle], implicatedTopic };
     }
+  }
+
+  // 1a. Phase 42 — the SECOND evidence source for the same severity tier.
+  //
+  // Rule 1 above can only see `recentOutcomes`, which carries at most
+  // RECENT_OUTCOMES_LIMIT entries and contributes ONE outcome per DISTINCT
+  // question (studentPerformance.ts). A student stuck on a single question
+  // therefore produces a sample of length 1 and can never clear
+  // MIN_RECENT_SAMPLE_FOR_STRUGGLE_SIGNAL, no matter how many times they
+  // failed it — the exact blind spot this rule closes: eight consecutive
+  // struggles on one question used to surface only as "low success rate".
+  //
+  // Same threshold, reused rather than re-invented: a struggle EVENT count
+  // on one question has to reach the same "a real sample, not any struggle
+  // at all" bar rule 1 applies to its outcome sample, so a question failed
+  // once or twice never escalates a student here (it is still visible on
+  // the student detail screen as its own learning state).
+  const worstItemStruggles = snapshot.maxItemStruggleEvents;
+  if (
+    snapshot.persistentStruggleCount > 0 &&
+    worstItemStruggles !== null &&
+    worstItemStruggles >= MIN_RECENT_SAMPLE_FOR_STRUGGLE_SIGNAL
+  ) {
+    return {
+      category: "needs_attention",
+      reasons: [REASONS.persistentStruggle(worstItemStruggles)],
+      implicatedTopic,
+    };
   }
 
   // 1b. Same severity tier, different real evidence: a low overall success

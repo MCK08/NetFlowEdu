@@ -146,3 +146,76 @@ describe("buildClassTopicHotspots — cap and robustness", () => {
     expect(hotspots.map((h) => h.topic)).toEqual(["A Konu", "B Konu"]);
   });
 });
+
+// Phase 42 — class-level struggle EVENTS, not just how many people struggled.
+//
+// The gap: five students who each struggled once and five who each struggled
+// eight times both produce strugglingStudents = 5 and were indistinguishable.
+describe("buildClassTopicHotspots — struggled event totals", () => {
+  function studentWith(uid: string, struggledCount: number, struggledAttemptCount: number | null) {
+    return {
+      studentUid: uid,
+      allTopics: [topic({ struggledCount, struggledAttemptCount, totalCount: 1 })],
+    };
+  }
+
+  it("sums real struggled events across students", () => {
+    const hotspots = buildClassTopicHotspots([
+      studentWith("a", 1, 8),
+      studentWith("b", 1, 3),
+    ]);
+    expect(hotspots[0]?.strugglingStudents).toBe(2);
+    expect(hotspots[0]?.struggledAttemptCount).toBe(11);
+  });
+
+  it("separates a class that struggled once each from one that struggled repeatedly", () => {
+    const light = buildClassTopicHotspots([studentWith("a", 1, 1), studentWith("b", 1, 1)]);
+    const heavy = buildClassTopicHotspots([studentWith("a", 1, 8), studentWith("b", 1, 8)]);
+    // Same number of people affected...
+    expect(light[0]?.strugglingStudents).toBe(heavy[0]?.strugglingStudents);
+    // ...very different amount of struggling.
+    expect(light[0]?.struggledAttemptCount).toBe(2);
+    expect(heavy[0]?.struggledAttemptCount).toBe(16);
+  });
+
+  it("is null — never 0 — when no student has trustworthy history", () => {
+    const hotspots = buildClassTopicHotspots([studentWith("a", 1, null), studentWith("b", 1, null)]);
+    expect(hotspots[0]?.strugglingStudents).toBe(2);
+    expect(hotspots[0]?.struggledAttemptCount).toBeNull();
+  });
+
+  it("ignores legacy students rather than diluting the total with zeros", () => {
+    const hotspots = buildClassTopicHotspots([studentWith("a", 1, null), studentWith("b", 1, 6)]);
+    expect(hotspots[0]?.struggledAttemptCount).toBe(6);
+  });
+
+  // The ranking contract: event counts are evidence, never a sort key.
+  it("does NOT re-rank hotspots by event count", () => {
+    const hotspots = buildClassTopicHotspots([
+      // One student, a huge event count.
+      { studentUid: "a", allTopics: [topic({ topic: "Az Kisi", struggledCount: 1, struggledAttemptCount: 99, totalCount: 1 })] },
+      // Two students, a small event count — more PEOPLE affected.
+      { studentUid: "b", allTopics: [topic({ topic: "Cok Kisi", struggledCount: 1, struggledAttemptCount: 1, totalCount: 1 })] },
+      { studentUid: "c", allTopics: [topic({ topic: "Cok Kisi", struggledCount: 1, struggledAttemptCount: 1, totalCount: 1 })] },
+    ]);
+    // Still ordered by strugglingStudents descending, exactly as before.
+    expect(hotspots[0]?.topic).toBe("Cok Kisi");
+    expect(hotspots[1]?.topic).toBe("Az Kisi");
+  });
+
+  it("counts each student once even when they appear with multiple items in the topic", () => {
+    const hotspots = buildClassTopicHotspots([
+      {
+        studentUid: "a",
+        allTopics: [topic({ struggledCount: 2, struggledAttemptCount: 5, totalCount: 2 })],
+      },
+    ]);
+    expect(hotspots[0]?.strugglingStudents).toBe(1);
+    expect(hotspots[0]?.struggledAttemptCount).toBe(5);
+  });
+
+  it("is deterministic", () => {
+    const students = [studentWith("a", 1, 4), studentWith("b", 1, 2)];
+    expect(buildClassTopicHotspots(students)).toEqual(buildClassTopicHotspots(students));
+  });
+});

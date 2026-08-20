@@ -315,3 +315,83 @@ describe("sortStudentAttentionCards", () => {
     expect(cards).toEqual(copy);
   });
 });
+
+// Phase 42 — the blind spot rule 1 structurally could not see.
+//
+// `recentOutcomes` carries at most RECENT_OUTCOMES_LIMIT entries and
+// contributes ONE outcome per DISTINCT question, so a student stuck on a
+// single question produces a sample of length 1 and can never reach
+// MIN_RECENT_SAMPLE_FOR_STRUGGLE_SIGNAL — no matter how many times they
+// failed it. Verified on the live dashboard before this phase: eight
+// consecutive struggles surfaced only as "Genel başarı oranı düşük".
+describe("buildStudentAttentionInsight — persistent struggle on one question", () => {
+  function oneQuestion(solved: number, struggled: number, again = 0): StudyItem[] {
+    return [
+      withOutcomes(solved, struggled, again, {
+        questionId: "stuck",
+        lastOutcome: struggled > 0 ? "struggled" : "solved",
+        successfulReviews: 0,
+        nextReviewAt: NOW + DAY_MS,
+      }),
+    ];
+  }
+
+  it("flags a student who failed the SAME question eight times", () => {
+    const snapshot = snapshotFor(oneQuestion(0, 8), [question("stuck")]);
+    const insight = buildStudentAttentionInsight(snapshot, NOW);
+    expect(insight.category).toBe("needs_attention");
+    expect(insight.reasons[0]).toBe("Aynı soruda 8 kez zorlandı");
+  });
+
+  it("states the REAL event count, not the number of weak questions", () => {
+    const snapshot = snapshotFor(oneQuestion(0, 8), [question("stuck")]);
+    // One question is weak, but the reason must not say "1".
+    expect(snapshot.weakTopics[0]?.struggledCount).toBe(1);
+    expect(buildStudentAttentionInsight(snapshot, NOW).reasons[0]).toContain("8");
+  });
+
+  it("does NOT fire for a single struggle", () => {
+    const snapshot = snapshotFor(oneQuestion(3, 1), [question("stuck")]);
+    const insight = buildStudentAttentionInsight(snapshot, NOW);
+    expect(insight.reasons[0]).not.toContain("Aynı soruda");
+  });
+
+  it("does NOT fire below the real-sample bar — two struggles is a pattern to show, not to escalate", () => {
+    const snapshot = snapshotFor(oneQuestion(4, 2), [question("stuck")]);
+    // The item IS a persistent struggle...
+    expect(snapshot.persistentStruggleCount).toBe(1);
+    // ...but a class-level escalation needs the same "real sample" bar
+    // rule 1 uses, so this student is not red-flagged on two events.
+    expect(buildStudentAttentionInsight(snapshot, NOW).reasons[0]).not.toContain("Aynı soruda");
+  });
+
+  it("never fires on a legacy item, which has no event evidence at all", () => {
+    const legacy = studyItem({
+      questionId: "old",
+      lastOutcome: "struggled",
+      attemptCount: 20,
+      solvedCount: null,
+      struggledCount: null,
+      againCount: null,
+      nextReviewAt: NOW + DAY_MS,
+    });
+    const snapshot = snapshotFor([legacy], [question("old")]);
+    expect(snapshot.persistentStruggleCount).toBe(0);
+    expect(snapshot.maxItemStruggleEvents).toBeNull();
+    expect(buildStudentAttentionInsight(snapshot, NOW).reasons[0]).not.toContain("Aynı soruda");
+  });
+
+  // The existing rule must keep winning where it already applied, so no
+  // student's category or reason changes because of this addition.
+  it("leaves the existing recent-sample rule in front when both apply", () => {
+    const items = [
+      withOutcomes(0, 4, 0, { questionId: "a", lastOutcome: "struggled", lastReviewedAt: NOW }),
+      withOutcomes(0, 1, 0, { questionId: "b", lastOutcome: "struggled", lastReviewedAt: NOW - DAY_MS }),
+      withOutcomes(0, 1, 0, { questionId: "c", lastOutcome: "struggled", lastReviewedAt: NOW - 2 * DAY_MS }),
+    ];
+    const snapshot = snapshotFor(items, items.map((i) => question(i.questionId)));
+    const insight = buildStudentAttentionInsight(snapshot, NOW);
+    expect(insight.category).toBe("needs_attention");
+    expect(insight.reasons[0]).toBe("Son çalışmalarında çoğunlukla zorlandı");
+  });
+});

@@ -11,6 +11,10 @@ function hotspot(overrides: Partial<ClassTopicHotspot> = {}): ClassTopicHotspot 
     topic: "Denklemler",
     studentsWithAttempts: 5,
     strugglingStudents: 3,
+    // Phase 42 — buildTeacherActionSummary reads strugglingStudents only,
+    // never the event count; null keeps this fixture describing a class
+    // with no cumulative history rather than implying zero struggles.
+    struggledAttemptCount: null,
     masteredStudents: 0,
     dueStudents: 0,
     sampleQuestionId: "q1",

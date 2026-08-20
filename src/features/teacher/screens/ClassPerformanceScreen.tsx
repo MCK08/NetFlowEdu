@@ -368,6 +368,15 @@ export function ClassPerformanceScreen({ classId }: ClassPerformanceScreenProps)
                               {hotspot.studentsWithAttempts} öğrenci çalıştı · {hotspot.strugglingStudents} öğrenci
                               zorlandı{hotspot.dueStudents > 0 ? ` · ${hotspot.dueStudents} öğrenci tekrar bekliyor` : ""}
                             </Text>
+                            {/* Phase 42 — how many times, not just how many
+                                students. Omitted entirely when no student in
+                                this topic has trustworthy cumulative history,
+                                rather than shown as 0. */}
+                            {hotspot.struggledAttemptCount !== null && hotspot.struggledAttemptCount > 0 ? (
+                              <Text style={styles.hotspotDetail}>
+                                Toplam {hotspot.struggledAttemptCount} kez zorlanma
+                              </Text>
+                            ) : null}
                           </Pressable>
                           <View style={styles.hotspotActionRow}>
                             <Pressable

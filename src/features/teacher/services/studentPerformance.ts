@@ -3,9 +3,11 @@ import {
   LearningInsightItem,
   TopicInsight,
 } from "@features/study/services/learningInsights";
+import { buildLearningState } from "@features/study/services/learningState";
 import { buildLearningTrend, LearningTrend } from "@features/study/services/learningTrend";
 import {
   buildSuccessRatePercent,
+  OutcomeHistory,
   resolveOutcomeHistory,
 } from "@features/study/services/outcomeCounters";
 import { StudyDay, StudyItem } from "@features/study/services/studyService";
@@ -105,6 +107,17 @@ export interface StudentPerformanceSnapshot {
   // never a second trend engine. Already computed for `trend`; this is a
   // zero-cost exposure, not a new calculation.
   dayBuckets: readonly StudyDay[];
+  // Phase 42 — questions in THIS class the student has reported difficulty
+  // on more than once and has not since resolved (see learningState.ts).
+  // The distinction the dashboard previously could not draw: four different
+  // questions struggled once each is 0 here, while one question struggled
+  // four times is 1.
+  persistentStruggleCount: number;
+  // The most struggled-with single question's real event count — null when
+  // no item has trustworthy cumulative history (every item predates the
+  // Phase 41 counters), never 0, which would claim no struggle ever
+  // happened.
+  maxItemStruggleEvents: number | null;
   // Phase 32 — WINDOWED to RECENT_STUDY_DAYS_WINDOW (see bucketItemsByDay).
   // Deliberately NOT "streak" — the real currentStreak/longestStreak lives
   // only in users/{uid}/studyMeta/summary, which has no sourceClassId (or
@@ -208,13 +221,21 @@ export function toLearningInsightItems(
       // Phase 41 — resolved from fields getClassSourcedStudyItems already
       // returns; no additional read, and the same completeness rule the
       // student's own Hub applies.
-      outcomeHistory: resolveOutcomeHistory({
-        attemptCount: item.attemptCount,
-        solvedCount: item.solvedCount ?? null,
-        struggledCount: item.struggledCount ?? null,
-        againCount: item.againCount ?? null,
-      }),
+      outcomeHistory: historyOf(item),
     };
+  });
+}
+
+// Phase 41's completeness rule applied to one class-sourced item. Extracted
+// so the snapshot resolves each item's history EXACTLY ONCE and every
+// derived number below reads the same object — previously the success rate
+// and the insight items each re-resolved it independently.
+function historyOf(item: StudyItem): OutcomeHistory | null {
+  return resolveOutcomeHistory({
+    attemptCount: item.attemptCount,
+    solvedCount: item.solvedCount ?? null,
+    struggledCount: item.struggledCount ?? null,
+    againCount: item.againCount ?? null,
   });
 }
 
@@ -236,17 +257,33 @@ export function buildStudentPerformanceSnapshot(
 
   // Phase 41 — from the cumulative outcome counters, not from
   // successfulReviews (scheduler state; see the field's own doc comment
-  // above for the production defect that caused).
-  const successRatePercent = buildSuccessRatePercent(
-    items.map((item) =>
-      resolveOutcomeHistory({
-        attemptCount: item.attemptCount,
-        solvedCount: item.solvedCount ?? null,
-        struggledCount: item.struggledCount ?? null,
-        againCount: item.againCount ?? null,
-      }),
-    ),
-  );
+  // above for the production defect that caused). Resolved once here and
+  // reused by the Phase 42 struggle evidence below.
+  const histories = items.map(historyOf);
+  const successRatePercent = buildSuccessRatePercent(histories);
+
+  // Phase 42 — how many of this student's questions in THIS class show a
+  // repeated, unresolved struggle, and the worst single one. Both are pure
+  // derivations of `items` + `histories` already in hand: no extra read, no
+  // second pass over Firestore, and legacy items (history null) contribute
+  // to neither, so they can never manufacture a struggle that was never
+  // recorded.
+  let persistentStruggleCount = 0;
+  let maxItemStruggleEvents: number | null = null;
+  items.forEach((item, index) => {
+    const history = histories[index] ?? null;
+    if (!history) return;
+    if (maxItemStruggleEvents === null || history.struggledCount > maxItemStruggleEvents) {
+      maxItemStruggleEvents = history.struggledCount;
+    }
+    const state = buildLearningState({
+      history,
+      lastOutcome: item.lastOutcome,
+      status: item.status,
+      successfulReviews: item.successfulReviews,
+    });
+    if (state === "persistent_struggle") persistentStruggleCount += 1;
+  });
 
   const todayItems = items.filter(
     (item) => item.lastReviewedAt > 0 && isSameLocalDay(item.lastReviewedAt, safeNow),
@@ -304,6 +341,8 @@ export function buildStudentPerformanceSnapshot(
     recentOutcomes,
     dayBuckets,
     daysActiveRecently: dayBuckets.length,
+    persistentStruggleCount,
+    maxItemStruggleEvents,
   };
 }
 
