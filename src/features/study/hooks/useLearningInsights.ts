@@ -4,6 +4,7 @@ import { buildAdaptivePracticePlan } from "../services/dailyPracticePlan";
 import { buildLearningInsights, LearningInsightItem } from "../services/learningInsights";
 import { buildLearningMoment } from "../services/learningMoment";
 import { buildLearningTrend, LearningTrend } from "../services/learningTrend";
+import { resolveOutcomeHistory } from "../services/outcomeCounters";
 import { mapStudyErrorToMessage } from "../services/studyErrorMapper";
 import { getAllStudyItems, getRecentStudyDays, StudyDay, StudySummary } from "../services/studyService";
 import { resolveQuestionMetadata } from "../services/studyMetadataCache";
@@ -69,6 +70,14 @@ export function useLearningInsights(uid: string | undefined, summary: StudySumma
             topic: question?.topic ?? "",
             successfulReviews: item.successfulReviews,
             lastReviewedAt: item.lastReviewedAt,
+            // Phase 41 — resolved from fields the SAME getAllStudyItems call
+            // above already returned. Zero additional Firestore reads.
+            outcomeHistory: resolveOutcomeHistory({
+              attemptCount: item.attemptCount,
+              solvedCount: item.solvedCount ?? null,
+              struggledCount: item.struggledCount ?? null,
+              againCount: item.againCount ?? null,
+            }),
           };
         }),
       );

@@ -12,6 +12,9 @@ function topic(overrides: Partial<TopicInsight> = {}): TopicInsight {
     subject: "Matematik",
     topic: "Kesirler",
     struggledCount: 3,
+    // Phase 41 — buildLearningMoment reads neither counter; null keeps this
+    // fixture describing a pre-counter item without implying zero struggles.
+    struggledAttemptCount: null,
     masteredCount: 0,
     dueCount: 0,
     totalCount: 5,

@@ -33,12 +33,22 @@ export interface StudyItem {
   status: StudyStatus;
   lastOutcome: StudyOutcome;
   intervalDays: number;
+  // SCHEDULER STATE. Decremented by "struggled", reset by "again" — never a
+  // cumulative success tally. See outcomeCounters.ts for why that
+  // distinction matters and what to use instead.
   successfulReviews: number;
   attemptCount: number;
   nextReviewAt: number;
   lastReviewedAt: number;
   source: "public" | "class" | "private";
   sourceClassId: string | null;
+  // Phase 41 — cumulative per-outcome counters, null on any document
+  // written before they existed. Optional on the TYPE so existing
+  // fixtures/tests that build a StudyItem by hand keep compiling; always
+  // set (to a number or an explicit null) by toStudyItem below.
+  solvedCount?: number | null;
+  struggledCount?: number | null;
+  againCount?: number | null;
 }
 
 export interface StudySummary {
@@ -67,6 +77,13 @@ function num(value: unknown, fallback = 0): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
+// Absent counter -> null, NOT 0. A pre-Phase-41 document genuinely has no
+// cumulative history, and zero would be a false claim about it rather than
+// an admission of not knowing (see outcomeCounters.ts).
+function counterOrNull(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? Math.floor(value) : null;
+}
+
 function toStudyItem(id: string, data: DocumentData): StudyItem {
   return {
     questionId: id,
@@ -79,6 +96,9 @@ function toStudyItem(id: string, data: DocumentData): StudyItem {
     lastReviewedAt: num(data.lastReviewedAt),
     source: data.source === "class" ? "class" : data.source === "private" ? "private" : "public",
     sourceClassId: typeof data.sourceClassId === "string" ? data.sourceClassId : null,
+    solvedCount: counterOrNull(data.solvedCount),
+    struggledCount: counterOrNull(data.struggledCount),
+    againCount: counterOrNull(data.againCount),
   };
 }
 

@@ -366,3 +366,99 @@ describe("buildLearningInsights — allTopics (Phase 25)", () => {
     expect(insights.allTopics[0]?.recency).toBe("recently_practiced");
   });
 });
+
+// Phase 41 — the real struggle-EVENT count per topic.
+//
+// `struggledCount` counts questions currently sitting in a struggled state.
+// The Weak Topics card used to render it as "N kez zorlandın" ("N times"),
+// so a student who struggled eight times on one question was told "1 kez".
+// `struggledAttemptCount` is the honest number for that sentence, and is
+// null whenever no question in the topic has trustworthy history.
+describe("buildLearningInsights — struggledAttemptCount", () => {
+  function withHistory(
+    solved: number,
+    struggled: number,
+    again: number,
+    overrides: Partial<LearningInsightItem> = {},
+  ): LearningInsightItem {
+    return item({
+      lastOutcome: "struggled",
+      outcomeHistory: {
+        solvedCount: solved,
+        struggledCount: struggled,
+        againCount: again,
+        knownOutcomeCount: solved + struggled + again,
+      },
+      ...overrides,
+    });
+  }
+
+  // Throws rather than returning undefined, so a fixture that accidentally
+  // produces no weak topic fails loudly instead of silently skipping the
+  // assertions below.
+  function topicOf(items: LearningInsightItem[]) {
+    const topic = buildLearningInsights({ items, now: NOW, reviewedToday: 0, dailyGoal: 10 })
+      .weakTopics[0];
+    if (!topic) throw new Error("fixture produced no weak topic");
+    return topic;
+  }
+
+  it("reports the REAL number of struggled outcomes on one question", () => {
+    const topic = topicOf([withHistory(0, 8, 0, { questionId: "hard" })]);
+    // One question in a struggled state...
+    expect(topic.struggledCount).toBe(1);
+    // ...but eight real struggles. These are different questions about the
+    // data, and the UI now asks the right one.
+    expect(topic.struggledAttemptCount).toBe(8);
+  });
+
+  it("sums struggled events across every question in the topic", () => {
+    const topic = topicOf([
+      withHistory(0, 5, 0, { questionId: "a" }),
+      withHistory(1, 2, 0, { questionId: "b" }),
+    ]);
+    expect(topic.struggledCount).toBe(2);
+    expect(topic.struggledAttemptCount).toBe(7);
+  });
+
+  it("is null — never 0 — when no question in the topic has trustworthy history", () => {
+    const topic = topicOf([item({ questionId: "legacy", lastOutcome: "struggled" })]);
+    expect(topic.struggledCount).toBe(1);
+    expect(topic.struggledAttemptCount).toBeNull();
+  });
+
+  it("counts only the questions that DO have history, ignoring legacy ones", () => {
+    const topic = topicOf([
+      item({ questionId: "legacy", lastOutcome: "struggled" }),
+      withHistory(0, 3, 0, { questionId: "counted" }),
+    ]);
+    expect(topic.struggledCount).toBe(2);
+    expect(topic.struggledAttemptCount).toBe(3);
+  });
+
+  it("leaves the weak-topic RANKING untouched — it still ranks on struggledCount", () => {
+    const insights = buildLearningInsights({
+      items: [
+        // One question, many struggles.
+        withHistory(0, 9, 0, { questionId: "a", topic: "Limit" }),
+        // Two questions, few struggles — more questions currently struggling.
+        withHistory(0, 1, 0, { questionId: "b", topic: "İntegral" }),
+        withHistory(0, 1, 0, { questionId: "c", topic: "İntegral" }),
+      ],
+      now: NOW,
+      reviewedToday: 0,
+      dailyGoal: 10,
+    });
+    // İntegral outranks Limit because 2 questions are struggling vs 1 —
+    // exactly as before this phase. The event counts do not reorder it.
+    const [first, second] = insights.weakTopics;
+    expect(first?.topic).toBe("İntegral");
+    expect(first?.struggledAttemptCount).toBe(2);
+    expect(second?.struggledAttemptCount).toBe(9);
+  });
+
+  it("counts struggled events only — a solved or again outcome is not a struggle", () => {
+    const topic = topicOf([withHistory(4, 1, 3, { questionId: "mixed" })]);
+    expect(topic.struggledAttemptCount).toBe(1);
+  });
+});

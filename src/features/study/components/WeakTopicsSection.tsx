@@ -17,6 +17,22 @@ interface WeakTopicsSectionProps {
   onSelectTopic: (topic: TopicInsight) => void;
 }
 
+// Phase 41 — what the badge is allowed to claim.
+//
+// It used to read "{struggledCount} kez zorlandın" ("N TIMES"), but
+// struggledCount counts QUESTIONS currently in a struggled state, not
+// struggle events: a student who struggled eight times on one question was
+// told "1 kez zorlandın". Now the "times" sentence is used only when the
+// server's cumulative counters can actually back it; otherwise the badge
+// states what is genuinely known — how many questions are struggling —
+// rather than inventing an event count for a pre-counter item.
+function struggleLabel(topic: TopicInsight): string {
+  if (topic.struggledAttemptCount !== null && topic.struggledAttemptCount > 0) {
+    return `${topic.struggledAttemptCount} kez zorlandın`;
+  }
+  return `${topic.struggledCount} soruda zorlandın`;
+}
+
 // "Zorlandığın Konular" — only ever rendered with topics that have at least
 // one real struggled outcome (see learningInsights.ts's rankTopics), so
 // there is no empty/placeholder state to design for: this section simply
@@ -37,7 +53,7 @@ export const WeakTopicsSection = memo(function WeakTopicsSection({
             key={`${topic.subject}-${topic.topic}`}
             onPress={() => onSelectTopic(topic)}
             accessibilityRole="button"
-            accessibilityLabel={`${topic.subject}, ${topic.topic}. ${topic.struggledCount} kez zorlandın.`}
+            accessibilityLabel={`${topic.subject}, ${topic.topic}. ${struggleLabel(topic)}.`}
           >
             <Card style={styles.card}>
               <View style={styles.row}>
@@ -55,7 +71,7 @@ export const WeakTopicsSection = memo(function WeakTopicsSection({
                     <Chip label="Uzun süredir çalışılmadı" />
                   ) : null}
                 </View>
-                <Badge label={`${topic.struggledCount} zorlandın`} variant="danger" />
+                <Badge label={struggleLabel(topic)} variant="danger" />
               </View>
             </Card>
           </AnimatedPressable>

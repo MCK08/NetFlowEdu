@@ -6,7 +6,12 @@ import { canReadQuestion } from "../social/questionAccess";
 import { advanceStreak, resolveTimeZone, toDayKey } from "./dayKey";
 import { appendOperationId, hasProcessedOperation, isValidOperationId } from "./operationId";
 import { isStudyOutcome, scheduleNextReview, StudyOutcome } from "./reviewScheduler";
-import { DEFAULT_DAILY_GOAL, STUDY_SCHEMA_VERSION, StudySource } from "./studyTypes";
+import {
+  DEFAULT_DAILY_GOAL,
+  incrementOutcomeCounters,
+  STUDY_SCHEMA_VERSION,
+  StudySource,
+} from "./studyTypes";
 
 interface RecordStudyOutcomeRequest {
   questionId: string;
@@ -198,6 +203,18 @@ export const recordStudyOutcome = onCall<RecordStudyOutcomeRequest>(
             ? "private"
             : "public";
 
+      // Phase 41 — cumulative per-outcome tallies, computed here in the pure
+      // COMPUTE section (never in the scheduler: these are not scheduling
+      // state and must never influence status/intervalDays/nextReviewAt).
+      //
+      // Replay safety is structural, not a second guard: the operationId
+      // branch above RETURNS before this line is ever reached, so a replayed
+      // gesture cannot reach any counter arithmetic — exactly as it already
+      // cannot reach the scheduler, the attemptCount bump, or the daily
+      // stats. One guard protects all of them, and always will.
+      const itemCounters = incrementOutcomeCounters(existing, outcome);
+      const dayCounters = incrementOutcomeCounters(day, outcome);
+
       // ================= WRITE PHASE =================
       // Every field below is a concrete value — `undefined` is never written
       // to Firestore (it throws); optional values are normalized to null.
@@ -210,6 +227,12 @@ export const recordStudyOutcome = onCall<RecordStudyOutcomeRequest>(
           intervalDays: scheduled.intervalDays,
           successfulReviews: scheduled.successfulReviews,
           attemptCount: num(existing?.attemptCount) + 1,
+          // Cumulative, monotonic, one per member of the closed outcome
+          // union. For an item that predates Phase 41 these begin at 1 on
+          // its next outcome, so their sum stays BELOW attemptCount — which
+          // is precisely how a reader detects that the earlier history is
+          // unavailable rather than zero (see outcomeCounters.ts).
+          ...itemCounters,
           firstAddedAt: isNewItem ? now : num(existing?.firstAddedAt, now),
           lastReviewedAt: now,
           nextReviewAt: scheduled.nextReviewAt,
@@ -253,9 +276,10 @@ export const recordStudyOutcome = onCall<RecordStudyOutcomeRequest>(
           dayKey,
           reviewCount: dayReviewCount,
           uniqueQuestionCount: dayUniqueCount,
-          solvedCount: num(day.solvedCount) + (outcome === "solved" ? 1 : 0),
-          struggledCount: num(day.struggledCount) + (outcome === "struggled" ? 1 : 0),
-          againCount: num(day.againCount) + (outcome === "again" ? 1 : 0),
+          // Phase 41 — the SAME increment helper the study item now uses,
+          // replacing three lines of inline arithmetic that said exactly
+          // this. Identical values, one implementation.
+          ...dayCounters,
           goalCompleted,
           updatedAt: now,
         },

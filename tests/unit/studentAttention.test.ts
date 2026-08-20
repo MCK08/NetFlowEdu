@@ -25,8 +25,32 @@ function studyItem(overrides: Partial<StudyItem> = {}): StudyItem {
     lastReviewedAt: NOW,
     source: "class",
     sourceClassId: "class-1",
+    // Phase 41 — counters that account for every attempt, so the snapshot's
+    // successRatePercent is trustworthy (see outcomeCounters.ts).
+    solvedCount: 1,
+    struggledCount: 0,
+    againCount: 0,
     ...overrides,
   };
+}
+
+// Phase 41 — expresses "N solved of M recorded outcomes" through the REAL
+// mechanism. These fixtures used to encode it as
+// `successfulReviews: N, attemptCount: M`, which is the very confusion the
+// phase fixes: successfulReviews is scheduler streak state, not a tally.
+function withOutcomes(
+  solved: number,
+  struggled: number,
+  again = 0,
+  overrides: Partial<StudyItem> = {},
+): StudyItem {
+  return studyItem({
+    attemptCount: solved + struggled + again,
+    solvedCount: solved,
+    struggledCount: struggled,
+    againCount: again,
+    ...overrides,
+  });
 }
 
 function question(id: string, overrides: Partial<Question> = {}): Question {
@@ -112,11 +136,10 @@ describe("buildStudentAttentionInsight — needs_attention (stale + weak topic)"
 
   it("does not flag staleness alone when there is no due backlog or weak topic", () => {
     const items = [
-      studyItem({
+      withOutcomes(5, 0, 0, {
         questionId: "a",
         lastOutcome: "solved",
         successfulReviews: 5,
-        attemptCount: 5,
         status: "mastered",
         lastReviewedAt: NOW - 10 * DAY_MS,
         nextReviewAt: NOW + 30 * DAY_MS, // nothing due
@@ -176,10 +199,8 @@ describe("buildStudentAttentionInsight — progressing (improving)", () => {
 describe("buildStudentAttentionInsight — strong", () => {
   it("categorizes a high-success, zero-weak-topic, no-backlog student as strong", () => {
     const items = [
-      studyItem({
+      withOutcomes(9, 1, 0, {
         questionId: "a",
-        attemptCount: 10,
-        successfulReviews: 9,
         lastOutcome: "solved",
         nextReviewAt: NOW + 30 * DAY_MS,
       }),

@@ -25,8 +25,50 @@ function studyItem(overrides: Partial<StudyItem> = {}): StudyItem {
     lastReviewedAt: NOW,
     source: "class",
     sourceClassId: "class-1",
+    // Phase 41 — a post-counter item: the cumulative counters account for
+    // every attempt, which is what makes its history trustworthy.
+    solvedCount: 1,
+    struggledCount: 0,
+    againCount: 0,
     ...overrides,
   };
+}
+
+// Phase 41 — an item whose REAL outcome history is (solved, struggled,
+// again). attemptCount is derived from the counters so the fixture is
+// internally consistent: only counters that account for every attempt are
+// trusted (see outcomeCounters.ts).
+//
+// These tests previously expressed "N of M correct" as
+// `successfulReviews: N, attemptCount: M`, which is what the production
+// defect did too — successfulReviews is the SCHEDULER's streak, decremented
+// by "struggled" and reset by "again", so it can never carry that meaning.
+// The intent of each test is unchanged; only the mechanism is now the real
+// one.
+function withOutcomes(
+  solved: number,
+  struggled: number,
+  again = 0,
+  overrides: Partial<StudyItem> = {},
+): StudyItem {
+  return studyItem({
+    attemptCount: solved + struggled + again,
+    solvedCount: solved,
+    struggledCount: struggled,
+    againCount: again,
+    ...overrides,
+  });
+}
+
+// A document written BEFORE the counters existed: real attempts, no
+// cumulative history at all.
+function legacyItem(overrides: Partial<StudyItem> = {}): StudyItem {
+  return studyItem({
+    solvedCount: null,
+    struggledCount: null,
+    againCount: null,
+    ...overrides,
+  });
 }
 
 function question(id: string, overrides: Partial<Question> = {}): Question {
@@ -73,14 +115,79 @@ describe("buildStudentPerformanceSnapshot — empty / no data", () => {
 });
 
 describe("buildStudentPerformanceSnapshot — real signals", () => {
-  it("computes successRatePercent from real attemptCount/successfulReviews across items", () => {
+  it("computes successRatePercent from the cumulative outcome counters across items", () => {
     const items = [
-      studyItem({ questionId: "a", attemptCount: 4, successfulReviews: 3 }),
-      studyItem({ questionId: "b", attemptCount: 2, successfulReviews: 1 }),
+      withOutcomes(3, 1, 0, { questionId: "a" }),
+      withOutcomes(1, 1, 0, { questionId: "b" }),
     ];
     const snapshot = buildStudentPerformanceSnapshot(items, questionsMap(question("a"), question("b")), NOW);
-    // 4 successful out of 6 attempts total
+    // 4 solved out of 6 recorded outcomes total
     expect(snapshot.successRatePercent).toBe(Math.round((4 / 6) * 100));
+  });
+
+  // Phase 41 — the exact production defect, locked in as a regression test.
+  // successfulReviews is reset to 0 by "again", so the old computation
+  // reported this student as 0% — identical to someone who never got a
+  // single question right.
+  it("reports 75% for solved,solved,solved,again — the case the old successfulReviews math showed as 0%", () => {
+    const items = [
+      withOutcomes(3, 0, 1, { questionId: "a", lastOutcome: "again", successfulReviews: 0 }),
+    ];
+    const snapshot = buildStudentPerformanceSnapshot(items, questionsMap(question("a")), NOW);
+    expect(snapshot.successRatePercent).toBe(75);
+  });
+
+  it("still reports 0% for a student who genuinely never solved anything", () => {
+    const items = [
+      withOutcomes(0, 4, 0, { questionId: "a", lastOutcome: "struggled", successfulReviews: 0 }),
+    ];
+    const snapshot = buildStudentPerformanceSnapshot(items, questionsMap(question("a")), NOW);
+    expect(snapshot.successRatePercent).toBe(0);
+  });
+
+  it("no longer collapses those two students onto the same number", () => {
+    const mostlyRight = buildStudentPerformanceSnapshot(
+      [withOutcomes(3, 0, 1, { questionId: "a", successfulReviews: 0 })],
+      questionsMap(question("a")),
+      NOW,
+    );
+    const neverRight = buildStudentPerformanceSnapshot(
+      [withOutcomes(0, 4, 0, { questionId: "a", successfulReviews: 0 })],
+      questionsMap(question("a")),
+      NOW,
+    );
+    expect(mostlyRight.successRatePercent).not.toBe(neverRight.successRatePercent);
+  });
+
+  it("reports null — never a fabricated 0% — for an item that predates the counters", () => {
+    const items = [legacyItem({ questionId: "a", attemptCount: 10, successfulReviews: 4 })];
+    const snapshot = buildStudentPerformanceSnapshot(items, questionsMap(question("a")), NOW);
+    expect(snapshot.successRatePercent).toBeNull();
+  });
+
+  it("reports null for a legacy item that has since recorded a few counted outcomes — partial history is not a rate", () => {
+    // 20 attempts total, only the last 2 counted: reporting 50% here would
+    // describe 2 outcomes as if they described all 20.
+    const items = [
+      studyItem({
+        questionId: "a",
+        attemptCount: 20,
+        solvedCount: 1,
+        struggledCount: 1,
+        againCount: 0,
+      }),
+    ];
+    const snapshot = buildStudentPerformanceSnapshot(items, questionsMap(question("a")), NOW);
+    expect(snapshot.successRatePercent).toBeNull();
+  });
+
+  it("ignores untrustworthy items but still reports a rate from the trustworthy ones", () => {
+    const items = [
+      legacyItem({ questionId: "a", attemptCount: 99, successfulReviews: 0 }),
+      withOutcomes(3, 1, 0, { questionId: "b" }),
+    ];
+    const snapshot = buildStudentPerformanceSnapshot(items, questionsMap(question("a"), question("b")), NOW);
+    expect(snapshot.successRatePercent).toBe(75);
   });
 
   it("counts due items via the real nextReviewAt <= now rule", () => {
@@ -419,16 +526,16 @@ describe("classifyStudentSupportTier", () => {
   });
 
   it("is 'needs_support' below 50% success rate", () => {
-    const items = [studyItem({ questionId: "a", attemptCount: 10, successfulReviews: 4 })];
+    const items = [withOutcomes(4, 6, 0, { questionId: "a" })];
     const snapshot = buildStudentPerformanceSnapshot(items, questionsMap(question("a")), NOW);
     expect(classifyStudentSupportTier(snapshot)).toBe("needs_support");
   });
 
   it("is 'needs_support' with 3+ weak topics even at a decent success rate", () => {
     const items = [
-      studyItem({ questionId: "a", lastOutcome: "struggled", attemptCount: 10, successfulReviews: 8 }),
-      studyItem({ questionId: "b", lastOutcome: "struggled", attemptCount: 10, successfulReviews: 8 }),
-      studyItem({ questionId: "c", lastOutcome: "struggled", attemptCount: 10, successfulReviews: 8 }),
+      withOutcomes(8, 2, 0, { questionId: "a", lastOutcome: "struggled" }),
+      withOutcomes(8, 2, 0, { questionId: "b", lastOutcome: "struggled" }),
+      withOutcomes(8, 2, 0, { questionId: "c", lastOutcome: "struggled" }),
     ];
     const questions = [
       question("a", { topic: "Kesirler" }),
@@ -440,7 +547,7 @@ describe("classifyStudentSupportTier", () => {
   });
 
   it("is 'strong' at 80%+ success with zero weak topics", () => {
-    const items = [studyItem({ questionId: "a", attemptCount: 10, successfulReviews: 9 })];
+    const items = [withOutcomes(9, 1, 0, { questionId: "a" })];
     const snapshot = buildStudentPerformanceSnapshot(items, questionsMap(question("a")), NOW);
     expect(classifyStudentSupportTier(snapshot)).toBe("strong");
   });
@@ -459,8 +566,8 @@ describe("sortStudentPerformanceCards", () => {
   });
 
   it("breaks a tier tie by LOWEST success rate first", () => {
-    const items10 = [studyItem({ questionId: "a", attemptCount: 10, successfulReviews: 1 })];
-    const items30 = [studyItem({ questionId: "b", attemptCount: 10, successfulReviews: 3 })];
+    const items10 = [withOutcomes(1, 9, 0, { questionId: "a" })];
+    const items30 = [withOutcomes(3, 7, 0, { questionId: "b" })];
     const lowSnap = buildStudentPerformanceSnapshot(items10, questionsMap(question("a")), NOW);
     const higherSnap = buildStudentPerformanceSnapshot(items30, questionsMap(question("b")), NOW);
     const cards = [
@@ -497,7 +604,7 @@ describe("buildClassPerformanceSummary", () => {
   });
 
   it("handles a single student", () => {
-    const items = [studyItem({ questionId: "a", attemptCount: 10, successfulReviews: 7 })];
+    const items = [withOutcomes(7, 3, 0, { questionId: "a" })];
     const snapshot = buildStudentPerformanceSnapshot(items, questionsMap(question("a")), NOW);
     const summary = buildClassPerformanceSummary([card({ snapshot })]);
     expect(summary.studentCount).toBe(1);
@@ -506,7 +613,7 @@ describe("buildClassPerformanceSummary", () => {
 
   it("averages only students who have real attempts — never a fake 0% for brand-new students", () => {
     const noDataCard = card({ studentUid: "new", snapshot: buildStudentPerformanceSnapshot([], new Map(), NOW) });
-    const items = [studyItem({ questionId: "a", attemptCount: 10, successfulReviews: 8 })];
+    const items = [withOutcomes(8, 2, 0, { questionId: "a" })];
     const withDataCard = card({
       studentUid: "active",
       snapshot: buildStudentPerformanceSnapshot(items, questionsMap(question("a")), NOW),

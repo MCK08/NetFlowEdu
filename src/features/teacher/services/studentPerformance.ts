@@ -4,6 +4,10 @@ import {
   TopicInsight,
 } from "@features/study/services/learningInsights";
 import { buildLearningTrend, LearningTrend } from "@features/study/services/learningTrend";
+import {
+  buildSuccessRatePercent,
+  resolveOutcomeHistory,
+} from "@features/study/services/outcomeCounters";
 import { StudyDay, StudyItem } from "@features/study/services/studyService";
 import {
   isInCurrentLocalWeek,
@@ -59,9 +63,20 @@ export interface StudentPerformanceSnapshot {
   totalCount: number;
   masteredCount: number;
   dueCount: number;
-  // Real successfulReviews/attemptCount ratio across every class-sourced
-  // item — null (never 0%) when the student has no attempts at all yet,
-  // so the UI can render "henüz veri yok" instead of a misleading 0%.
+  // Phase 41 — the REAL success rate: solved outcomes over every outcome
+  // actually recorded, from the cumulative counters recordStudyOutcome
+  // writes (see outcomeCounters.ts).
+  //
+  // This previously divided successfulReviews by attemptCount, which was
+  // wrong in production: successfulReviews is the SCHEDULER's streak state,
+  // reset to 0 by "again" and decremented by "struggled". A student who
+  // answered solved/solved/solved/again was shown as 0% — the same number
+  // as a student who never got anything right — and studentAttention.ts
+  // then flagged them "Genel başarı oranı düşük" on that basis.
+  //
+  // null (never 0%) when no item has trustworthy cumulative history: a
+  // student with no attempts, and also one whose items all predate the
+  // counters. Both are honestly "henüz veri yok", not 0%.
   successRatePercent: number | null;
   today: TodayActivity;
   thisWeek: WeekActivity;
@@ -102,10 +117,6 @@ export interface StudentPerformanceSnapshot {
   // at, the student reviewed at least one question FROM THIS CLASS. Real
   // data, clearly a different (narrower) claim than a true streak.
   daysActiveRecently: number;
-}
-
-function safeCount(value: number): number {
-  return Number.isFinite(value) && value >= 0 ? value : 0;
 }
 
 function isSameLocalDay(a: number, b: number): boolean {
@@ -194,6 +205,15 @@ export function toLearningInsightItems(
       topic: question?.topic ?? "",
       successfulReviews: item.successfulReviews,
       lastReviewedAt: item.lastReviewedAt,
+      // Phase 41 — resolved from fields getClassSourcedStudyItems already
+      // returns; no additional read, and the same completeness rule the
+      // student's own Hub applies.
+      outcomeHistory: resolveOutcomeHistory({
+        attemptCount: item.attemptCount,
+        solvedCount: item.solvedCount ?? null,
+        struggledCount: item.struggledCount ?? null,
+        againCount: item.againCount ?? null,
+      }),
     };
   });
 }
@@ -214,10 +234,19 @@ export function buildStudentPerformanceSnapshot(
   const totalCount = items.length;
   const masteredCount = items.filter((item) => item.status === "mastered").length;
 
-  const totalAttempts = items.reduce((sum, item) => sum + safeCount(item.attemptCount), 0);
-  const totalSuccessful = items.reduce((sum, item) => sum + safeCount(item.successfulReviews), 0);
-  const successRatePercent =
-    totalAttempts > 0 ? Math.round(Math.min(1, totalSuccessful / totalAttempts) * 100) : null;
+  // Phase 41 — from the cumulative outcome counters, not from
+  // successfulReviews (scheduler state; see the field's own doc comment
+  // above for the production defect that caused).
+  const successRatePercent = buildSuccessRatePercent(
+    items.map((item) =>
+      resolveOutcomeHistory({
+        attemptCount: item.attemptCount,
+        solvedCount: item.solvedCount ?? null,
+        struggledCount: item.struggledCount ?? null,
+        againCount: item.againCount ?? null,
+      }),
+    ),
+  );
 
   const todayItems = items.filter(
     (item) => item.lastReviewedAt > 0 && isSameLocalDay(item.lastReviewedAt, safeNow),

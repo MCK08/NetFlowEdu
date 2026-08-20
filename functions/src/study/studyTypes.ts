@@ -36,6 +36,11 @@ export interface StudyItemRecord {
   status: StudyStatus;
   lastOutcome: StudyOutcome;
   intervalDays: number;
+  // SCHEDULER STATE, not a success tally. reviewScheduler.ts decrements it
+  // on "struggled" and resets it to 0 on "again" — it answers "how long may
+  // the next interval be", never "how often did this student succeed".
+  // Anything that needs the second question must use the cumulative
+  // counters below instead (see Phase 41).
   successfulReviews: number;
   attemptCount: number;
   firstAddedAt: number;
@@ -46,6 +51,15 @@ export interface StudyItemRecord {
   questionOwnerId: string;
   schemaVersion: number;
   updatedAt: number;
+  // Phase 41 — cumulative, monotonic per-outcome tallies for THIS question.
+  // Optional because every document written before Phase 41 lacks them: an
+  // absent counter means "cumulative history unavailable for this item",
+  // which is NOT the same claim as zero, and must never be read as one (see
+  // src/features/study/services/outcomeCounters.ts for the completeness
+  // rule every consumer shares).
+  solvedCount?: number;
+  struggledCount?: number;
+  againCount?: number;
 }
 
 // users/{uid}/studyMeta/summary — same server-only-write, owner-only-read
@@ -76,10 +90,43 @@ export interface StudyDayRecord {
   updatedAt: number;
 }
 
-export function outcomeCounterField(
-  outcome: StudyOutcome,
-): "solvedCount" | "struggledCount" | "againCount" {
+export function outcomeCounterField(outcome: StudyOutcome): keyof OutcomeCounters {
   if (outcome === "solved") return "solvedCount";
   if (outcome === "struggled") return "struggledCount";
   return "againCount";
+}
+
+// The three counters, one per member of the CLOSED StudyOutcome union
+// ("again" | "struggled" | "solved" — see reviewScheduler.ts, enforced at
+// the callable's own boundary by isStudyOutcome). Because the union is
+// closed, their sum is the complete count of outcomes recorded — there is
+// no fourth bucket an outcome could fall into and go uncounted.
+export interface OutcomeCounters {
+  solvedCount: number;
+  struggledCount: number;
+  againCount: number;
+}
+
+function counterValue(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
+}
+
+// The ONE place a counter is incremented. Both the per-question study item
+// and the per-calendar-day stats document go through it, so the two can
+// never drift in what "one more struggled outcome" means.
+//
+// Monotonic by construction: exactly one field goes up by one, and no
+// branch can ever decrease a counter or reset one to zero — that is the
+// difference between these and successfulReviews, which is a scheduler
+// streak and deliberately DOES go down.
+export function incrementOutcomeCounters(
+  previous: Partial<OutcomeCounters> | null | undefined,
+  outcome: StudyOutcome,
+): OutcomeCounters {
+  const field = outcomeCounterField(outcome);
+  return {
+    solvedCount: counterValue(previous?.solvedCount) + (field === "solvedCount" ? 1 : 0),
+    struggledCount: counterValue(previous?.struggledCount) + (field === "struggledCount" ? 1 : 0),
+    againCount: counterValue(previous?.againCount) + (field === "againCount" ? 1 : 0),
+  };
 }

@@ -10,6 +10,10 @@ function topic(overrides: Partial<TopicInsight> = {}): TopicInsight {
     subject: "Matematik",
     topic: "Kesirler",
     struggledCount: 0,
+    // Phase 41 — a legacy topic with no cumulative counters. null, never 0:
+    // these fixtures exercise class hotspot ranking, which reads
+    // struggledCount only, so "unknown" is the honest default here.
+    struggledAttemptCount: null,
     masteredCount: 0,
     dueCount: 0,
     totalCount: 1,

@@ -191,6 +191,9 @@ describe("buildDailyPracticePlan — duplicate protection across all three categ
       subject: "Matematik",
       topic: "Türev",
       struggledCount: 1,
+      // Phase 41 — the plan's tier rules read struggledCount/lastOutcome,
+      // never the cumulative counters, so this stays "unknown".
+      struggledAttemptCount: null,
       masteredCount: 0,
       dueCount: 1,
       totalCount: 1,

@@ -624,3 +624,169 @@ describe("removeStudyItem", () => {
     await expect(removeStudyItem.run(studentRequest({ questionId: "q1" }))).resolves.toBeDefined();
   });
 });
+
+// Phase 41 — cumulative per-outcome counters on the study item, driven
+// through the REAL handler (not a reimplementation of its arithmetic).
+//
+// These counters are what an honest success rate is computed from;
+// `successfulReviews` cannot serve that purpose because the scheduler
+// decrements it on "struggled" and resets it to zero on "again".
+// Reads the stored counters as real numbers. The in-memory fake stores
+// `unknown` values (it mirrors Firestore), so narrowing here keeps the
+// assertions below honest without an `as any` anywhere.
+function counters(questionId = "q1") {
+  const stored = (item(questionId) ?? {}) as Record<string, unknown>;
+  const n = (value: unknown): number => (typeof value === "number" ? value : 0);
+  const solvedCount = n(stored.solvedCount);
+  const struggledCount = n(stored.struggledCount);
+  const againCount = n(stored.againCount);
+  return {
+    solvedCount,
+    struggledCount,
+    againCount,
+    attemptCount: n(stored.attemptCount),
+    successfulReviews: n(stored.successfulReviews),
+    sum: solvedCount + struggledCount + againCount,
+  };
+}
+
+describe("recordStudyOutcome — cumulative outcome counters", () => {
+  beforeEach(() => seedQuestion("q1"));
+
+  it("starts every counter correctly on the first outcome", async () => {
+    await recordStudyOutcome.run(studentRequest({ questionId: "q1", outcome: "solved" }));
+    expect(item()).toMatchObject({ solvedCount: 1, struggledCount: 0, againCount: 0 });
+  });
+
+  it("accumulates a real sequence: solved, solved, again, struggled, solved", async () => {
+    for (const outcome of ["solved", "solved", "again", "struggled", "solved"]) {
+      await recordStudyOutcome.run(studentRequest({ questionId: "q1", outcome }));
+    }
+    expect(item()).toMatchObject({
+      solvedCount: 3,
+      struggledCount: 1,
+      againCount: 1,
+      attemptCount: 5,
+    });
+  });
+
+  // The completeness rule the client depends on: for an item that has been
+  // counted from its first outcome, the counters account for every attempt.
+  it("keeps the counters summing to attemptCount for an item counted from birth", async () => {
+    for (const outcome of ["struggled", "solved", "again", "solved"]) {
+      await recordStudyOutcome.run(studentRequest({ questionId: "q1", outcome }));
+    }
+    const stored = counters();
+    expect(stored.sum).toBe(stored.attemptCount);
+  });
+
+  // The counters must never be able to go backwards, unlike successfulReviews.
+  it("never decreases a counter — not even on the outcomes that reset scheduler progress", async () => {
+    await recordStudyOutcome.run(studentRequest({ questionId: "q1", outcome: "solved" }));
+    await recordStudyOutcome.run(studentRequest({ questionId: "q1", outcome: "solved" }));
+    const before = counters();
+    expect(before.solvedCount).toBe(2);
+    expect(before.successfulReviews).toBe(2);
+
+    await recordStudyOutcome.run(studentRequest({ questionId: "q1", outcome: "again" }));
+    const after = counters();
+    // The scheduler's streak is wiped...
+    expect(after.successfulReviews).toBe(0);
+    // ...but the record of two real solves is not.
+    expect(after.solvedCount).toBe(2);
+    expect(after.againCount).toBe(1);
+  });
+
+  // A pre-Phase-41 document: real attempts, no counters. Counting starts
+  // now, and the sum stays BELOW attemptCount — which is exactly how the
+  // client detects that the earlier history is unavailable rather than zero.
+  it("starts counting a legacy item without inventing its past", async () => {
+    store.set(`users/${STUDENT}/studyItems/q1`, {
+      questionId: "q1",
+      status: "review",
+      lastOutcome: "solved",
+      intervalDays: 4,
+      successfulReviews: 2,
+      attemptCount: 12,
+      firstAddedAt: 1,
+      lastReviewedAt: 2,
+      nextReviewAt: 3,
+      source: "public",
+      sourceClassId: null,
+      questionOwnerId: "owner1",
+      recentOperationIds: [],
+      schemaVersion: 1,
+      updatedAt: 2,
+    });
+
+    await recordStudyOutcome.run(studentRequest({ questionId: "q1", outcome: "solved" }));
+
+    const stored = counters();
+    expect(stored.solvedCount).toBe(1);
+    expect(stored.attemptCount).toBe(13);
+    expect(stored.sum).toBeLessThan(stored.attemptCount);
+  });
+});
+
+describe("recordStudyOutcome — counters are replay-safe", () => {
+  beforeEach(() => seedQuestion("q1"));
+
+  it("replaying the SAME operationId leaves every counter untouched", async () => {
+    const op = "replay-000001";
+    await recordStudyOutcome.run(
+      studentRequest({ questionId: "q1", outcome: "solved", operationId: op }),
+    );
+    const first = { ...(item() as Record<string, unknown>) };
+
+    await recordStudyOutcome.run(
+      studentRequest({ questionId: "q1", outcome: "solved", operationId: op }),
+    );
+    const second = item() as Record<string, unknown>;
+
+    expect(second.solvedCount).toBe(first.solvedCount);
+    expect(second.struggledCount).toBe(first.struggledCount);
+    expect(second.againCount).toBe(first.againCount);
+    expect(second.attemptCount).toBe(first.attemptCount);
+  });
+
+  it("a replay does not double-count the DAILY counters either", async () => {
+    const op = "replay-000002";
+    await recordStudyOutcome.run(
+      studentRequest({ questionId: "q1", outcome: "struggled", operationId: op }),
+    );
+    await recordStudyOutcome.run(
+      studentRequest({ questionId: "q1", outcome: "struggled", operationId: op }),
+    );
+    expect(dayDocs()).toHaveLength(1);
+    expect(dayDocs()[0]).toMatchObject({ reviewCount: 1, struggledCount: 1 });
+  });
+
+  it("a NEW operationId after a replay increments exactly once", async () => {
+    const op = "replay-000003";
+    await recordStudyOutcome.run(
+      studentRequest({ questionId: "q1", outcome: "solved", operationId: op }),
+    );
+    await recordStudyOutcome.run(
+      studentRequest({ questionId: "q1", outcome: "solved", operationId: op }),
+    );
+    await recordStudyOutcome.run(
+      studentRequest({ questionId: "q1", outcome: "solved", operationId: "fresh-000004" }),
+    );
+    expect(item()).toMatchObject({ solvedCount: 2, attemptCount: 2 });
+  });
+
+  // A rejected call must leave no trace at all — the counters cannot be
+  // incremented by an outcome that never happened.
+  it("a REJECTED call creates no counter at all", async () => {
+    await expect(
+      recordStudyOutcome.run(studentRequest({ questionId: "q1", outcome: "nonsense" })),
+    ).rejects.toMatchObject({ code: "invalid-argument" });
+    expect(item()).toBeUndefined();
+
+    seedQuestion("private1", { visibility: "private", ownerId: "someone-else" });
+    await expect(
+      recordStudyOutcome.run(studentRequest({ questionId: "private1", outcome: "solved" })),
+    ).rejects.toMatchObject({ code: "permission-denied" });
+    expect(item("private1")).toBeUndefined();
+  });
+});
