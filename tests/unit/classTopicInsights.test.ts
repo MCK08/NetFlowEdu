@@ -4,6 +4,7 @@ import {
   StudentTopics,
 } from "../../src/features/teacher/services/classTopicInsights";
 import { TopicInsight } from "../../src/features/study/services/learningInsights";
+import { Question } from "@/types/question";
 
 function topic(overrides: Partial<TopicInsight> = {}): TopicInsight {
   return {
@@ -217,5 +218,90 @@ describe("buildClassTopicHotspots — struggled event totals", () => {
   it("is deterministic", () => {
     const students = [studentWith("a", 1, 4), studentWith("b", 1, 2)];
     expect(buildClassTopicHotspots(students)).toEqual(buildClassTopicHotspots(students));
+  });
+});
+
+// Phase 43 — a hotspot reports the grade its questions agree on, so an
+// intervention started from it opens the composer on the right grade
+// instead of the taxonomy's first entry ("5").
+describe("buildClassTopicHotspots — evidence-derived gradeLevel", () => {
+  function question(id: string, overrides: Partial<Question> = {}): Question {
+    return {
+      id,
+      ownerId: "teacher-1",
+      organizationId: "org-1",
+      visibility: "class",
+      imageUrl: `https://example.com/${id}.jpg`,
+      classId: "class-1",
+      subject: "Matematik",
+      topic: "Kesirler",
+      gradeLevel: "12",
+      description: null,
+      posterRole: "teacher",
+      createdAt: 0,
+      likeCount: 0,
+      commentCount: 0,
+      answerCount: 0,
+      choices: null,
+      correctChoice: null,
+      ...overrides,
+    };
+  }
+
+  const strugglingStudent = [student("s1", [topic({ struggledCount: 1 })])];
+
+  it("reports the grade when every question in the topic agrees", () => {
+    const hotspots = buildClassTopicHotspots(
+      strugglingStudent,
+      new Map([["q1", question("q1")], ["q2", question("q2")]]),
+    );
+    expect(hotspots[0]?.gradeLevel).toBe("12");
+  });
+
+  it("reports null for a mixed-grade topic rather than picking one", () => {
+    const hotspots = buildClassTopicHotspots(
+      strugglingStudent,
+      new Map([
+        ["q1", question("q1", { gradeLevel: "9" })],
+        ["q2", question("q2", { gradeLevel: "12" })],
+      ]),
+    );
+    expect(hotspots[0]?.gradeLevel).toBeNull();
+  });
+
+  it("reports null when no question metadata is supplied — every existing caller is unchanged", () => {
+    expect(buildClassTopicHotspots(strugglingStudent)[0]?.gradeLevel).toBeNull();
+  });
+
+  it("ignores questions from OTHER topics when resolving the grade", () => {
+    const hotspots = buildClassTopicHotspots(
+      strugglingStudent,
+      new Map([
+        ["q1", question("q1", { topic: "Kesirler", gradeLevel: "12" })],
+        ["q2", question("q2", { topic: "Türev", gradeLevel: "9" })],
+      ]),
+    );
+    expect(hotspots[0]?.gradeLevel).toBe("12");
+  });
+
+  it("tolerates an unresolved question in the map", () => {
+    const hotspots = buildClassTopicHotspots(
+      strugglingStudent,
+      new Map([["q1", question("q1")], ["missing", null]]),
+    );
+    expect(hotspots[0]?.gradeLevel).toBe("12");
+  });
+
+  it("does not change hotspot ranking", () => {
+    const students = [
+      student("s1", [
+        topic({ subject: "Matematik", topic: "Az Kisi", struggledCount: 1 }),
+        topic({ subject: "Fizik", topic: "Cok Kisi", struggledCount: 1 }),
+      ]),
+      student("s2", [topic({ subject: "Fizik", topic: "Cok Kisi", struggledCount: 1 })]),
+    ];
+    const withMeta = buildClassTopicHotspots(students, new Map([["q1", question("q1")]]));
+    const withoutMeta = buildClassTopicHotspots(students);
+    expect(withMeta.map((h) => h.topic)).toEqual(withoutMeta.map((h) => h.topic));
   });
 });

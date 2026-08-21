@@ -17,6 +17,7 @@ import {
   RECENT_STUDY_DAYS_WINDOW,
 } from "@features/study/services/studyWeek";
 import { StudyOutcome } from "@features/study/domain/studyTypes";
+import { InterventionTopic, resolveEvidenceGrade } from "./teacherIntervention";
 import { Question } from "@/types/question";
 
 // How many of a student's most-recently-reviewed items to carry through as
@@ -107,6 +108,16 @@ export interface StudentPerformanceSnapshot {
   // never a second trend engine. Already computed for `trend`; this is a
   // zero-cost exposure, not a new calculation.
   dayBuckets: readonly StudyDay[];
+  // Phase 43 — the topics behind persistentStruggleCount, carrying exactly
+  // what an EXISTING composer needs to open a targeted intervention
+  // (subject/topic/gradeLevel). Empty for every case where an intervention
+  // would be wrong: no struggle, a one-off slip, a student who has already
+  // recovered, and any student whose items predate the Phase 41 counters.
+  //
+  // gradeLevel is null whenever the topic's questions do not agree on one
+  // grade — the caller then omits the parameter rather than sending a guess
+  // (see teacherIntervention.ts).
+  persistentStruggleTopics: readonly InterventionTopic[];
   // Phase 42 — questions in THIS class the student has reported difficulty
   // on more than once and has not since resolved (see learningState.ts).
   // The distinction the dashboard previously could not draw: four different
@@ -270,6 +281,15 @@ export function buildStudentPerformanceSnapshot(
   // recorded.
   let persistentStruggleCount = 0;
   let maxItemStruggleEvents: number | null = null;
+  // Phase 43 — the persistently-struggled questions, bucketed by their own
+  // subject/topic so an intervention can name what it is about. Built from
+  // the SAME items/histories loop, and from the questionsById this function
+  // was already given: no extra pass over Firestore, no extra read.
+  const struggleBuckets = new Map<
+    string,
+    { subject: string; topic: string; grades: string[]; struggledAttemptCount: number }
+  >();
+
   items.forEach((item, index) => {
     const history = histories[index] ?? null;
     if (!history) return;
@@ -282,8 +302,38 @@ export function buildStudentPerformanceSnapshot(
       status: item.status,
       successfulReviews: item.successfulReviews,
     });
-    if (state === "persistent_struggle") persistentStruggleCount += 1;
+    if (state !== "persistent_struggle") return;
+    persistentStruggleCount += 1;
+
+    // A question whose subject/topic could not be resolved (legacy metadata,
+    // "" by learningInsights.ts's own convention) still counts toward the
+    // COUNT above — the struggle is real — but cannot seed an intervention,
+    // because there is nothing honest to prefill a composer with.
+    const question = questionsById.get(item.questionId) ?? null;
+    const subject = question?.subject ?? "";
+    const topic = question?.topic ?? "";
+    if (subject === "" || topic === "") return;
+
+    const key = `${subject} ${topic}`;
+    const bucket = struggleBuckets.get(key) ?? {
+      subject,
+      topic,
+      grades: [],
+      struggledAttemptCount: 0,
+    };
+    bucket.grades.push(question?.gradeLevel ?? "");
+    bucket.struggledAttemptCount += history.struggledCount;
+    struggleBuckets.set(key, bucket);
   });
+
+  const persistentStruggleTopics: InterventionTopic[] = [...struggleBuckets.values()].map(
+    (bucket) => ({
+      subject: bucket.subject,
+      topic: bucket.topic,
+      gradeLevel: resolveEvidenceGrade(bucket.grades),
+      struggledAttemptCount: bucket.struggledAttemptCount,
+    }),
+  );
 
   const todayItems = items.filter(
     (item) => item.lastReviewedAt > 0 && isSameLocalDay(item.lastReviewedAt, safeNow),
@@ -343,6 +393,7 @@ export function buildStudentPerformanceSnapshot(
     daysActiveRecently: dayBuckets.length,
     persistentStruggleCount,
     maxItemStruggleEvents,
+    persistentStruggleTopics,
   };
 }
 

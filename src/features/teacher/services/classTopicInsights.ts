@@ -1,4 +1,7 @@
 import { TopicInsight } from "@features/study/services/learningInsights";
+import { Question } from "@/types/question";
+
+import { resolveEvidenceGrade } from "./teacherIntervention";
 
 // Aggregates ACROSS students' already-computed, per-student TopicInsight
 // arrays (StudentPerformanceSnapshot.allTopics — itself the existing
@@ -43,6 +46,17 @@ export interface ClassTopicHotspot {
   // student's own sampleQuestionId in student-array order — a real,
   // already-selected-by-the-engine id, never invented.
   sampleQuestionId: string;
+  // Phase 43 — the grade this topic's questions actually agree on, so an
+  // intervention started from this hotspot opens its composer on the right
+  // grade instead of silently defaulting to the taxonomy's first entry
+  // ("5"), which quietly changed which questions got selected
+  // (smartAssignmentSelection's baseMatchScore awards +1 for a grade match).
+  //
+  // null when the class's questions in this topic span more than one grade,
+  // or when no grade is resolvable — the caller then omits the parameter
+  // rather than sending a guess. Also null when no question metadata was
+  // supplied at all, which is what keeps every existing caller unchanged.
+  gradeLevel: string | null;
 }
 
 export interface StudentTopics {
@@ -82,10 +96,33 @@ function aggregateKey(subject: string, topic: string): string {
 // the class has actually engaged with is more informative than one only
 // one or two students have touched), then subject/topic alphabetically for
 // a fully deterministic order on a complete tie.
+// Phase 43 — groups the class's already-fetched question metadata by
+// subject+topic so each hotspot can report the grade its questions agree
+// on. `questionsById` is the SAME map useClassPerformance already resolved
+// for the dashboard; this costs no read.
+function gradesByTopic(
+  questionsById: ReadonlyMap<string, Question | null> | undefined,
+): Map<string, string[]> {
+  const grades = new Map<string, string[]>();
+  if (!questionsById) return grades;
+  for (const question of questionsById.values()) {
+    if (!question || question.subject === "" || question.topic === "") continue;
+    const key = aggregateKey(question.subject, question.topic);
+    const list = grades.get(key) ?? [];
+    list.push(question.gradeLevel);
+    grades.set(key, list);
+  }
+  return grades;
+}
+
 export function buildClassTopicHotspots(
   studentsTopics: readonly StudentTopics[],
+  // Optional so every existing caller and test keeps working unchanged; a
+  // hotspot simply reports gradeLevel: null without it.
+  questionsById?: ReadonlyMap<string, Question | null>,
 ): ClassTopicHotspot[] {
   const aggregates = new Map<string, TopicAggregate>();
+  const topicGrades = gradesByTopic(questionsById);
 
   for (const student of studentsTopics) {
     for (const topicInsight of student.allTopics) {
@@ -135,6 +172,9 @@ export function buildClassTopicHotspots(
         struggledAttemptCount: aggregate.hasStruggleAttemptEvidence
           ? aggregate.struggledAttemptTotal
           : null,
+        gradeLevel: resolveEvidenceGrade(
+          topicGrades.get(aggregateKey(aggregate.subject, aggregate.topic)) ?? [],
+        ),
       }),
     )
     // Phase 42 — the sort below is UNCHANGED on purpose. struggledAttemptCount

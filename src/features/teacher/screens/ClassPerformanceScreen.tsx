@@ -13,6 +13,7 @@ import { SectionHeader } from "@components/ui/SectionHeader";
 import { useAuth } from "@features/authentication";
 import { useClassAssignments } from "@features/assignments/hooks/useClassAssignments";
 import { resolveAssignmentDisplayStatus } from "@features/assignments/services/assignmentStatus";
+import { selectRecentTopicAssignments } from "@features/assignments/services/assignmentHistorySignals";
 import { ImageSourcePicker } from "@features/classes/components/ImageSourcePicker";
 import { QuestionMetadataModal } from "@features/questions/components/QuestionMetadataModal";
 import { LearningTrend } from "@features/study/services/learningTrend";
@@ -32,6 +33,10 @@ import {
 } from "../services/studentAttention";
 import { buildClassPerformanceSummary, StudentPerformanceCard as StudentPerformanceCardData } from "../services/studentPerformance";
 import { buildTeacherActionSummary, TeacherAction } from "../services/teacherActionSummary";
+import {
+  hasRecentTopicIntervention,
+  resolveTopicInterventionTargets,
+} from "../services/teacherIntervention";
 
 interface ClassPerformanceScreenProps {
   classId: string;
@@ -132,7 +137,11 @@ export function ClassPerformanceScreen({ classId }: ClassPerformanceScreenProps)
     };
   }, [classId]);
 
-  const [composerTopicContext, setComposerTopicContext] = useState<{ subject: string; topic: string } | null>(
+  const [composerTopicContext, setComposerTopicContext] = useState<{
+    subject: string;
+    topic: string;
+    gradeLevel: string | null;
+  } | null>(
     null,
   );
   const composer = useTeacherQuestionComposer({
@@ -146,8 +155,13 @@ export function ClassPerformanceScreen({ classId }: ClassPerformanceScreenProps)
     onUploaded: refresh,
   });
 
-  function openComposerForTopic(subject: string, topic: string) {
-    setComposerTopicContext({ subject, topic });
+  // Phase 43 — gradeLevel is carried through when the topic's own questions
+  // agree on one, and OMITTED when they do not. Passing a guess would be
+  // worse than passing nothing: the composer validates against GRADE_LEVELS
+  // and silently falls back to its first entry ("5"), which is exactly the
+  // failure this fixes.
+  function openComposerForTopic(subject: string, topic: string, gradeLevel: string | null) {
+    setComposerTopicContext({ subject, topic, gradeLevel });
     composer.openComposer();
   }
 
@@ -157,11 +171,31 @@ export function ClassPerformanceScreen({ classId }: ClassPerformanceScreenProps)
   const { assignments } = useClassAssignments(classId);
   const recentAssignments = useMemo(() => assignments.slice(0, 3), [assignments]);
 
-  function openCreateAssignment(subject?: string, topic?: string) {
-    router.push({
-      pathname: "/(teacher)/class/[classId]/assignment/create",
-      params: { classId, subject, topic },
-    });
+  // Phase 43 — the same param set AssignmentDetailScreen's follow-up flow
+  // has always sent (classId + subject + topic + gradeLevel + studentIds).
+  // This path previously sent only the first three, so an assignment
+  // started from a hotspot silently prepared at the taxonomy's first grade
+  // and targeted the WHOLE class — including students who had recovered or
+  // never struggled.
+  //
+  // Undefined values are dropped from the params rather than sent as empty
+  // strings: the composer treats an absent value as "no suggestion" and
+  // keeps its own default, which is the honest outcome when the evidence
+  // does not support a value.
+  function openCreateAssignment(options?: {
+    subject?: string;
+    topic?: string;
+    gradeLevel?: string | null;
+    studentIds?: readonly string[];
+  }) {
+    const params: { classId: string } & Record<string, string> = { classId };
+    if (options?.subject) params.subject = options.subject;
+    if (options?.topic) params.topic = options.topic;
+    if (options?.gradeLevel) params.gradeLevel = options.gradeLevel;
+    if (options?.studentIds && options.studentIds.length > 0) {
+      params.studentIds = options.studentIds.join(",");
+    }
+    router.push({ pathname: "/(teacher)/class/[classId]/assignment/create", params });
   }
 
   function openAssignmentDetail(assignmentId: string) {
@@ -178,7 +212,11 @@ export function ClassPerformanceScreen({ classId }: ClassPerformanceScreenProps)
 
   function handleActionPress(action: TeacherAction) {
     if (action.kind === "create_question" && action.topicContext) {
-      openComposerForTopic(action.topicContext.subject, action.topicContext.topic);
+      openComposerForTopic(
+        action.topicContext.subject,
+        action.topicContext.topic,
+        action.topicContext.gradeLevel,
+      );
     } else if (action.kind === "open_student" && action.studentUid) {
       openStudent(action.studentUid);
     }
@@ -224,6 +262,48 @@ export function ClassPerformanceScreen({ classId }: ClassPerformanceScreenProps)
     router.push({
       pathname: "/(teacher)/class/[classId]/student/[studentId]",
       params: { classId, studentId: studentUid, studentName: card?.displayName ?? "" },
+    });
+  }
+
+  // Phase 43 — who a TOPIC intervention should actually be for: the
+  // students with a persistent, unresolved struggle in THAT topic (see
+  // learningState.ts). Deliberately narrower than affectedStudentsForHotspot
+  // below, which lists anyone with a question currently in a struggled
+  // state — assigning to a student who slipped once, or who has already
+  // recovered, is the over-intervention this phase exists to prevent.
+  function interventionTargetsForHotspot(hotspot: ClassTopicHotspot): string[] {
+    return resolveTopicInterventionTargets(
+      cards.map((card) => ({
+        studentUid: card.studentUid,
+        persistentStruggleTopics: card.snapshot.persistentStruggleTopics,
+      })),
+      hotspot.subject,
+      hotspot.topic,
+    );
+  }
+
+  // When nobody in the class is persistently struggling in this topic there
+  // is no evidence for a targeted intervention, so the composer opens on
+  // the topic WITHOUT a forced target list and the teacher chooses — rather
+  // than silently assigning to all 25 students in the name of a hotspot
+  // only a couple of people slipped on.
+  // Phase 43 §8 — reuses Phase 31's OWN same-topic/non-draft/bounded
+  // selection over the assignments this screen already loaded. No new
+  // query, no new "recent" rule, no new field.
+  function alreadyAssignedForHotspot(hotspot: ClassTopicHotspot): boolean {
+    return hasRecentTopicIntervention(
+      selectRecentTopicAssignments(assignments, hotspot.topic, null),
+      interventionTargetsForHotspot(hotspot),
+    );
+  }
+
+  function openTargetedAssignmentForHotspot(hotspot: ClassTopicHotspot) {
+    const studentIds = interventionTargetsForHotspot(hotspot);
+    openCreateAssignment({
+      subject: hotspot.subject,
+      topic: hotspot.topic,
+      gradeLevel: hotspot.gradeLevel,
+      studentIds,
     });
   }
 
@@ -377,10 +457,24 @@ export function ClassPerformanceScreen({ classId }: ClassPerformanceScreenProps)
                                 Toplam {hotspot.struggledAttemptCount} kez zorlanma
                               </Text>
                             ) : null}
+                            {/* Phase 43 — who a targeted assignment would
+                                actually go to, stated before the teacher
+                                taps. Absent when nobody is persistently
+                                struggling: the composer then opens on the
+                                topic with no forced target list. */}
+                            {interventionTargetsForHotspot(hotspot).length > 0 ? (
+                              <Text style={styles.hotspotDetail}>
+                                {interventionTargetsForHotspot(hotspot).length} öğrenci için ödev
+                                oluşturulabilir
+                                {alreadyAssignedForHotspot(hotspot)
+                                  ? " · bu konuda yakın zamanda ödev verildi"
+                                  : ""}
+                              </Text>
+                            ) : null}
                           </Pressable>
                           <View style={styles.hotspotActionRow}>
                             <Pressable
-                              onPress={() => openComposerForTopic(hotspot.subject, hotspot.topic)}
+                              onPress={() => openComposerForTopic(hotspot.subject, hotspot.topic, hotspot.gradeLevel)}
                               style={styles.hotspotCreateButton}
                               accessibilityRole="button"
                               accessibilityLabel={`${hotspot.topic} konusundan soru oluştur`}
@@ -389,7 +483,7 @@ export function ClassPerformanceScreen({ classId }: ClassPerformanceScreenProps)
                               <Text style={styles.hotspotCreateButtonText}>Soru Oluştur</Text>
                             </Pressable>
                             <Pressable
-                              onPress={() => openCreateAssignment(hotspot.subject, hotspot.topic)}
+                              onPress={() => openTargetedAssignmentForHotspot(hotspot)}
                               style={styles.hotspotCreateButton}
                               accessibilityRole="button"
                               accessibilityLabel={`${hotspot.topic} konusunda ödev oluştur`}
@@ -512,6 +606,10 @@ export function ClassPerformanceScreen({ classId }: ClassPerformanceScreenProps)
         onCancel={composer.cancelDetails}
         initialSubject={composerTopicContext?.subject}
         initialTopic={composerTopicContext?.topic}
+        // Phase 43 — only ever a grade the topic's own questions agree on;
+        // undefined when they do not, so the modal keeps its own default
+        // instead of being handed a guess.
+        initialGradeLevel={composerTopicContext?.gradeLevel ?? undefined}
       />
     </SafeAreaView>
   );

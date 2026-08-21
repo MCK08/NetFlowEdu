@@ -17,6 +17,7 @@ import { typography } from "@theme/typography";
 
 import { useStudentPerformanceDetail } from "../hooks/useStudentPerformanceDetail";
 import { buildStudentAttentionInsight } from "../services/studentAttention";
+import { resolveStudentInterventionTopic } from "../services/teacherIntervention";
 
 interface StudentPerformanceScreenProps {
   classId: string;
@@ -64,15 +65,51 @@ function formatLastStudied(timestampMs: number | null): string {
   return `${date.toLocaleDateString("tr-TR")} ${time}`;
 }
 
-// Phase 27 — READ-ONLY. No outcome controls, no editable fields: everything
-// on this screen is a Text/Chip rendering of buildStudentPerformanceSnapshot's
-// output. A teacher cannot change a student's answer or study state here.
+// Phase 27 — no outcome controls, no editable fields: every number on this
+// screen is a Text/Chip rendering of buildStudentPerformanceSnapshot's
+// output. A teacher still cannot change a student's answer or study state
+// here, and that invariant is unchanged.
+//
+// Phase 43 — the screen is no longer action-less. It gained exactly ONE
+// action: opening the EXISTING assignment composer, prefilled from this
+// student's own evidence. Nothing is written from this screen; the write
+// happens in the composer the teacher then confirms, through the same
+// create path the follow-up flow has always used.
 export function StudentPerformanceScreen({ classId, studentId, studentName }: StudentPerformanceScreenProps) {
   const { snapshot, isLoading, error, refresh } = useStudentPerformanceDetail(classId, studentId);
   const attention = useMemo(
     () => (snapshot ? buildStudentAttentionInsight(snapshot, Date.now()) : null),
     [snapshot],
   );
+
+  // Phase 43 — the single topic a student-level intervention should be
+  // about, or null when there is nothing to intervene on. This IS the gate:
+  // persistentStruggleTopics is empty for a one-off slip, for a student who
+  // has already recovered, and for any student whose items predate the
+  // Phase 41 counters (see studentPerformance.ts), so no action renders in
+  // any of those cases rather than an action the evidence cannot justify.
+  const interventionTopic = useMemo(
+    () => (snapshot ? resolveStudentInterventionTopic(snapshot.persistentStruggleTopics) : null),
+    [snapshot],
+  );
+
+  // Opens the EXISTING assignment composer with the same param semantics
+  // AssignmentDetailScreen's follow-up flow already uses — classId,
+  // subject, topic, gradeLevel and an explicit single-student target. An
+  // unresolvable gradeLevel is OMITTED, never defaulted: the composer keeps
+  // its own fallback, which is honest, whereas a guessed grade silently
+  // changes which questions get selected.
+  function openInterventionForStudent() {
+    if (!interventionTopic) return;
+    const params: { classId: string } & Record<string, string> = {
+      classId,
+      subject: interventionTopic.subject,
+      topic: interventionTopic.topic,
+      studentIds: studentId,
+    };
+    if (interventionTopic.gradeLevel) params.gradeLevel = interventionTopic.gradeLevel;
+    router.push({ pathname: "/(teacher)/class/[classId]/assignment/create", params });
+  }
 
   return (
     <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
@@ -190,6 +227,24 @@ export function StudentPerformanceScreen({ classId, studentId, studentName }: St
                 <Text style={styles.bodyTextMuted}>
                   En çok zorlandığı soruda {snapshot.maxItemStruggleEvents} kez zorlandı
                 </Text>
+              ) : null}
+              {/* Phase 43 — the screen's first action. Diagnosis, the real
+                  evidence behind it, and the one thing to do about it, in
+                  the same card. Rendered only when a topic is actually
+                  resolvable: a persistent struggle on a question whose
+                  subject/topic could not be resolved still shows the counts
+                  above, but has nothing honest to prefill a composer with. */}
+              {interventionTopic ? (
+                <>
+                  <Text style={styles.bodyTextMuted}>
+                    {interventionTopic.subject} · {interventionTopic.topic}
+                  </Text>
+                  <PrimaryButton
+                    label="Takip Ödevi Oluştur"
+                    onPress={openInterventionForStudent}
+                    accessibilityHint={`${interventionTopic.topic} konusunda bu öğrenci için ödev oluşturur`}
+                  />
+                </>
               ) : null}
             </Card>
           ) : null}

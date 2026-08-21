@@ -17,7 +17,14 @@ export interface TeacherAction {
   reason: string;
   // Present for create_question actions — the subject/topic to prefill the
   // composer with. Null for open_student actions.
-  topicContext: { subject: string; topic: string } | null;
+  //
+  // Phase 43 — carries the topic's own gradeLevel too, so an action started
+  // from here opens the composer on the right grade. null when the topic's
+  // questions do not agree on one (or when it came from a student's
+  // implicated topic, which is not grade-scoped): the caller then omits the
+  // parameter rather than sending a guess, since the composer would
+  // otherwise silently fall back to the taxonomy's first grade.
+  topicContext: { subject: string; topic: string; gradeLevel: string | null } | null;
   // Present for open_student actions. Null for create_question actions.
   studentUid: string | null;
 }
@@ -54,7 +61,11 @@ export function buildTeacherActionSummary(
       kind: "create_question",
       title: `${hotspot.subject} · ${hotspot.topic}`,
       reason: `${hotspot.strugglingStudents} öğrencide zorlanma`,
-      topicContext: { subject: hotspot.subject, topic: hotspot.topic },
+      topicContext: {
+        subject: hotspot.subject,
+        topic: hotspot.topic,
+        gradeLevel: hotspot.gradeLevel,
+      },
       studentUid: null,
     });
   }
@@ -65,7 +76,12 @@ export function buildTeacherActionSummary(
       kind: "open_student",
       title: card.displayName,
       reason: card.insight.reasons[0] ?? "",
-      topicContext: card.insight.implicatedTopic,
+      // A student's implicated topic carries no grade of its own (it comes
+      // from the weak-topic ranking, not from question metadata), so this
+      // stays null rather than borrowing an unrelated hotspot's grade.
+      topicContext: card.insight.implicatedTopic
+        ? { ...card.insight.implicatedTopic, gradeLevel: null }
+        : null,
       studentUid: card.studentUid,
     });
   }

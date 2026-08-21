@@ -15,6 +15,9 @@ function hotspot(overrides: Partial<ClassTopicHotspot> = {}): ClassTopicHotspot 
     // never the event count; null keeps this fixture describing a class
     // with no cumulative history rather than implying zero struggles.
     struggledAttemptCount: null,
+    // Phase 43 — no question metadata behind this fixture, so the topic's
+    // grade is genuinely unresolvable. null, never a default.
+    gradeLevel: null,
     masteredStudents: 0,
     dueStudents: 0,
     sampleQuestionId: "q1",
@@ -150,5 +153,79 @@ describe("buildTeacherActionSummary — robustness", () => {
     const a = buildTeacherActionSummary(hotspots, cards);
     const b = buildTeacherActionSummary(hotspots, cards);
     expect(a).toEqual(b);
+  });
+});
+
+// Phase 43 — the action list gained grade context, and nothing else. The
+// ordering contract is unchanged on purpose: reordering what every teacher
+// sees first, mid-phase, with no evidence it serves them better, is the
+// silent re-ranking this phase set out to avoid.
+describe("buildTeacherActionSummary — Phase 43 grade context", () => {
+  it("carries the hotspot's own gradeLevel into the action", () => {
+    const actions = buildTeacherActionSummary([hotspot({ gradeLevel: "12" })], []);
+    expect(actions[0]?.topicContext).toEqual({
+      subject: "Matematik",
+      topic: "Denklemler",
+      gradeLevel: "12",
+    });
+  });
+
+  it("carries a null gradeLevel through rather than substituting one", () => {
+    const actions = buildTeacherActionSummary([hotspot({ gradeLevel: null })], []);
+    expect(actions[0]?.topicContext?.gradeLevel).toBeNull();
+  });
+
+  // A student's implicated topic comes from the weak-topic ranking, which is
+  // not grade-scoped — it must not borrow an unrelated hotspot's grade.
+  it("never invents a grade for a student's implicated topic", () => {
+    const actions = buildTeacherActionSummary(
+      [],
+      [
+        attentionCard({
+          insight: {
+            category: "needs_attention",
+            reasons: ["Aynı soruda 8 kez zorlandı"],
+            implicatedTopic: { subject: "Matematik", topic: "Denklemler" },
+          },
+        }),
+      ],
+    );
+    expect(actions[0]?.kind).toBe("open_student");
+    expect(actions[0]?.topicContext?.gradeLevel).toBeNull();
+  });
+
+  it("produces the SAME action ordering as before the grade was added", () => {
+    const hotspots = [
+      hotspot({ topic: "A", strugglingStudents: 3, gradeLevel: "9" }),
+      hotspot({ topic: "B", strugglingStudents: 1, gradeLevel: null }),
+    ];
+    const cards = [
+      attentionCard({
+        studentUid: "u1",
+        displayName: "Ahmet",
+        insight: { category: "needs_attention", reasons: ["x"], implicatedTopic: null },
+      }),
+    ];
+    const actions = buildTeacherActionSummary(hotspots, cards);
+    expect(actions.map((a) => a.kind)).toEqual(["create_question", "create_question", "open_student"]);
+    expect(actions.map((a) => a.title)).toEqual([
+      "Matematik · A",
+      "Matematik · B",
+      "Ahmet",
+    ]);
+  });
+
+  it("adds no new action kind", () => {
+    const actions = buildTeacherActionSummary(
+      [hotspot()],
+      [
+        attentionCard({
+          insight: { category: "needs_attention", reasons: ["x"], implicatedTopic: null },
+        }),
+      ],
+    );
+    for (const action of actions) {
+      expect(["create_question", "open_student"]).toContain(action.kind);
+    }
   });
 });

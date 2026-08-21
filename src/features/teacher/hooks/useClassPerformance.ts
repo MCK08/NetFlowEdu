@@ -6,6 +6,7 @@ import { resolveQuestionMetadata } from "@features/study/services/studyMetadataC
 import { mapStudyErrorToMessage } from "@features/study/services/studyErrorMapper";
 import { shouldApplyStaleResponse } from "@features/study/services/staleResponseGuard";
 import { ClassMember } from "@/types/class";
+import { Question } from "@/types/question";
 
 import { mapWithConcurrency } from "../services/boundedConcurrency";
 import { buildClassTopicHotspots, ClassTopicHotspot } from "../services/classTopicInsights";
@@ -45,6 +46,10 @@ const STUDENT_FETCH_CONCURRENCY = 8;
 // No composite index, no new Cloud Function, no new collection.
 export function useClassPerformance(classId: string | undefined) {
   const [cards, setCards] = useState<StudentPerformanceCard[]>([]);
+  // Phase 43 — the question metadata resolved by THIS hook's own load()
+  // below, kept so the topic-hotspot memo can read each topic's real grade.
+  // Not a second fetch: it is the exact map the snapshots were built from.
+  const [questionsById, setQuestionsById] = useState<ReadonlyMap<string, Question | null>>(new Map());
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -74,12 +79,13 @@ export function useClassPerformance(classId: string | undefined) {
       if (!shouldApplyStaleResponse(requestId, requestIdRef.current)) return;
 
       const allQuestionIds = [...new Set(itemsByStudent.flat().map((item) => item.questionId))];
-      const questionsById = await resolveQuestionMetadata(allQuestionIds);
+      const resolvedQuestions = await resolveQuestionMetadata(allQuestionIds);
       if (!shouldApplyStaleResponse(requestId, requestIdRef.current)) return;
+      setQuestionsById(resolvedQuestions);
 
       const now = Date.now();
       const nextCards: StudentPerformanceCard[] = students.map((student, index) => {
-        const snapshot = buildStudentPerformanceSnapshot(itemsByStudent[index] ?? [], questionsById, now);
+        const snapshot = buildStudentPerformanceSnapshot(itemsByStudent[index] ?? [], resolvedQuestions, now);
         return {
           studentUid: student.uid,
           displayName: student.displayName,
@@ -127,8 +133,13 @@ export function useClassPerformance(classId: string | undefined) {
     () =>
       buildClassTopicHotspots(
         cards.map((card) => ({ studentUid: card.studentUid, allTopics: card.snapshot.allTopics })),
+        // Phase 43 — the SAME question metadata this hook already resolved
+        // above, so a hotspot can report the grade its questions agree on.
+        // Zero additional reads; held in state only so the memo above can
+        // see it, never re-fetched.
+        questionsById,
       ),
-    [cards],
+    [cards, questionsById],
   );
 
   const trend: LearningTrend = useMemo(

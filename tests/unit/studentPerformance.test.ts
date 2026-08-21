@@ -721,3 +721,99 @@ describe("buildStudentPerformanceSnapshot — persistent struggle evidence", () 
     expect(JSON.stringify(items)).toBe(before);
   });
 });
+
+// Phase 43 — the gate for a student-level intervention, exercised through
+// the REAL snapshot rather than a hand-built list. persistentStruggleTopics
+// must be empty for every case where offering an intervention would be
+// wrong, and must carry honest prefill values when it is not.
+describe("buildStudentPerformanceSnapshot — intervention topics", () => {
+  it("offers a topic for a persistent struggle, with the real grade and event count", () => {
+    const items = [withOutcomes(0, 8, 0, { questionId: "a", lastOutcome: "struggled", successfulReviews: 0 })];
+    const snapshot = buildStudentPerformanceSnapshot(
+      items,
+      questionsMap(question("a", { subject: "Matematik", topic: "Denklemler", gradeLevel: "12" })),
+      NOW,
+    );
+    expect(snapshot.persistentStruggleTopics).toEqual([
+      { subject: "Matematik", topic: "Denklemler", gradeLevel: "12", struggledAttemptCount: 8 },
+    ]);
+  });
+
+  it("offers NOTHING for a one-off struggle", () => {
+    const items = [withOutcomes(3, 1, 0, { questionId: "a", lastOutcome: "struggled", successfulReviews: 0 })];
+    const snapshot = buildStudentPerformanceSnapshot(items, questionsMap(question("a")), NOW);
+    expect(snapshot.persistentStruggleTopics).toEqual([]);
+  });
+
+  it("offers NOTHING for a student who has recovered", () => {
+    const items = [withOutcomes(3, 3, 0, { questionId: "a", lastOutcome: "solved", successfulReviews: 2 })];
+    const snapshot = buildStudentPerformanceSnapshot(items, questionsMap(question("a")), NOW);
+    expect(snapshot.persistentStruggleTopics).toEqual([]);
+  });
+
+  it("offers NOTHING for a student with no struggles at all", () => {
+    const items = [withOutcomes(5, 0, 0, { questionId: "a" })];
+    const snapshot = buildStudentPerformanceSnapshot(items, questionsMap(question("a")), NOW);
+    expect(snapshot.persistentStruggleTopics).toEqual([]);
+  });
+
+  it("offers NOTHING for a legacy item — no counters, no intervention", () => {
+    const items = [legacyItem({ questionId: "a", attemptCount: 20, lastOutcome: "struggled" })];
+    const snapshot = buildStudentPerformanceSnapshot(items, questionsMap(question("a")), NOW);
+    expect(snapshot.persistentStruggleTopics).toEqual([]);
+  });
+
+  // A mixed-grade topic must not resolve to a guessed grade.
+  it("omits the grade when the topic's questions disagree about it", () => {
+    const items = [
+      withOutcomes(0, 4, 0, { questionId: "a", lastOutcome: "struggled", successfulReviews: 0 }),
+      withOutcomes(0, 3, 0, { questionId: "b", lastOutcome: "struggled", successfulReviews: 0 }),
+    ];
+    const snapshot = buildStudentPerformanceSnapshot(
+      items,
+      questionsMap(
+        question("a", { topic: "Denklemler", gradeLevel: "9" }),
+        question("b", { topic: "Denklemler", gradeLevel: "12" }),
+      ),
+      NOW,
+    );
+    expect(snapshot.persistentStruggleTopics).toHaveLength(1);
+    expect(snapshot.persistentStruggleTopics[0]?.gradeLevel).toBeNull();
+    // The struggle itself is still real and still summed.
+    expect(snapshot.persistentStruggleTopics[0]?.struggledAttemptCount).toBe(7);
+  });
+
+  // A persistently-struggled question whose metadata never resolved still
+  // counts as a struggle, but cannot seed a composer.
+  it("counts an unresolvable question but never turns it into an intervention", () => {
+    const items = [withOutcomes(0, 5, 0, { questionId: "ghost", lastOutcome: "struggled", successfulReviews: 0 })];
+    const snapshot = buildStudentPerformanceSnapshot(items, new Map([["ghost", null]]), NOW);
+    expect(snapshot.persistentStruggleCount).toBe(1);
+    expect(snapshot.persistentStruggleTopics).toEqual([]);
+  });
+
+  it("groups several persistent questions in one topic into a single intervention", () => {
+    const items = [
+      withOutcomes(0, 4, 0, { questionId: "a", lastOutcome: "struggled", successfulReviews: 0 }),
+      withOutcomes(0, 2, 0, { questionId: "b", lastOutcome: "struggled", successfulReviews: 0 }),
+    ];
+    const snapshot = buildStudentPerformanceSnapshot(
+      items,
+      questionsMap(
+        question("a", { topic: "Denklemler", gradeLevel: "12" }),
+        question("b", { topic: "Denklemler", gradeLevel: "12" }),
+      ),
+      NOW,
+    );
+    expect(snapshot.persistentStruggleTopics).toHaveLength(1);
+    expect(snapshot.persistentStruggleTopics[0]?.struggledAttemptCount).toBe(6);
+  });
+
+  it("is deterministic", () => {
+    const items = [withOutcomes(0, 6, 0, { questionId: "a", lastOutcome: "struggled", successfulReviews: 0 })];
+    const map = questionsMap(question("a"));
+    expect(buildStudentPerformanceSnapshot(items, map, NOW).persistentStruggleTopics).toEqual(
+      buildStudentPerformanceSnapshot(items, map, NOW).persistentStruggleTopics,
+    );
+  });
+});
