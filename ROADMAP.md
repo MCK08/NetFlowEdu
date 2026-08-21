@@ -134,14 +134,14 @@ states or directly implies one.
 ## Phase 27 — Teacher classroom intelligence ✅
 `5d5a0ce`. `studentAttention.ts`, `classTopicInsights.ts`, `classTrend.ts`, `boundedConcurrency.ts`; Class Health / Topic Hotspots / Student Attention on `ClassPerformanceScreen`. Named "Phase 27" by `adef732`.
 
+## Phase 29 — Moderation deployment ✅ — attribution uncertain
+`ae28f20` refers to "Phase 29's undeployed submitAnswerForModeration Cloud Function". That function was written in `2fdb5b5` (2026-08-06) and deployed in `7abfd2f` (2026-08-12); which of the two is Phase 29 — kapsamı belirsiz (scope not recorded).
+
 ## Phase 28 (study) — Adaptive study session ✅
 `d157daa`. `StudySessionScreen`, `useAdaptiveStudySession`, `studySessionQuestions.ts` — called "Phase 28's adaptive StudySessionScreen" by `7abfd2f` and "Phase 28" by the Phase 40 audit. Followed by `7abfd2f` (routing fallback + deploying the two missing moderation callables) and `0e46e30` (tap-time due-ness re-check, exit guard, `staleResponseGuard.ts`).
 
 ## Phase 25 — Adaptive learning engine ✅
 `3e207e5`. `topicMastery.ts` (MasteryBand), `recencySignal.ts`, `learningTrend.ts`, `learningMoment.ts`, and `dailyPracticePlan.ts`'s `buildAdaptivePracticePlan` — all four attributed to "Phase 25" by the Phase 40 audit.
-
-## Phase 29 — Moderation deployment ✅ — attribution uncertain
-`ae28f20` refers to "Phase 29's undeployed submitAnswerForModeration Cloud Function". That function was written in `2fdb5b5` (2026-08-06) and deployed in `7abfd2f` (2026-08-12); which of the two is Phase 29 — kapsamı belirsiz (scope not recorded).
 
 ## Phases 8–24 — kapsamı belirsiz (scope not recorded)
 No commit between `4621c1e` (Phase 7) and `3e207e5` (Phase 25) states a phase number. The work in that window, in order, is real and shipped: auth/onboarding/route-guard hardening (`aa6aa66`…`b1ae113`), class creation and class feed completion, class chat (`c5d8d03`), teacher profiles + friendships (`276efe3`), account switching (`9ab9f8b`), the "premium" UI redesign run (`19c9059`, `1800744`, `b2f6fcd`, `7972e1b`, `c85eb42`, `657f7aa`), production hardening (`b4aeeb9`), notification center (`979a3de`), transaction read-before-write ordering (`0fcaad1`), the adaptive study engine and review sessions (`1b0eeb7`), moderation infrastructure (`2fdb5b5`), the interleaved study rating feed (`d1e5f50`), question metadata + multiple choice + feed filters (`936344f`), the personalized learning hub (`e5a57b7`), the daily practice plan (`e3d283f`), and a P0/P1 release-hardening pass (`b0dcc14`). Also in this window: the adaptive question feed (`0e0c4a7`) and the teacher class performance dashboard (`38c39e9`), both after Phase 25's engine landed.
