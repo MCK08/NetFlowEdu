@@ -15,6 +15,8 @@ import { colors } from "@theme/colors";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
 
+import { InterventionOutcomeCard } from "../components/InterventionOutcomeCard";
+import { useInterventionEffectiveness } from "../hooks/useInterventionEffectiveness";
 import { useStudentPerformanceDetail } from "../hooks/useStudentPerformanceDetail";
 import { buildStudentAttentionInsight } from "../services/studentAttention";
 import { resolveStudentInterventionTopic } from "../services/teacherIntervention";
@@ -76,10 +78,21 @@ function formatLastStudied(timestampMs: number | null): string {
 // happens in the composer the teacher then confirms, through the same
 // create path the follow-up flow has always used.
 export function StudentPerformanceScreen({ classId, studentId, studentName }: StudentPerformanceScreenProps) {
-  const { snapshot, isLoading, error, refresh } = useStudentPerformanceDetail(classId, studentId);
+  const { snapshot, items, isLoading, error, refresh } = useStudentPerformanceDetail(classId, studentId);
   const attention = useMemo(
     () => (snapshot ? buildStudentAttentionInsight(snapshot, Date.now()) : null),
     [snapshot],
+  );
+
+  // Phase 44 — whether the last assignment actually delivered to this
+  // student moved anything. Reads `items` (the SAME study items the snapshot
+  // above is built from) rather than fetching them again; its own 2 reads
+  // are the class's assignments plus this student's one submission doc.
+  // Non-fatal: an error here leaves the rest of the screen untouched.
+  const { intervention, result: interventionOutcome } = useInterventionEffectiveness(
+    classId,
+    studentId,
+    items,
   );
 
   // Phase 43 — the single topic a student-level intervention should be
@@ -211,6 +224,15 @@ export function StudentPerformanceScreen({ classId, studentId, studentName }: St
               <Text style={styles.bodyTextMuted}>son 14 gün içinde</Text>
             </Card>
           </View>
+
+          {/* Phase 44 — the result of the LAST intervention, placed directly
+              above the diagnosis that offers to create the next one: a
+              teacher deciding whether to intervene again should first see
+              whether the previous one landed. Rendered only when this
+              student was actually targeted by a delivered assignment. */}
+          {intervention && interventionOutcome ? (
+            <InterventionOutcomeCard result={interventionOutcome} title={intervention.title} />
+          ) : null}
 
           {/* Phase 42 — the distinction the dashboard could not previously
               draw: repeated, unresolved struggle on the SAME question vs a
