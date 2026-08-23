@@ -674,3 +674,357 @@ describe("buildAdaptivePracticePlan — mastery/recency reorder WITHIN a tier (�
     ).not.toThrow();
   });
 });
+
+// Phase 45 — cumulative struggle history as the FINAL tie-break, once
+// mastery band and recency (both topic-level, so two questions in the same
+// topic always share them) have already failed to distinguish a pair.
+describe("buildAdaptivePracticePlan — Phase 45: cumulative struggle history tie-break", () => {
+  // A real Phase 41 OutcomeHistory shape — helper only, not a new fixture
+  // concept: attemptCount always equals the sum, matching resolveOutcomeHistory's
+  // own completeness rule, so this always describes TRUSTWORTHY history.
+  function outcomeHistory(solvedCount: number, struggledCount: number, againCount = 0) {
+    return {
+      solvedCount,
+      struggledCount,
+      againCount,
+      knownOutcomeCount: solvedCount + struggledCount + againCount,
+    };
+  }
+
+  // A. CORE — the exact regression fixture the audit demonstrated: two
+  // questions with identical current-state signals (same lastOutcome,
+  // status, successfulReviews, topic — so identical mastery band and
+  // recency) but materially different cumulative struggle histories were
+  // PREVIOUSLY TIED (fell through to nextReviewAt/id, arbitrary relative to
+  // actual struggle severity). Question A (8/10 struggle) must now rank
+  // ahead of Question B (2/10 struggle).
+  //
+  // IDs are chosen so alphabetical order (the old fallback tie-break)
+  // DISAGREES with struggle-severity order — "alpha-light-struggle" sorts
+  // before "zulu-heavy-struggle" by id alone, so the PRE-Phase-45 baseline
+  // test below provably picks the WRONG (low-struggle) question first, and
+  // this test provably picks the right one, rather than the two assertions
+  // coincidentally agreeing.
+  it("A/CORE — 8/10 struggle ranks ahead of 2/10 struggle when current-state signals are identical", () => {
+    const common = {
+      subject: "Matematik",
+      topic: "Denklemler",
+      lastOutcome: "struggled" as const,
+      status: "review" as const,
+      successfulReviews: 1,
+      lastReviewedAt: NOW - DAY_MS,
+      nextReviewAt: NOW + DAY_MS,
+    };
+    const heavyStruggle = item({
+      ...common,
+      questionId: "zulu-heavy-struggle",
+      // attemptCount not modeled on LearningInsightItem directly — history
+      // is resolved upstream (useLearningInsights.ts) and carried as-is.
+      outcomeHistory: outcomeHistory(2, 8),
+    });
+    const lightStruggle = item({
+      ...common,
+      questionId: "alpha-light-struggle",
+      outcomeHistory: outcomeHistory(8, 2),
+    });
+    const items = [lightStruggle, heavyStruggle]; // input order must not matter
+    const plan = buildAdaptivePracticePlan({
+      items,
+      weakTopics: [],
+      topicInsights: topicInsightsFor(items),
+      now: NOW,
+      reviewedToday: 0,
+      dailyGoal: 10,
+    });
+    expect(plan.planItems.map((p) => p.questionId)).toEqual([
+      "zulu-heavy-struggle",
+      "alpha-light-struggle",
+    ]);
+  });
+
+  // Same fixture, but PRE-Phase-45 semantics (no outcomeHistory at all):
+  // documents the exact tie this phase resolves — order falls back to
+  // nextReviewAt/id, so the LOW-struggle question (alphabetically first)
+  // wins, with no regard to which question actually struggled more.
+  it("PRE-PHASE-45 BASELINE — without outcomeHistory, the same two questions were an arbitrary tie decided by id, not struggle severity", () => {
+    const common = {
+      subject: "Matematik",
+      topic: "Denklemler",
+      lastOutcome: "struggled" as const,
+      status: "review" as const,
+      successfulReviews: 1,
+      lastReviewedAt: NOW - DAY_MS,
+      nextReviewAt: NOW + DAY_MS,
+    };
+    const heavyStruggle = item({ ...common, questionId: "zulu-heavy-struggle" });
+    const lightStruggle = item({ ...common, questionId: "alpha-light-struggle" });
+    const items = [lightStruggle, heavyStruggle];
+    const plan = buildAdaptivePracticePlan({
+      items,
+      weakTopics: [],
+      topicInsights: topicInsightsFor(items),
+      now: NOW,
+      reviewedToday: 0,
+      dailyGoal: 10,
+    });
+    // Identical nextReviewAt -> falls to questionId ascending: the LIGHT
+    // struggle question wins purely because "alpha" < "zulu" — the exact
+    // arbitrary-relative-to-severity behavior Phase 45 fixes above.
+    expect(plan.planItems.map((p) => p.questionId)).toEqual([
+      "alpha-light-struggle",
+      "zulu-heavy-struggle",
+    ]);
+  });
+
+  // B. LEGACY — neither side has trustworthy history: exact old fallback
+  // behavior (nextReviewAt/id), never treated as "0 struggles" for either.
+  it("B/LEGACY — two legacy items (no outcomeHistory) preserve the exact pre-Phase-45 fallback order", () => {
+    const items = [
+      item({ questionId: "legacyB", lastOutcome: "struggled", nextReviewAt: NOW + DAY_MS }),
+      item({ questionId: "legacyA", lastOutcome: "struggled", nextReviewAt: NOW + DAY_MS }),
+    ];
+    const plan = buildAdaptivePracticePlan({
+      items,
+      weakTopics: [],
+      topicInsights: topicInsightsFor(items),
+      now: NOW,
+      reviewedToday: 0,
+      dailyGoal: 10,
+    });
+    expect(plan.planItems.map((p) => p.questionId)).toEqual(["legacyA", "legacyB"]);
+  });
+
+  // Mixed: one side trustworthy, one side legacy — incomparable, so the
+  // struggle tie-break must not apply at all (never substitutes 0 for the
+  // legacy side), falling through to the base tie-break unchanged.
+  it("LEGACY MIX — one item with real history and one without never has the legacy side treated as zero struggles", () => {
+    const items = [
+      item({
+        questionId: "has-history",
+        lastOutcome: "struggled",
+        nextReviewAt: NOW + DAY_MS,
+        outcomeHistory: outcomeHistory(0, 8),
+      }),
+      item({ questionId: "legacy-no-history", lastOutcome: "struggled", nextReviewAt: NOW + DAY_MS }),
+    ];
+    const plan = buildAdaptivePracticePlan({
+      items,
+      weakTopics: [],
+      topicInsights: topicInsightsFor(items),
+      now: NOW,
+      reviewedToday: 0,
+      dailyGoal: 10,
+    });
+    // Falls to id-ascending (compareByReviewOrder), NOT to "has-history"
+    // automatically winning just because it is the only side with data.
+    expect(plan.planItems.map((p) => p.questionId)).toEqual(["has-history", "legacy-no-history"]);
+  });
+
+  // C. SAME HISTORY — genuinely tied cumulative evidence still resolves via
+  // the existing deterministic tie-breaker (nextReviewAt/id), not a coin
+  // flip.
+  it("C/SAME-HISTORY — identical struggledCount falls through to the existing deterministic tie-breaker", () => {
+    const items = [
+      item({
+        questionId: "b",
+        lastOutcome: "struggled",
+        nextReviewAt: NOW + DAY_MS,
+        outcomeHistory: outcomeHistory(3, 4),
+      }),
+      item({
+        questionId: "a",
+        lastOutcome: "struggled",
+        nextReviewAt: NOW + DAY_MS,
+        outcomeHistory: outcomeHistory(1, 4),
+      }),
+    ];
+    const plan = buildAdaptivePracticePlan({
+      items,
+      weakTopics: [],
+      topicInsights: topicInsightsFor(items),
+      now: NOW,
+      reviewedToday: 0,
+      dailyGoal: 10,
+    });
+    expect(plan.planItems.map((p) => p.questionId)).toEqual(["a", "b"]);
+  });
+
+  // D. RECOVERY SAFETY — high lifetime struggle but CURRENTLY solved
+  // (excluded from the struggled tier entirely by tier membership, which
+  // this phase never touches) must not outrank an item genuinely still
+  // struggling now. The "recovered" item cannot even reach this
+  // comparator's struggled-tier comparison at all, because it never enters
+  // that tier (isActive / lastOutcome === "struggled" gates membership).
+  it("D/RECOVERY — a historically-heavy-struggle item that is now solved never displaces a currently-struggling item from the struggled tier", () => {
+    const recoveredButHeavyHistory = item({
+      questionId: "recovered",
+      subject: "Matematik",
+      topic: "Denklemler",
+      lastOutcome: "solved",
+      status: "review",
+      successfulReviews: 2,
+      nextReviewAt: NOW + 5 * DAY_MS,
+      outcomeHistory: outcomeHistory(2, 8),
+    });
+    const currentlyStruggling = item({
+      questionId: "still-struggling",
+      subject: "Matematik",
+      topic: "Denklemler",
+      lastOutcome: "struggled",
+      status: "review",
+      successfulReviews: 0,
+      nextReviewAt: NOW + DAY_MS,
+      outcomeHistory: outcomeHistory(0, 4),
+    });
+    const items = [recoveredButHeavyHistory, currentlyStruggling];
+    const plan = buildAdaptivePracticePlan({
+      items,
+      weakTopics: [],
+      topicInsights: topicInsightsFor(items),
+      now: NOW,
+      reviewedToday: 0,
+      dailyGoal: 10,
+    });
+    const struggledOrder = plan.planItems.filter((p) => p.reason === "struggled").map((p) => p.questionId);
+    // "recovered" never appears here: lastOutcome !== "struggled" excludes
+    // it from the struggled tier regardless of its lifetime history.
+    expect(struggledOrder).toEqual(["still-struggling"]);
+  });
+
+  // E. ONE-OFF — a single struggle does not acquire an exaggerated
+  // advantage over strong persistent evidence; plain ordered comparison
+  // (8 > 1) already produces the correct relative order without any new
+  // "persistent" threshold.
+  it("E/ONE-OFF — 1/1 struggle does not outrank 8/10 persistent struggle evidence", () => {
+    const common = {
+      subject: "Matematik",
+      topic: "Denklemler",
+      lastOutcome: "struggled" as const,
+      status: "review" as const,
+      successfulReviews: 1,
+      nextReviewAt: NOW + DAY_MS,
+    };
+    const persistent = item({ ...common, questionId: "persistent", outcomeHistory: outcomeHistory(2, 8) });
+    const oneOff = item({ ...common, questionId: "one-off", outcomeHistory: outcomeHistory(0, 1) });
+    const items = [oneOff, persistent];
+    const plan = buildAdaptivePracticePlan({
+      items,
+      weakTopics: [],
+      topicInsights: topicInsightsFor(items),
+      now: NOW,
+      reviewedToday: 0,
+      dailyGoal: 10,
+    });
+    expect(plan.planItems.map((p) => p.questionId)).toEqual(["persistent", "one-off"]);
+  });
+
+  // F. DUE — due items are never enumerated/sorted by adaptiveComparator at
+  // all (buildTieredPlan only counts them, tier 1); the struggle tie-break
+  // cannot affect due priority because it is only ever consulted for the
+  // non-due tiers 2-4.
+  it("F/DUE — a due item's priority is untouched: it is never compared by the struggle tie-break at all", () => {
+    const dueItem = item({
+      questionId: "due-now",
+      nextReviewAt: NOW - 1,
+      outcomeHistory: outcomeHistory(0, 1),
+    });
+    const nonDueHeavyStruggle = item({
+      questionId: "not-due-heavy-struggle",
+      nextReviewAt: NOW + DAY_MS,
+      lastOutcome: "struggled",
+      outcomeHistory: outcomeHistory(0, 9),
+    });
+    const items = [dueItem, nonDueHeavyStruggle];
+    const plan = buildAdaptivePracticePlan({
+      items,
+      weakTopics: [],
+      topicInsights: topicInsightsFor(items),
+      now: NOW,
+      reviewedToday: 0,
+      dailyGoal: 10,
+    });
+    // Due items are a count, never enumerated in planItems — heavy struggle
+    // evidence on a NON-due item can never promote it ahead of a due
+    // obligation, because due membership is decided before any comparator
+    // runs.
+    expect(plan.dueCount).toBe(1);
+    expect(plan.planItems.map((p) => p.questionId)).toEqual(["not-due-heavy-struggle"]);
+  });
+
+  // G. PLAN SIZE — unchanged: the struggle tie-break only reorders within a
+  // tier, it never changes how many items are admitted.
+  it("G/PLAN-SIZE — MAX_PLAN_ITEMS cap is unaffected by the new tie-break", () => {
+    const items = Array.from({ length: MAX_PLAN_ITEMS + 3 }, (_, i) =>
+      item({
+        questionId: `q${i}`,
+        lastOutcome: "struggled",
+        nextReviewAt: NOW + DAY_MS,
+        outcomeHistory: outcomeHistory(0, i),
+      }),
+    );
+    const plan = buildAdaptivePracticePlan({
+      items,
+      weakTopics: [],
+      topicInsights: topicInsightsFor(items),
+      now: NOW,
+      reviewedToday: 0,
+      dailyGoal: 100,
+    });
+    expect(plan.planItems.length).toBe(MAX_PLAN_ITEMS);
+  });
+
+  // H. DEDUPE — unchanged: still exactly one entry per question.
+  it("H/DEDUPE — still exactly one planItem per question with the new tie-break active", () => {
+    const items = [
+      item({ questionId: "dup", lastOutcome: "struggled", outcomeHistory: outcomeHistory(0, 3) }),
+      item({ questionId: "dup", lastOutcome: "struggled", outcomeHistory: outcomeHistory(0, 3) }),
+    ];
+    const plan = buildAdaptivePracticePlan({
+      items,
+      weakTopics: [],
+      topicInsights: topicInsightsFor(items),
+      now: NOW,
+      reviewedToday: 0,
+      dailyGoal: 10,
+    });
+    const ids = plan.planItems.map((p) => p.questionId);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  // I. NO MUTATION.
+  it("I/NO-MUTATION — does not mutate outcomeHistory-bearing inputs", () => {
+    const items = [
+      item({ questionId: "a", lastOutcome: "struggled", outcomeHistory: outcomeHistory(1, 4) }),
+      item({ questionId: "b", lastOutcome: "struggled", outcomeHistory: outcomeHistory(2, 3) }),
+    ];
+    const itemsCopy = items.map((i) => ({ ...i, outcomeHistory: i.outcomeHistory ? { ...i.outcomeHistory } : null }));
+    buildAdaptivePracticePlan({
+      items,
+      weakTopics: [],
+      topicInsights: topicInsightsFor(items),
+      now: NOW,
+      reviewedToday: 0,
+      dailyGoal: 10,
+    });
+    expect(items).toEqual(itemsCopy);
+  });
+
+  // J. DETERMINISM.
+  it("J/DETERMINISM — same input with real outcomeHistory always produces the same order", () => {
+    const items = [
+      item({ questionId: "a", lastOutcome: "struggled", outcomeHistory: outcomeHistory(1, 6) }),
+      item({ questionId: "b", lastOutcome: "struggled", outcomeHistory: outcomeHistory(4, 3) }),
+    ];
+    const params = {
+      items,
+      weakTopics: [],
+      topicInsights: topicInsightsFor(items),
+      now: NOW,
+      reviewedToday: 0,
+      dailyGoal: 10,
+    };
+    const first = buildAdaptivePracticePlan(params).planItems.map((p) => p.questionId);
+    const second = buildAdaptivePracticePlan(params).planItems.map((p) => p.questionId);
+    expect(first).toEqual(second);
+  });
+});

@@ -267,10 +267,53 @@ export function buildAdaptivePracticePlan(params: BuildAdaptivePracticePlanParam
     const recencyDelta = recencyRankOf(a, topicA, now) - recencyRankOf(b, topicB, now);
     if (recencyDelta !== 0) return recencyDelta;
 
+    // Phase 45 — two questions can share an identical mastery band and
+    // recency bucket (both are TOPIC-level signals; two questions in the
+    // same topic always share them) while having genuinely different
+    // struggle histories: a question failed 8 times out of 10 attempts read
+    // identically to one failed 2 times out of 10, because both layers
+    // above only ever see the topic's aggregate state or each item's single
+    // most recent outcome — never the per-question EVENT count Phase 41
+    // already records. This is the one place that count is allowed to
+    // matter: strictly as a tie-breaker, only once mastery and recency have
+    // already failed to distinguish the pair, and only ever REORDERING
+    // within whatever tier/eligibility the existing rules above already
+    // placed both items into — it can never move a question into a
+    // different tier or override a real mastery/recency difference.
+    const struggleRankA = questionStruggleRankOf(a);
+    const struggleRankB = questionStruggleRankOf(b);
+    // Trustworthy on BOTH sides or not compared at all — a legacy item with
+    // no complete counter history (Phase 41's own completeness rule) must
+    // never be ranked as if it had zero struggles, so an incomparable pair
+    // simply falls through to the existing tie-breaker below unchanged.
+    if (struggleRankA !== null && struggleRankB !== null) {
+      const struggleDelta = struggleRankA - struggleRankB;
+      if (struggleDelta !== 0) return struggleDelta;
+    }
+
     return compareByReviewOrder(a, b);
   }
 
   return buildTieredPlan({ ...params, comparator: adaptiveComparator });
+}
+
+// Lower = more struggle events = sorts first, the same "lower is more
+// urgent" convention masteryRankOf/recencyRankOf already use. null — never
+// 0 — when this item's counters are not trustworthy (Phase 41's
+// completeness rule, resolved once upstream by resolveOutcomeHistory and
+// carried here via LearningInsightItem.outcomeHistory): the tie-break above
+// only ever compares two ranks that are both real.
+//
+// Deliberately `struggledCount` only, matching TopicInsight's own
+// struggledAttemptCount (learningInsights.ts) and studentAttention.ts's
+// Phase 42 copy — "again" is the student asking to see a card again in ten
+// minutes, not a report of difficulty (reviewScheduler.ts treats it as a
+// full reset, not a one-day setback like "struggled"), so it is not treated
+// as equivalent evidence of struggle here either.
+function questionStruggleRankOf(item: LearningInsightItem): number | null {
+  const history = item.outcomeHistory;
+  if (!history) return null;
+  return -history.struggledCount;
 }
 
 // Lower index = worse (needs attention sooner) = sorts first. A topic with
