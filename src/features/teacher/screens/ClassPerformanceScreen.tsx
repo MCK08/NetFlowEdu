@@ -187,6 +187,12 @@ export function ClassPerformanceScreen({ classId }: ClassPerformanceScreenProps)
     topic?: string;
     gradeLevel?: string | null;
     studentIds?: readonly string[];
+    // Phase 44 — set ONLY by openTargetedAssignmentForHotspot below, never
+    // by the bare "+ Yeni" button. Not inferred from subject/topic/
+    // studentIds being present — this same function is the ordinary create
+    // path too, which can legitimately carry all three without being an
+    // intervention.
+    isIntervention?: boolean;
   }) {
     const params: { classId: string } & Record<string, string> = { classId };
     if (options?.subject) params.subject = options.subject;
@@ -195,6 +201,7 @@ export function ClassPerformanceScreen({ classId }: ClassPerformanceScreenProps)
     if (options?.studentIds && options.studentIds.length > 0) {
       params.studentIds = options.studentIds.join(",");
     }
+    if (options?.isIntervention) params.intervention = "1";
     router.push({ pathname: "/(teacher)/class/[classId]/assignment/create", params });
   }
 
@@ -304,6 +311,7 @@ export function ClassPerformanceScreen({ classId }: ClassPerformanceScreenProps)
       topic: hotspot.topic,
       gradeLevel: hotspot.gradeLevel,
       studentIds,
+      isIntervention: true,
     });
   }
 

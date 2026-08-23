@@ -24,6 +24,7 @@ function assignment(id: string, overrides: Partial<Assignment> = {}): Assignment
     status: "published",
     createdAt: 0,
     updatedAt: 0,
+    interventionOf: null,
     ...overrides,
   };
 }

@@ -49,6 +49,12 @@ export function useCreateAssignment(params: {
   classId: string;
   organizationId: string | null;
   teacherId: string | undefined;
+  // Phase 44 — true only when this composer instance was opened from one of
+  // the two explicit Phase 43 intervention CTAs (see CreateAssignmentScreen's
+  // own prop of the same name for the full contract). Determines ONLY
+  // whether publish() writes interventionOf — never affects question
+  // selection, targeting, or due-date logic.
+  isIntervention?: boolean;
 }) {
   const [isPreparing, setIsPreparing] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
@@ -214,6 +220,15 @@ export function useCreateAssignment(params: {
         questionIds,
         dueAt: input.dueAt,
         status: input.status,
+        // Phase 44 — the ACTUAL published subject/topic, not the route
+        // prefill: the teacher can change either before publishing (§10 "DO
+        // NOT AUTO-PUBLISH", the same suggestion-not-lock contract every
+        // other prefill in this app follows), so recording anything else
+        // would attribute the intervention to a topic it was never actually
+        // published for.
+        interventionOf: params.isIntervention
+          ? { subject: preparedSubject, topic: preparedTopic }
+          : null,
       });
       return assignmentId;
     } catch (err) {

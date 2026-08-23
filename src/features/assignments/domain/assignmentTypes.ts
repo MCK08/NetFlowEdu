@@ -55,6 +55,22 @@ export interface Assignment {
   status: AssignmentStatus;
   createdAt: number;
   updatedAt: number;
+  // Phase 44 — attribution marker ONLY, set exclusively by the two explicit
+  // Phase 43 intervention entry points (StudentPerformanceScreen's
+  // "Takip Ödevi Oluştur" and ClassPerformanceScreen's topic-hotspot
+  // targeted assignment) — never inferred from subject/topic/studentIds
+  // being present, since ordinary assignments can carry those too. null for
+  // every assignment created any other way, including AssignmentDetailScreen's
+  // own pre-existing (Phase 30/31) per-assignment follow-up flow, which is a
+  // different mechanism (reacting to one assignment's own weak outcomes, not
+  // Phase 42's persistent-struggle classifier) and does not set this.
+  //
+  // Deliberately NOT a causal claim, NOT an effectiveness verdict, and NOT a
+  // diagnosis snapshot — just "this assignment was intentionally created
+  // from an intervention diagnosis for this subject/topic". Frozen after
+  // creation (firestore.rules' update rule), exactly like every other field
+  // that defines what the assignment IS.
+  interventionOf: { subject: string; topic: string } | null;
 }
 
 export interface AssignmentSubmission {

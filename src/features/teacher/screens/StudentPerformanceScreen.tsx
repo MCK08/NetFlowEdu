@@ -119,6 +119,12 @@ export function StudentPerformanceScreen({ classId, studentId, studentName }: St
       subject: interventionTopic.subject,
       topic: interventionTopic.topic,
       studentIds: studentId,
+      // Phase 44 — the explicit intervention marker (see
+      // CreateAssignmentScreen's isIntervention prop). This IS the gate
+      // interventionTopic already is: only rendered/reachable when
+      // resolveStudentInterventionTopic found real evidence, never guessed
+      // from these params alone.
+      intervention: "1",
     };
     if (interventionTopic.gradeLevel) params.gradeLevel = interventionTopic.gradeLevel;
     router.push({ pathname: "/(teacher)/class/[classId]/assignment/create", params });

@@ -3968,6 +3968,71 @@ describe("firestore.rules — assignments/{assignmentId} and submissions (Phase 
     );
   });
 
+  // ---- Phase 44 — explicit intervention attribution -----------------------
+  //
+  // interventionOf is not a security boundary (it grants nothing — see
+  // interventionEffectiveness.ts's own header) but its shape is validated at
+  // the same strictness as every other assignment field, and it is frozen
+  // after creation exactly like questionIds/targetStudentIds.
+
+  it("[Phase 44] a normal assignment with no interventionOf field at all is a valid create (the field is optional)", async () => {
+    await seedClass("class-1", "teacher-1");
+    const teacher = teacherCtx("teacher-1");
+    await assertSucceeds(addDoc(collection(teacher.firestore(), "assignments"), assignmentDoc()));
+  });
+
+  it("[Phase 44] interventionOf: null is a valid create, identical to omitting it", async () => {
+    await seedClass("class-1", "teacher-1");
+    const teacher = teacherCtx("teacher-1");
+    await assertSucceeds(
+      addDoc(collection(teacher.firestore(), "assignments"), assignmentDoc({ interventionOf: null })),
+    );
+  });
+
+  it("[Phase 44] a well-formed interventionOf {subject, topic} is a valid create", async () => {
+    await seedClass("class-1", "teacher-1");
+    const teacher = teacherCtx("teacher-1");
+    await assertSucceeds(
+      addDoc(
+        collection(teacher.firestore(), "assignments"),
+        assignmentDoc({ interventionOf: { subject: "Matematik", topic: "Denklemler" } }),
+      ),
+    );
+  });
+
+  it("[Phase 44] denies interventionOf missing its topic", async () => {
+    await seedClass("class-1", "teacher-1");
+    const teacher = teacherCtx("teacher-1");
+    await assertFails(
+      addDoc(
+        collection(teacher.firestore(), "assignments"),
+        assignmentDoc({ interventionOf: { subject: "Matematik" } }),
+      ),
+    );
+  });
+
+  it("[Phase 44] denies an empty-string subject inside interventionOf", async () => {
+    await seedClass("class-1", "teacher-1");
+    const teacher = teacherCtx("teacher-1");
+    await assertFails(
+      addDoc(
+        collection(teacher.firestore(), "assignments"),
+        assignmentDoc({ interventionOf: { subject: "", topic: "Denklemler" } }),
+      ),
+    );
+  });
+
+  it("[Phase 44] denies interventionOf as a plain string instead of a map", async () => {
+    await seedClass("class-1", "teacher-1");
+    const teacher = teacherCtx("teacher-1");
+    await assertFails(
+      addDoc(
+        collection(teacher.firestore(), "assignments"),
+        assignmentDoc({ interventionOf: "Denklemler" }),
+      ),
+    );
+  });
+
   // ---- read -----------------------------------------------------------------
 
   it("lets the owning teacher read their own class's assignment", async () => {
@@ -4056,6 +4121,50 @@ describe("firestore.rules — assignments/{assignmentId} and submissions (Phase 
     await seedAssignment("a1");
     const student = studentCtx("student-1");
     await assertFails(updateDoc(doc(student.firestore(), "assignments", "a1"), { status: "archived" }));
+  });
+
+  // Phase 44 — interventionOf is frozen exactly like questionIds/
+  // targetStudentIds: a teacher (or a bug) must never be able to
+  // retroactively mark an ordinary assignment as an intervention, or the
+  // reverse, after the fact.
+  it("[Phase 44] denies adding interventionOf to an assignment that was created without it", async () => {
+    await seedClass("class-1", "teacher-1");
+    await seedAssignment("a1"); // no interventionOf — a genuine legacy shape
+    const teacher = teacherCtx("teacher-1");
+    await assertFails(
+      updateDoc(doc(teacher.firestore(), "assignments", "a1"), {
+        interventionOf: { subject: "Matematik", topic: "Denklemler" },
+      }),
+    );
+  });
+
+  it("[Phase 44] denies changing an existing interventionOf to a different topic", async () => {
+    await seedClass("class-1", "teacher-1");
+    await seedAssignment("a1", { interventionOf: { subject: "Matematik", topic: "Denklemler" } });
+    const teacher = teacherCtx("teacher-1");
+    await assertFails(
+      updateDoc(doc(teacher.firestore(), "assignments", "a1"), {
+        interventionOf: { subject: "Fizik", topic: "Optik" },
+      }),
+    );
+  });
+
+  it("[Phase 44] denies clearing interventionOf back to null on update", async () => {
+    await seedClass("class-1", "teacher-1");
+    await seedAssignment("a1", { interventionOf: { subject: "Matematik", topic: "Denklemler" } });
+    const teacher = teacherCtx("teacher-1");
+    await assertFails(
+      updateDoc(doc(teacher.firestore(), "assignments", "a1"), { interventionOf: null }),
+    );
+  });
+
+  it("[Phase 44] a legacy assignment with no interventionOf field can still be archived (the known-artifact status-only update path)", async () => {
+    await seedClass("class-1", "teacher-1");
+    await seedAssignment("a1"); // no interventionOf field at all, exactly like a pre-Phase-44 document
+    const teacher = teacherCtx("teacher-1");
+    await assertSucceeds(
+      updateDoc(doc(teacher.firestore(), "assignments", "a1"), { status: "archived" }),
+    );
   });
 
   it("lets the owning teacher delete their own assignment", async () => {

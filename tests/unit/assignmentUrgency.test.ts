@@ -46,6 +46,7 @@ function assignment(overrides: Partial<Assignment> = {}): Assignment {
     status: "published",
     createdAt: NOW - 7 * DAY_MS,
     updatedAt: NOW - 7 * DAY_MS,
+    interventionOf: null,
     ...overrides,
   };
 }

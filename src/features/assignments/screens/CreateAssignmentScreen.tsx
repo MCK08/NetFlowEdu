@@ -31,6 +31,16 @@ interface CreateAssignmentScreenProps {
   // change it" suggestion contract as initialTopic (§12 "DO NOT
   // AUTO-PUBLISH" — this only prefills the form, never submits it).
   initialTargetStudentIds?: string;
+  // Phase 44 — true ONLY when this screen was opened from one of the two
+  // explicit Phase 43 intervention CTAs (StudentPerformanceScreen's
+  // persistent-struggle "Takip Ödevi Oluştur", ClassPerformanceScreen's
+  // topic-hotspot targeted assignment). Deliberately a separate, narrow
+  // prop rather than inferred from initialTopic/initialTargetStudentIds
+  // being present — AssignmentDetailScreen's own (Phase 30/31) follow-up
+  // CTA sends those same params for a completely different reason (reacting
+  // to one assignment's own weak outcomes, not Phase 42's persistent-struggle
+  // classifier) and must NOT be attributed as an intervention.
+  isIntervention?: boolean;
 }
 
 const MAX_TITLE_LENGTH = 80;
@@ -75,6 +85,7 @@ export function CreateAssignmentScreen({
   initialTopic,
   initialGradeLevel,
   initialTargetStudentIds,
+  isIntervention,
 }: CreateAssignmentScreenProps) {
   const { firebaseUser } = useAuth();
   const [organizationId, setOrganizationId] = useState<string | null>(null);
@@ -98,6 +109,7 @@ export function CreateAssignmentScreen({
     classId,
     organizationId,
     teacherId: firebaseUser?.uid,
+    isIntervention,
   });
 
   const [title, setTitle] = useState("");

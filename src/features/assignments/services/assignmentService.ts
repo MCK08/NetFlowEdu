@@ -36,6 +36,19 @@ function toMillis(value: unknown): number {
   return value instanceof Timestamp ? value.toMillis() : 0;
 }
 
+// Phase 44 — defensive exactly like every other field here: a malformed or
+// legacy (pre-Phase-44) document must resolve to null, never a fabricated
+// subject/topic. Absence is not evidence the assignment ISN'T an
+// intervention that predates this field — see interventionEffectiveness.ts's
+// selectMostRecentIntervention for how the legacy fallback handles that.
+function toInterventionOf(value: unknown): { subject: string; topic: string } | null {
+  if (!value || typeof value !== "object") return null;
+  const data = value as Record<string, unknown>;
+  if (typeof data.subject !== "string" || data.subject.length === 0) return null;
+  if (typeof data.topic !== "string" || data.topic.length === 0) return null;
+  return { subject: data.subject, topic: data.topic };
+}
+
 function toAssignment(id: string, data: DocumentData): Assignment {
   return {
     id,
@@ -54,6 +67,7 @@ function toAssignment(id: string, data: DocumentData): Assignment {
     status: data.status === "published" || data.status === "archived" ? data.status : "draft",
     createdAt: toMillis(data.createdAt),
     updatedAt: toMillis(data.updatedAt),
+    interventionOf: toInterventionOf(data.interventionOf),
   };
 }
 
@@ -82,6 +96,12 @@ export interface CreateAssignmentInput {
   questionIds: readonly string[];
   dueAt: number | null;
   status: AssignmentStatus;
+  // Phase 44 — set ONLY by the two explicit Phase 43 intervention CTAs
+  // (see assignmentTypes.ts's Assignment.interventionOf doc comment).
+  // Omitted (undefined) for every ordinary create call — never defaulted to
+  // null here, so a caller that hasn't been updated yet cannot silently
+  // write the field at all rather than writing an explicit "not this one".
+  interventionOf?: { subject: string; topic: string } | null;
 }
 
 export async function createAssignment(input: CreateAssignmentInput): Promise<string> {
@@ -99,6 +119,7 @@ export async function createAssignment(input: CreateAssignmentInput): Promise<st
     targetCount: input.questionIds.length,
     dueAt: input.dueAt,
     status: input.status,
+    interventionOf: input.interventionOf ?? null,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });

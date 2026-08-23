@@ -782,7 +782,26 @@ service cloud.firestore {
                     && request.resource.data.targetStudentIds.size() <= 200
                     && request.resource.data.targetCount == request.resource.data.questionIds.size()
                     && request.resource.data.status in ['draft', 'published']
-                    && (request.resource.data.dueAt == null || request.resource.data.dueAt is number);
+                    && (request.resource.data.dueAt == null || request.resource.data.dueAt is number)
+                    // Phase 44 — the intervention attribution marker. Not a
+                    // security-relevant field (it grants nothing — see
+                    // interventionEffectiveness.ts's own header), but its
+                    // SHAPE is validated at the same strictness as every
+                    // other field here, so a malformed value can never reach
+                    // a client whose parser expects exactly {subject, topic}.
+                    // .get('interventionOf', null) rather than plain dot
+                    // access: the field is OPTIONAL on write (the client
+                    // omits it entirely for an ordinary assignment — see
+                    // assignmentService.ts's createAssignment, and every
+                    // pre-Phase-44 test fixture), and reading a genuinely
+                    // absent key with dot notation is an evaluation ERROR in
+                    // Firestore rules, not null.
+                    && (request.resource.data.get('interventionOf', null) == null
+                        || (request.resource.data.interventionOf is map
+                            && request.resource.data.interventionOf.subject is string
+                            && request.resource.data.interventionOf.subject.size() > 0
+                            && request.resource.data.interventionOf.topic is string
+                            && request.resource.data.interventionOf.topic.size() > 0));
 
       // Everything that defines WHAT the assignment IS (class, org,
       // teacher, subject/topic/grade, the question/target snapshots,
@@ -805,6 +824,22 @@ service cloud.firestore {
                     && request.resource.data.targetStudentIds == resource.data.targetStudentIds
                     && request.resource.data.targetCount == resource.data.targetCount
                     && request.resource.data.createdAt == resource.data.createdAt
+                    // Phase 44 — frozen for the same reason questionIds/
+                    // targetStudentIds are: a teacher (or a bug) must never
+                    // be able to retroactively turn an ordinary assignment
+                    // into an intervention, or vice versa, after the fact.
+                    // .get(key, null) rather than plain dot access: a
+                    // pre-Phase-44 document has no interventionOf field at
+                    // all, and reading a genuinely absent field with dot
+                    // notation is an evaluation ERROR in Storage/Firestore
+                    // rules (not null) — the exact "Property X is undefined
+                    // on object" failure this app's own Phase 33 audit
+                    // already documented for an unrelated list query. .get()
+                    // is the safe, documented way to read a possibly-absent
+                    // key, so updateAssignmentStatus's status-only updates on
+                    // legacy assignments keep working unchanged.
+                    && request.resource.data.get('interventionOf', null)
+                       == resource.data.get('interventionOf', null)
                     && request.resource.data.status in ['draft', 'published', 'archived'];
 
       allow delete: if isSignedIn() && isTeacher() && classData(resource.data.classId).teacherId == uid();

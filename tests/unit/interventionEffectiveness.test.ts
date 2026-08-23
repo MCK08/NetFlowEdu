@@ -487,6 +487,118 @@ describe("selectMostRecentIntervention", () => {
     selectMostRecentIntervention(assignments, "s1");
     expect(assignments.map((a) => a.id)).toEqual(before);
   });
+
+  // Phase 44 — the real bug this rewrite fixes: before explicit metadata
+  // existed, "the intervention" was guessed as simply the most recent
+  // delivered assignment for the student, so an unrelated LATER ordinary
+  // assignment silently hijacked the effectiveness card.
+  describe("Phase 44 — explicit interventionOf attribution", () => {
+    const intervention = { subject: "Matematik", topic: "Denklemler" };
+
+    it("A — legacy-only history (no assignment carries interventionOf) preserves the original heuristic", () => {
+      const picked = selectMostRecentIntervention(
+        [
+          assignment({ id: "old", createdAt: INTERVENTION_AT - 1000 }),
+          assignment({ id: "new", createdAt: INTERVENTION_AT }),
+        ],
+        "s1",
+      );
+      expect(picked?.id).toBe("new");
+    });
+
+    it("B — an explicit intervention is selected over a legacy assignment for the same student", () => {
+      const picked = selectMostRecentIntervention(
+        [
+          assignment({ id: "legacy", createdAt: INTERVENTION_AT + 1000 }),
+          assignment({ id: "real-intervention", createdAt: INTERVENTION_AT, interventionOf: intervention }),
+        ],
+        "s1",
+      );
+      expect(picked?.id).toBe("real-intervention");
+    });
+
+    it("C — explicit intervention, then a NEWER ordinary assignment: the intervention is still selected, not the newer one", () => {
+      const picked = selectMostRecentIntervention(
+        [
+          assignment({ id: "intervention-A", createdAt: INTERVENTION_AT, interventionOf: intervention }),
+          assignment({ id: "ordinary-B", createdAt: INTERVENTION_AT + 60_000, interventionOf: null }),
+        ],
+        "s1",
+      );
+      expect(picked?.id).toBe("intervention-A");
+    });
+
+    it("D — two explicit interventions: the most recent explicit one is selected", () => {
+      const picked = selectMostRecentIntervention(
+        [
+          assignment({ id: "intervention-A", createdAt: INTERVENTION_AT, interventionOf: intervention }),
+          assignment({
+            id: "intervention-C",
+            createdAt: INTERVENTION_AT + 120_000,
+            interventionOf: { subject: "Fizik", topic: "Optik" },
+          }),
+        ],
+        "s1",
+      );
+      expect(picked?.id).toBe("intervention-C");
+    });
+
+    it("E — normal-assignments-only history yields no explicit result, but still returns the legacy pick (never null when real work exists)", () => {
+      const picked = selectMostRecentIntervention(
+        [assignment({ id: "ordinary", interventionOf: null })],
+        "s1",
+      );
+      expect(picked?.id).toBe("ordinary");
+      expect(picked?.interventionOf ?? null).toBeNull();
+    });
+
+    it("F — an explicit intervention for a DIFFERENT student is never cross-attributed", () => {
+      const picked = selectMostRecentIntervention(
+        [
+          assignment({ id: "intervention-for-s2", targetStudentIds: ["s2"], interventionOf: intervention }),
+          assignment({ id: "ordinary-for-s1", targetStudentIds: ["s1"], interventionOf: null }),
+        ],
+        "s1",
+      );
+      expect(picked?.id).toBe("ordinary-for-s1");
+    });
+
+    it("H — a draft explicit intervention is still excluded, exactly like a draft ordinary assignment", () => {
+      const picked = selectMostRecentIntervention(
+        [assignment({ id: "draft-intervention", status: "draft", interventionOf: intervention })],
+        "s1",
+      );
+      expect(picked).toBeNull();
+    });
+
+    it("I — deterministic: same input, same output, repeatable", () => {
+      const assignments = [
+        assignment({ id: "b", createdAt: INTERVENTION_AT, interventionOf: intervention }),
+        assignment({ id: "a", createdAt: INTERVENTION_AT, interventionOf: intervention }),
+      ];
+      expect(selectMostRecentIntervention(assignments, "s1")?.id).toBe(
+        selectMostRecentIntervention(assignments, "s1")?.id,
+      );
+      expect(selectMostRecentIntervention(assignments, "s1")?.id).toBe("a");
+    });
+
+    it("J — does not mutate its input when explicit metadata is present", () => {
+      const assignments = [
+        assignment({ id: "b", interventionOf: intervention }),
+        assignment({ id: "a", createdAt: 1, interventionOf: intervention }),
+      ];
+      const before = assignments.map((a) => a.id);
+      selectMostRecentIntervention(assignments, "s1");
+      expect(assignments.map((a) => a.id)).toEqual(before);
+    });
+
+    it("legacy `undefined` interventionOf (field never migrated) is treated exactly like null, never thrown", () => {
+      const legacy = assignment({ id: "pre-phase-44" });
+      delete (legacy as { interventionOf?: unknown }).interventionOf;
+      expect(() => selectMostRecentIntervention([legacy], "s1")).not.toThrow();
+      expect(selectMostRecentIntervention([legacy], "s1")?.id).toBe("pre-phase-44");
+    });
+  });
 });
 
 describe("toInterventionEvidence — joining the two records", () => {

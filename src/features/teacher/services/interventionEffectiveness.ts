@@ -334,6 +334,30 @@ export interface InterventionAssignment {
   status: string;
   targetStudentIds: readonly string[];
   questionIds: readonly string[];
+  // Phase 44 — the explicit attribution marker (assignmentTypes.ts's
+  // Assignment.interventionOf). null for every assignment NOT created
+  // through one of the two Phase 43 intervention CTAs, including every
+  // assignment created before this field existed. Never read as "false" —
+  // see selectMostRecentIntervention's own doc comment for the legacy
+  // fallback this enables.
+  interventionOf?: { subject: string; topic: string } | null;
+}
+
+function isExplicitIntervention(assignment: InterventionAssignment): boolean {
+  return assignment.interventionOf != null;
+}
+
+function sortMostRecentFirst(
+  assignments: readonly InterventionAssignment[],
+): InterventionAssignment[] {
+  // Most recent first, then id as a deterministic tiebreak — the same
+  // tiebreak convention resolveStudentInterventionTopic and
+  // dailyPracticePlan.ts already use, so two assignments created in the same
+  // millisecond always resolve the same way call after call.
+  return [...assignments].sort((a, b) => {
+    if (a.createdAt !== b.createdAt) return b.createdAt - a.createdAt;
+    return a.id.localeCompare(b.id);
+  });
 }
 
 // Which assignment counts as "the intervention" for one student.
@@ -344,10 +368,17 @@ export interface InterventionAssignment {
 // snapshot (assignmentTypes.ts), so this is the real, checkable record of
 // who the intervention was actually for.
 //
-// Most recent first, then id as a deterministic tiebreak — the same
-// tiebreak convention resolveStudentInterventionTopic and
-// dailyPracticePlan.ts already use, so two assignments created in the same
-// millisecond always resolve the same way call after call.
+// PHASE 44 — explicit evidence beats the legacy heuristic. Before this
+// field existed, "the intervention" was guessed as simply the most recent
+// delivered assignment targeting the student — which an unrelated, later,
+// ordinary assignment would silently hijack. Now: if ANY of the student's
+// eligible assignments carries a real interventionOf, only assignments
+// carrying one are candidates at all, and the most recent of THOSE wins —
+// an ordinary assignment published afterward can never displace it. Only
+// when NONE of the student's eligible assignments has explicit metadata
+// (a fully legacy history, or this student has simply never received an
+// intervention through the new CTAs) does this fall back to the original
+// "most recent, period" heuristic, unchanged from before.
 //
 // Returns null when this student has no delivered assignment at all. The
 // caller then renders nothing rather than an effectiveness card about an
@@ -356,15 +387,14 @@ export function selectMostRecentIntervention(
   assignments: readonly InterventionAssignment[],
   studentUid: string,
 ): InterventionAssignment | null {
-  return (
-    [...assignments]
-      .filter((assignment) => assignment.status !== "draft")
-      .filter((assignment) => assignment.targetStudentIds.includes(studentUid))
-      .sort((a, b) => {
-        if (a.createdAt !== b.createdAt) return b.createdAt - a.createdAt;
-        return a.id.localeCompare(b.id);
-      })[0] ?? null
-  );
+  const eligible = assignments
+    .filter((assignment) => assignment.status !== "draft")
+    .filter((assignment) => assignment.targetStudentIds.includes(studentUid));
+
+  const explicit = eligible.filter(isExplicitIntervention);
+  const pool = explicit.length > 0 ? explicit : eligible;
+
+  return sortMostRecentFirst(pool)[0] ?? null;
 }
 
 // The minimal shape needed from one live study item. Mirrors the fields
