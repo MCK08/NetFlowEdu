@@ -1,4 +1,5 @@
 import { buildRecencySignal } from "@features/study/services/recencySignal";
+import { resolveOutcomeHistory } from "@features/study/services/outcomeCounters";
 import { Question } from "@/types/question";
 
 // The Teacher Action Center's "smart" assignment builder. NOT a second
@@ -38,6 +39,20 @@ export interface TargetedQuestionSignal {
   // The most recent lastReviewedAt across every targeted student who has
   // ever attempted this question — null only when everAttemptedCount is 0.
   mostRecentReviewedAt: number | null;
+  // Phase 46 — the real, cumulative EVENT count of struggled outcomes on
+  // this exact question across every targeted student who has trustworthy
+  // Phase 41 history for it (see outcomeCounters.ts's completeness rule),
+  // summed via resolveOutcomeHistory — never estimated. `struggledCount`
+  // above stays exactly what it always was (a coarse "did the student's
+  // MOST RECENT attempt end in struggle" snapshot, used unchanged to decide
+  // tier membership); this field is a strictly ADDITIONAL signal used only
+  // to order WITHIN that tier. null means no targeted student has
+  // trustworthy history on this question — never fabricated as 0, and
+  // never treated as "less struggled" than a known 0. Historical
+  // (past-assignment) signals never contribute to this field, since
+  // AssignmentSubmission has no cumulative counters of its own — see
+  // buildHistoricalQuestionSignals / mergeQuestionSignals.
+  cumulativeStruggleCount: number | null;
 }
 
 export type SelectionReasonCode = "struggled" | "new_practice" | "stale_topic" | "balanced_mix" | "topic_match";
@@ -91,6 +106,15 @@ function dedupeById(pool: readonly Question[]): Question[] {
     if (!seen.has(question.id)) seen.set(question.id, question);
   }
   return [...seen.values()];
+}
+
+// Higher cumulative struggle count must sort FIRST, so rank it as a
+// negated number — same convention dailyPracticePlan.ts's Phase 45
+// questionStruggleRankOf uses, for the same reason (plain ascending sort,
+// no separate "descending" branch to keep in sync).
+function cumulativeStruggleRankOf(signal: TargetedQuestionSignal | undefined): number | null {
+  if (!signal || signal.cumulativeStruggleCount === null) return null;
+  return -signal.cumulativeStruggleCount;
 }
 
 function stableTiebreak(a: Question, b: Question): number {
@@ -241,6 +265,22 @@ function selectReinforce(
     }
   }
 
+  // Phase 46 — WITHIN the struggled tier only (never changes which tier a
+  // question lands in, never touches newPractice/stale/rest), break ties
+  // using the real cumulative struggle evidence when BOTH sides have
+  // trustworthy history for it. `Array.sort` is stable, so when either
+  // side is null (unknown) the comparator returns 0 and the existing
+  // base-score/newest/id order (already established by eligibleSorted
+  // above) is preserved untouched — exactly the same "only tie-break when
+  // both sides are known" gate dailyPracticePlan.ts's Phase 45 comparator
+  // uses, applied here to the one strategy this phase is scoped to.
+  struggled.sort((a, b) => {
+    const rankA = cumulativeStruggleRankOf(signals.get(a.question.id));
+    const rankB = cumulativeStruggleRankOf(signals.get(b.question.id));
+    if (rankA === null || rankB === null) return 0;
+    return rankA - rankB;
+  });
+
   const ordered = [...struggled, ...newPractice, ...stale, ...rest];
   const reasonByQuestionId = new Map<string, SelectionReasonCode>();
   for (const entry of struggled) reasonByQuestionId.set(entry.question.id, "struggled");
@@ -296,12 +336,29 @@ export function selectSmartAssignmentQuestions(
   }
 }
 
+// One targeted student's own class-sourced study item, exactly the shape
+// getClassSourcedStudyItems already returns (see studyService.ts's
+// StudyItem) — attemptCount plus the Phase 41 counters (optional, same as
+// StudyItem itself, since documents that predate Phase 41 have none) are
+// already present on every call site (useCreateAssignment.ts passes
+// StudyItem[] straight through), so reading them here costs zero
+// additional Firestore reads.
+export interface TargetedStudyItem {
+  questionId: string;
+  lastOutcome: string;
+  lastReviewedAt: number;
+  attemptCount: number;
+  solvedCount?: number | null;
+  struggledCount?: number | null;
+  againCount?: number | null;
+}
+
 // Built from each TARGETED student's own class-sourced StudyItem[] (one
 // read per student — see useCreateAssignment.ts) — never a per-question
 // read. A question absent from the returned map was never attempted by
 // any targeted student at all.
 export function buildTargetedQuestionSignals(
-  studyItemsByStudent: readonly { questionId: string; lastOutcome: string; lastReviewedAt: number }[][],
+  studyItemsByStudent: readonly TargetedStudyItem[][],
 ): Map<string, TargetedQuestionSignal> {
   const signals = new Map<string, TargetedQuestionSignal>();
 
@@ -311,11 +368,26 @@ export function buildTargetedQuestionSignals(
         everAttemptedCount: 0,
         struggledCount: 0,
         mostRecentReviewedAt: null,
+        cumulativeStruggleCount: null,
       };
       existing.everAttemptedCount += 1;
       if (item.lastOutcome === "struggled" || item.lastOutcome === "again") existing.struggledCount += 1;
       if (item.lastReviewedAt > 0 && (existing.mostRecentReviewedAt ?? 0) < item.lastReviewedAt) {
         existing.mostRecentReviewedAt = item.lastReviewedAt;
+      }
+      // Phase 46 — reuses Phase 41's own completeness rule verbatim
+      // (resolveOutcomeHistory), never reimplemented. A student whose
+      // counters don't yet cover this question's full history (or who has
+      // none at all) contributes nothing here — absence stays absence, not
+      // a fabricated 0.
+      const history = resolveOutcomeHistory({
+        attemptCount: item.attemptCount,
+        solvedCount: item.solvedCount ?? null,
+        struggledCount: item.struggledCount ?? null,
+        againCount: item.againCount ?? null,
+      });
+      if (history) {
+        existing.cumulativeStruggleCount = (existing.cumulativeStruggleCount ?? 0) + history.struggledCount;
       }
       signals.set(item.questionId, existing);
     }

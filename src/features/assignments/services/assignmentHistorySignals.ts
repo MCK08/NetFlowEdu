@@ -51,6 +51,7 @@ export function buildHistoricalQuestionSignals(
           everAttemptedCount: 0,
           struggledCount: 0,
           mostRecentReviewedAt: null,
+          cumulativeStruggleCount: null,
         };
         const mostRecentReviewedAt =
           submission.lastCompletedAt !== null
@@ -60,6 +61,12 @@ export function buildHistoricalQuestionSignals(
           everAttemptedCount: previous.everAttemptedCount + 1,
           struggledCount: previous.struggledCount + (outcome === "again" || outcome === "struggled" ? 1 : 0),
           mostRecentReviewedAt,
+          // Phase 46 — a past AssignmentSubmission has no Phase 41
+          // cumulative counters of its own (it stores one frozen outcome
+          // per question, not solved/struggled/again event tallies), so
+          // history-derived signals never claim to know this. Left null,
+          // never estimated from the single outcome above.
+          cumulativeStruggleCount: previous.cumulativeStruggleCount,
         });
       }
     }
@@ -82,11 +89,19 @@ export function mergeQuestionSignals(
     const a = live.get(questionId);
     const b = historical.get(questionId);
     const hasTimestamp = a?.mostRecentReviewedAt != null || b?.mostRecentReviewedAt != null;
+    // Same "absence isn't zero" rule as everywhere else this phase touches:
+    // sum whichever side(s) actually know something, and stay null only
+    // when NEITHER side contributed (mirrors outcomeCounters.ts's own
+    // sumOutcomeCounter contract).
+    const hasCumulativeEvidence = a?.cumulativeStruggleCount != null || b?.cumulativeStruggleCount != null;
     merged.set(questionId, {
       everAttemptedCount: (a?.everAttemptedCount ?? 0) + (b?.everAttemptedCount ?? 0),
       struggledCount: (a?.struggledCount ?? 0) + (b?.struggledCount ?? 0),
       mostRecentReviewedAt: hasTimestamp
         ? Math.max(a?.mostRecentReviewedAt ?? -Infinity, b?.mostRecentReviewedAt ?? -Infinity)
+        : null,
+      cumulativeStruggleCount: hasCumulativeEvidence
+        ? (a?.cumulativeStruggleCount ?? 0) + (b?.cumulativeStruggleCount ?? 0)
         : null,
     });
   }

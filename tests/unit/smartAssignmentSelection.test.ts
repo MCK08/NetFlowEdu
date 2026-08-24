@@ -184,7 +184,7 @@ describe("selectSmartAssignmentQuestions — reinforce (learning relevance)", ()
   it("boosts a question a targeted student struggled with above one nobody has ever seen", () => {
     const pool = [q("struggled"), q("never-seen")];
     const signals = new Map<string, TargetedQuestionSignal>([
-      ["struggled", { everAttemptedCount: 1, struggledCount: 1, mostRecentReviewedAt: NOW - DAY_MS }],
+      ["struggled", { everAttemptedCount: 1, struggledCount: 1, mostRecentReviewedAt: NOW - DAY_MS, cumulativeStruggleCount: null }],
     ]);
     const result = select(pool, 2, "reinforce", signals);
     expect(result.selected[0]?.questionId).toBe("struggled");
@@ -194,7 +194,7 @@ describe("selectSmartAssignmentQuestions — reinforce (learning relevance)", ()
   it("boosts a never-attempted question above one recently solved without struggle", () => {
     const pool = [q("new"), q("recently-solved")];
     const signals = new Map<string, TargetedQuestionSignal>([
-      ["recently-solved", { everAttemptedCount: 2, struggledCount: 0, mostRecentReviewedAt: NOW - DAY_MS }],
+      ["recently-solved", { everAttemptedCount: 2, struggledCount: 0, mostRecentReviewedAt: NOW - DAY_MS, cumulativeStruggleCount: null }],
     ]);
     const result = select(pool, 2, "reinforce", signals);
     expect(result.selected[0]?.questionId).toBe("new");
@@ -204,8 +204,8 @@ describe("selectSmartAssignmentQuestions — reinforce (learning relevance)", ()
   it("boosts a stale (long-unpracticed) topic question above a recently-practiced one", () => {
     const pool = [q("stale"), q("recent")];
     const signals = new Map<string, TargetedQuestionSignal>([
-      ["stale", { everAttemptedCount: 1, struggledCount: 0, mostRecentReviewedAt: NOW - 20 * DAY_MS }],
-      ["recent", { everAttemptedCount: 1, struggledCount: 0, mostRecentReviewedAt: NOW - DAY_MS }],
+      ["stale", { everAttemptedCount: 1, struggledCount: 0, mostRecentReviewedAt: NOW - 20 * DAY_MS, cumulativeStruggleCount: null }],
+      ["recent", { everAttemptedCount: 1, struggledCount: 0, mostRecentReviewedAt: NOW - DAY_MS, cumulativeStruggleCount: null }],
     ]);
     const result = select(pool, 2, "reinforce", signals);
     expect(result.selected[0]?.questionId).toBe("stale");
@@ -215,8 +215,8 @@ describe("selectSmartAssignmentQuestions — reinforce (learning relevance)", ()
   it("deprioritizes a recently-mastered (solved, no struggle, recent) question to the back", () => {
     const pool = [q("mastered-recent"), q("struggling"), q("fresh")];
     const signals = new Map<string, TargetedQuestionSignal>([
-      ["mastered-recent", { everAttemptedCount: 3, struggledCount: 0, mostRecentReviewedAt: NOW - DAY_MS }],
-      ["struggling", { everAttemptedCount: 2, struggledCount: 1, mostRecentReviewedAt: NOW - DAY_MS }],
+      ["mastered-recent", { everAttemptedCount: 3, struggledCount: 0, mostRecentReviewedAt: NOW - DAY_MS, cumulativeStruggleCount: null }],
+      ["struggling", { everAttemptedCount: 2, struggledCount: 1, mostRecentReviewedAt: NOW - DAY_MS, cumulativeStruggleCount: null }],
     ]);
     const result = select(pool, 3, "reinforce", signals);
     expect(result.selected[result.selected.length - 1]?.questionId).toBe("mastered-recent");
@@ -238,11 +238,137 @@ describe("selectSmartAssignmentQuestions — reinforce (learning relevance)", ()
   it("is deterministic with real signals across repeated calls", () => {
     const pool = [q("a"), q("b"), q("c")];
     const signals = new Map<string, TargetedQuestionSignal>([
-      ["a", { everAttemptedCount: 1, struggledCount: 1, mostRecentReviewedAt: NOW }],
+      ["a", { everAttemptedCount: 1, struggledCount: 1, mostRecentReviewedAt: NOW, cumulativeStruggleCount: null }],
     ]);
     const first = select(pool, 3, "reinforce", signals);
     const second = select(pool, 3, "reinforce", signals);
     expect(first).toEqual(second);
+  });
+});
+
+describe("selectSmartAssignmentQuestions — reinforce — Phase 46: cumulative struggle tie-break within the struggled tier", () => {
+  // B/PREVIOUS-FAILURE-PROOF — the mandatory before/after regression pair.
+  // IDs are chosen so the base tiebreak (createdAt, then id) DISAGREES with
+  // severity: "alpha-light-struggle" sorts before "zulu-heavy-struggle"
+  // alphabetically, so the OLD code (no cumulative signal) picked the
+  // lightly-struggled question first — provably wrong, not a coincidence.
+  const heavyId = "zulu-heavy-struggle";
+  const lightId = "alpha-light-struggle";
+
+  it("PRE-PHASE-46 BASELINE — without cumulativeStruggleCount, both questions tie inside the struggled tier and fall back to base order (id) — the lightly-struggled question wins, which is wrong", () => {
+    const pool = [q(heavyId), q(lightId)];
+    const signals = new Map<string, TargetedQuestionSignal>([
+      [heavyId, { everAttemptedCount: 1, struggledCount: 1, mostRecentReviewedAt: NOW, cumulativeStruggleCount: null }],
+      [lightId, { everAttemptedCount: 1, struggledCount: 1, mostRecentReviewedAt: NOW, cumulativeStruggleCount: null }],
+    ]);
+    const result = select(pool, 2, "reinforce", signals);
+    expect(result.selected.map((s) => s.questionId)).toEqual([lightId, heavyId]);
+  });
+
+  it("A/CORE — with real cumulative evidence (8/10 struggled vs 2/10 struggled), the MORE-struggled question now ranks first, reversing the wrong baseline order above", () => {
+    const pool = [q(heavyId), q(lightId)];
+    const signals = new Map<string, TargetedQuestionSignal>([
+      [heavyId, { everAttemptedCount: 1, struggledCount: 1, mostRecentReviewedAt: NOW, cumulativeStruggleCount: 8 }],
+      [lightId, { everAttemptedCount: 1, struggledCount: 1, mostRecentReviewedAt: NOW, cumulativeStruggleCount: 2 }],
+    ]);
+    const result = select(pool, 2, "reinforce", signals);
+    expect(result.selected.map((s) => s.questionId)).toEqual([heavyId, lightId]);
+    expect(result.selected[0]?.reasonCode).toBe("struggled");
+  });
+
+  it("D/SAME-HISTORY — equal cumulative counts stay tied and fall back to the existing base order, not an arbitrary reshuffle", () => {
+    const pool = [q(heavyId), q(lightId)];
+    const signals = new Map<string, TargetedQuestionSignal>([
+      [heavyId, { everAttemptedCount: 1, struggledCount: 1, mostRecentReviewedAt: NOW, cumulativeStruggleCount: 5 }],
+      [lightId, { everAttemptedCount: 1, struggledCount: 1, mostRecentReviewedAt: NOW, cumulativeStruggleCount: 5 }],
+    ]);
+    const result = select(pool, 2, "reinforce", signals);
+    expect(result.selected.map((s) => s.questionId)).toEqual([lightId, heavyId]);
+  });
+
+  it("F/ONE-OFF — a single low-count struggle still outranks a question with zero known cumulative struggle", () => {
+    const oneOff = "one-off-struggle";
+    const noEvidence = "no-cumulative-evidence";
+    const pool = [q(noEvidence), q(oneOff)];
+    const signals = new Map<string, TargetedQuestionSignal>([
+      [oneOff, { everAttemptedCount: 1, struggledCount: 1, mostRecentReviewedAt: NOW, cumulativeStruggleCount: 1 }],
+      [noEvidence, { everAttemptedCount: 1, struggledCount: 1, mostRecentReviewedAt: NOW, cumulativeStruggleCount: null }],
+    ]);
+    const result = select(pool, 2, "reinforce", signals);
+    // Both are in the struggled tier (struggledCount > 0). Since one side
+    // (noEvidence) is null, §8's "skip tie-break unless both known" rule
+    // applies — base order (createdAt/id) is preserved, not a reshuffle
+    // toward or away from the unknown side.
+    expect(result.selected.map((s) => s.questionId)).toEqual([noEvidence, oneOff]);
+  });
+
+  it("H/COVERAGE-SAFETY — a huge cumulative count on a question NO targeted student's last attempt was struggled on does not pull it into the struggled tier; tier membership is unchanged", () => {
+    const heavyButRecovered = "heavy-history-but-now-solved";
+    const genuinelyStruggled = "genuinely-struggled-now";
+    const pool = [q(heavyButRecovered), q(genuinelyStruggled)];
+    const signals = new Map<string, TargetedQuestionSignal>([
+      // struggledCount (the existing tier-membership snapshot) is 0 here —
+      // the student's MOST RECENT outcome was not a struggle — even though
+      // cumulativeStruggleCount is large. Tier membership must stay driven
+      // by the existing snapshot rule, never by this new signal.
+      [heavyButRecovered, { everAttemptedCount: 5, struggledCount: 0, mostRecentReviewedAt: NOW, cumulativeStruggleCount: 20 }],
+      [genuinelyStruggled, { everAttemptedCount: 1, struggledCount: 1, mostRecentReviewedAt: NOW, cumulativeStruggleCount: 1 }],
+    ]);
+    const result = select(pool, 2, "reinforce", signals);
+    expect(result.selected[0]?.questionId).toBe(genuinelyStruggled);
+    expect(result.selected[0]?.reasonCode).toBe("struggled");
+    expect(result.selected[1]?.reasonCode).not.toBe("struggled");
+  });
+
+  it("I/NON-REINFORCE INVARIANCE — 'focus' and 'balanced' ignore cumulativeStruggleCount entirely, same as they already ignore struggledCount", () => {
+    const pool = [q(heavyId), q(lightId)];
+    const signals = new Map<string, TargetedQuestionSignal>([
+      [heavyId, { everAttemptedCount: 1, struggledCount: 1, mostRecentReviewedAt: NOW, cumulativeStruggleCount: 8 }],
+      [lightId, { everAttemptedCount: 1, struggledCount: 1, mostRecentReviewedAt: NOW, cumulativeStruggleCount: 2 }],
+    ]);
+    const withSignals = select(pool, 2, "focus", signals);
+    const withoutSignals = select(pool, 2, "focus", new Map());
+    expect(withSignals).toEqual(withoutSignals);
+
+    const balancedWithSignals = select(pool, 2, "balanced", signals);
+    const balancedWithoutSignals = select(pool, 2, "balanced", new Map());
+    expect(balancedWithSignals).toEqual(balancedWithoutSignals);
+  });
+
+  it("J/DETERMINISM — repeated calls with the same cumulative evidence produce byte-identical output", () => {
+    const pool = [q(heavyId), q(lightId)];
+    const signals = new Map<string, TargetedQuestionSignal>([
+      [heavyId, { everAttemptedCount: 1, struggledCount: 1, mostRecentReviewedAt: NOW, cumulativeStruggleCount: 8 }],
+      [lightId, { everAttemptedCount: 1, struggledCount: 1, mostRecentReviewedAt: NOW, cumulativeStruggleCount: 2 }],
+    ]);
+    const first = select(pool, 2, "reinforce", signals);
+    const second = select(pool, 2, "reinforce", signals);
+    expect(first).toEqual(second);
+  });
+
+  it("K/NO-MUTATION — selection never mutates the signals map or the pool", () => {
+    const pool = [q(heavyId), q(lightId)];
+    const signals = new Map<string, TargetedQuestionSignal>([
+      [heavyId, { everAttemptedCount: 1, struggledCount: 1, mostRecentReviewedAt: NOW, cumulativeStruggleCount: 8 }],
+      [lightId, { everAttemptedCount: 1, struggledCount: 1, mostRecentReviewedAt: NOW, cumulativeStruggleCount: 2 }],
+    ]);
+    const signalsCopy = new Map(signals);
+    const poolCopy = [...pool];
+    select(pool, 2, "reinforce", signals);
+    expect(signals).toEqual(signalsCopy);
+    expect(pool).toEqual(poolCopy);
+  });
+
+  it("L/REQUESTED-COUNT PRESERVATION — targetCount is unaffected by the new tie-break", () => {
+    const pool = [q(heavyId), q(lightId), q("third")];
+    const signals = new Map<string, TargetedQuestionSignal>([
+      [heavyId, { everAttemptedCount: 1, struggledCount: 1, mostRecentReviewedAt: NOW, cumulativeStruggleCount: 8 }],
+      [lightId, { everAttemptedCount: 1, struggledCount: 1, mostRecentReviewedAt: NOW, cumulativeStruggleCount: 2 }],
+    ]);
+    const result = select(pool, 1, "reinforce", signals);
+    expect(result.selected).toHaveLength(1);
+    expect(result.selected[0]?.questionId).toBe(heavyId);
+    expect(result.requestedCount).toBe(1);
   });
 });
 
@@ -264,8 +390,8 @@ describe("buildTargetedQuestionSignals", () => {
 
   it("aggregates everAttemptedCount and struggledCount across multiple students for the same question", () => {
     const signals = buildTargetedQuestionSignals([
-      [{ questionId: "q1", lastOutcome: "struggled", lastReviewedAt: NOW }],
-      [{ questionId: "q1", lastOutcome: "solved", lastReviewedAt: NOW - DAY_MS }],
+      [{ questionId: "q1", lastOutcome: "struggled", lastReviewedAt: NOW, attemptCount: 0 }],
+      [{ questionId: "q1", lastOutcome: "solved", lastReviewedAt: NOW - DAY_MS, attemptCount: 0 }],
     ]);
     const signal = signals.get("q1");
     expect(signal?.everAttemptedCount).toBe(2);
@@ -273,27 +399,118 @@ describe("buildTargetedQuestionSignals", () => {
   });
 
   it("treats 'again' as a struggle, same as 'struggled'", () => {
-    const signals = buildTargetedQuestionSignals([[{ questionId: "q1", lastOutcome: "again", lastReviewedAt: NOW }]]);
+    const signals = buildTargetedQuestionSignals([[{ questionId: "q1", lastOutcome: "again", lastReviewedAt: NOW, attemptCount: 0 }]]);
     expect(signals.get("q1")?.struggledCount).toBe(1);
   });
 
   it("keeps the MOST RECENT lastReviewedAt across students", () => {
     const signals = buildTargetedQuestionSignals([
-      [{ questionId: "q1", lastOutcome: "solved", lastReviewedAt: NOW - 10 * DAY_MS }],
-      [{ questionId: "q1", lastOutcome: "solved", lastReviewedAt: NOW - DAY_MS }],
+      [{ questionId: "q1", lastOutcome: "solved", lastReviewedAt: NOW - 10 * DAY_MS, attemptCount: 0 }],
+      [{ questionId: "q1", lastOutcome: "solved", lastReviewedAt: NOW - DAY_MS, attemptCount: 0 }],
     ]);
     expect(signals.get("q1")?.mostRecentReviewedAt).toBe(NOW - DAY_MS);
   });
 
   it("a question absent from any student's items is absent from the map — no fake entry", () => {
-    const signals = buildTargetedQuestionSignals([[{ questionId: "q1", lastOutcome: "solved", lastReviewedAt: NOW }]]);
+    const signals = buildTargetedQuestionSignals([[{ questionId: "q1", lastOutcome: "solved", lastReviewedAt: NOW, attemptCount: 0 }]]);
     expect(signals.has("q-never-mentioned")).toBe(false);
   });
 
   it("does not mutate the input", () => {
-    const input = [[{ questionId: "q1", lastOutcome: "solved", lastReviewedAt: NOW }]];
+    const input = [[{ questionId: "q1", lastOutcome: "solved", lastReviewedAt: NOW, attemptCount: 0 }]];
     const copy = JSON.parse(JSON.stringify(input));
     buildTargetedQuestionSignals(input);
     expect(input).toEqual(copy);
+  });
+
+  // Phase 46 — cumulativeStruggleCount, reusing outcomeCounters.ts's
+  // resolveOutcomeHistory verbatim (never reimplemented).
+  it("A/CORE — sums the real struggledCount only when a student's counters are complete (attemptCount === sum)", () => {
+    const signals = buildTargetedQuestionSignals([
+      [
+        {
+          questionId: "q1",
+          lastOutcome: "struggled",
+          lastReviewedAt: NOW,
+          attemptCount: 10,
+          solvedCount: 2,
+          struggledCount: 8,
+          againCount: 0,
+        },
+      ],
+    ]);
+    expect(signals.get("q1")?.cumulativeStruggleCount).toBe(8);
+  });
+
+  it("C/LEGACY — a pre-Phase-41 item (no counters at all) contributes null, never a fabricated 0", () => {
+    const signals = buildTargetedQuestionSignals([
+      [{ questionId: "q1", lastOutcome: "struggled", lastReviewedAt: NOW, attemptCount: 4 }],
+    ]);
+    expect(signals.get("q1")?.cumulativeStruggleCount).toBeNull();
+  });
+
+  it("LEGACY MIX — a partial/incomplete counter set (sum < attemptCount) also contributes null, not a fabricated partial total", () => {
+    const signals = buildTargetedQuestionSignals([
+      [
+        {
+          questionId: "q1",
+          lastOutcome: "struggled",
+          lastReviewedAt: NOW,
+          attemptCount: 10,
+          solvedCount: 1,
+          struggledCount: 1,
+          againCount: 0,
+        },
+      ],
+    ]);
+    expect(signals.get("q1")?.cumulativeStruggleCount).toBeNull();
+  });
+
+  it("G/MULTI-STUDENT — sums trustworthy struggledCount ACROSS targeted students on the same question", () => {
+    const signals = buildTargetedQuestionSignals([
+      [
+        {
+          questionId: "q1",
+          lastOutcome: "struggled",
+          lastReviewedAt: NOW,
+          attemptCount: 10,
+          solvedCount: 2,
+          struggledCount: 8,
+          againCount: 0,
+        },
+      ],
+      [
+        {
+          questionId: "q1",
+          lastOutcome: "solved",
+          lastReviewedAt: NOW,
+          attemptCount: 5,
+          solvedCount: 4,
+          struggledCount: 1,
+          againCount: 0,
+        },
+      ],
+    ]);
+    // 8 (student 1) + 1 (student 2) = 9 — a real sum across BOTH targeted
+    // students' own histories, not a per-student cap or an average.
+    expect(signals.get("q1")?.cumulativeStruggleCount).toBe(9);
+  });
+
+  it("G/MULTI-STUDENT — one student's trustworthy history plus one student's untrustworthy history still contributes what IS known, not null", () => {
+    const signals = buildTargetedQuestionSignals([
+      [
+        {
+          questionId: "q1",
+          lastOutcome: "struggled",
+          lastReviewedAt: NOW,
+          attemptCount: 10,
+          solvedCount: 2,
+          struggledCount: 8,
+          againCount: 0,
+        },
+      ],
+      [{ questionId: "q1", lastOutcome: "solved", lastReviewedAt: NOW, attemptCount: 3 }], // legacy, no counters
+    ]);
+    expect(signals.get("q1")?.cumulativeStruggleCount).toBe(8);
   });
 });
