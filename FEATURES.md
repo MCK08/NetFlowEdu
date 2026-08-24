@@ -121,7 +121,7 @@ commits that never recorded a phase number: kapsamı belirsiz (scope not recorde
 | "Şimdi yapılabilecekler" action summary | `teacherActionSummary.ts` | 28* | Done |
 | Teacher question composer (prefilled from a hotspot) | `useTeacherQuestionComposer.ts` | 28* | Done |
 | Diagnosis → targeted intervention | `teacherIntervention.ts` | 43 | Done |
-| Intervention effectiveness verdict | `interventionEffectiveness.ts`, `InterventionOutcomeCard.tsx` | 44 | Done |
+| Intervention effectiveness verdict | `interventionEffectiveness.ts`, `InterventionOutcomeCard.tsx` | 44A | Done |
 
 \* Commit `adef732` is unnumbered; "28" here conflicts with the study-session Phase 28. See the numbering caveats in [ROADMAP.md](ROADMAP.md).
 

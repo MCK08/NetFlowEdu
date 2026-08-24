@@ -11,7 +11,41 @@ All notable changes to this project are documented here.
 > *unnumbered* or **kapsamı belirsiz (scope not recorded)** rather than guessed.
 > See [ROADMAP.md](ROADMAP.md) for the known numbering inconsistencies.
 
-### Phase 44 — Intervention Effectiveness (`213abd1`, 2026-08-21)
+> **Note on Phase 44.** `213abd1` and `b385c6e` both call themselves "Phase 44"
+> in their own commit messages. Split below into 44A (the effectiveness engine)
+> and 44B (the attribution fix on top of it), per the numbering canonicalized
+> ahead of Phase 48. Commit hashes and messages are unchanged.
+
+### Phase 47 — Post-Intervention Teacher Next Action (`903a528`, 2026-08-21)
+- New pure `postInterventionAction.ts`: `resolvePostInterventionAction(effectiveness, confidence)` → `monitor` / `follow_up` / `escalate`, wired into `StudentPerformanceScreen` exactly where the Phase 44A verdict was already computed. Previously nothing consumed the verdict — the "Takip Ödevi Oluştur" CTA was gated only by Phase 42's lifetime, monotonic `persistentStruggleTopics`, so a fully recovered student kept seeing the same repeat-intervention prompt.
+- Decision contract: `improved` → `monitor` unconditionally; `confidence === "low"` → `monitor` regardless of direction (covers every `insufficient_data` verdict, always low by construction); `worsened` + medium/high confidence → `escalate` (same CTA, stronger reason text); `no_change` + medium/high confidence → `follow_up` (existing CTA, unchanged).
+- Reuses the existing targeted-assignment composer route (`openInterventionForStudent`) — no new composer, write path, schema, or collection. `teacherActionSummary.ts`/`ClassPerformanceScreen` untouched (no per-student effectiveness data loaded there).
+- All four reason strings are observational, not causal — locked in by a regex test that none of them claims the assignment "başarılı/başarısız oldu".
+- 12 new tests (`postInterventionAction.test.ts`); full suite 133 suites / 2211 tests. Rules/Functions diffs empty. Expo web smoke-test passed; the full authenticated teacher walkthrough was not run in this environment and is reported as unverified, not as a pass.
+
+### Phase 46 — Cumulative-Evidence Reinforce Selection (`d0bdbb5`, 2026-08-21)
+- `smartAssignmentSelection.ts`'s reinforce strategy already put any-struggle questions in a dedicated tier, but couldn't distinguish a question 8 targeted students struggled with repeatedly from one struggled with once — both fell back to an arbitrary base tiebreak. Same class of gap as Phase 45's, in the reinforce assignment path instead of the adaptive study plan.
+- `TargetedQuestionSignal` gains `cumulativeStruggleCount: number | null` — the summed Phase 41 `struggledCount` across targeted students with trustworthy history on that question, read off study items `useCreateAssignment.ts` already fetches (zero new reads). `null`, never a fabricated `0`, when no targeted student has trustworthy history.
+- `selectReinforce` stable-sorts the existing `struggled` array by this signal before building the final order — tier membership, `focus`/`balanced` selection, `requestedCount`, and dedupe are all unchanged.
+- Legacy safety: pre-Phase-41 items contribute `null`; a large cumulative struggle count never promotes a question into the struggled tier if its most recent attempt wasn't itself a struggle.
+- 17 new tests; full suite 132 suites / 2199 tests. `dailyPracticePlan.ts`, `firestore.rules`, `functions/`, `routing.ts` untouched (verified via `git diff --stat`). Expo web smoke-test passed; full authenticated reinforce-composer walkthrough not run in this environment, reported as unverified.
+
+### Phase 45 — Cumulative-Evidence Adaptive Prioritization (`b5b66e7`, 2026-08-21)
+- Phase 41's per-question cumulative outcome counters were already resolved into `LearningInsightItem.outcomeHistory`, but `buildAdaptivePracticePlan`'s comparator never read them — only topic-level `masteryBand`/recency, both derived from a single most-recent outcome. Two questions in the same topic with tied topic-level signals were indistinguishable regardless of how many times each had actually been struggled with.
+- Fix: `dailyPracticePlan.ts`'s `adaptiveComparator` gains one ordered tie-break — `outcomeHistory.struggledCount` — inserted after mastery/recency and before the existing `nextReviewAt`/id fallback. Reuses the exact field Phase 41 already wired; no new field, no duplicate computation.
+- Tier order (`due > struggled > weak_topic > goal_fill`), `topicMastery.ts`/`recencySignal.ts`, the non-adaptive plan, and `studentNextAction.ts` are all untouched. `smartAssignmentSelection.ts` has the identical gap and was deliberately left for Phase 46.
+- Recovery safety is structural, not a new rule: a question with heavy lifetime struggle but a current `lastOutcome` of `solved` never reaches tier 2 at all, so it can't outrank a question genuinely still struggling.
+- 12 new tests including an explicit before/after regression pair proving the exact pre-fix tie this phase resolves. Full suite 132 suites / 2182 tests. `firestore.rules` and `functions/` diffs both empty.
+
+### Phase 44B — Explicit Intervention Attribution (`b385c6e`, 2026-08-21)
+- Root cause (Phase 44 audit): `selectMostRecentIntervention` picked simply the most recently delivered assignment targeting a student and assumed it was the intervention — an ordinary assignment published to the same student afterward could silently hijack `InterventionOutcomeCard`'s verdict onto the wrong assignment.
+- `Assignment` gains one additive, optional field: `interventionOf: { subject, topic } | null`. Set only by the two explicit Phase 43 intervention CTAs, propagated through a narrow `intervention=1` route param rather than inferred from subject/topic/studentIds being present (both of which ordinary assignment flows also send).
+- `selectMostRecentIntervention` now prefers explicit `interventionOf` evidence when present; falls back to the original "most recent, period" heuristic only for a fully legacy history with zero explicit interventions.
+- `firestore.rules`: `interventionOf` validated on create and frozen on update, using `.get(key, null)` (not dot-access, since the field is genuinely absent on pre-Phase-44 documents). Not a security boundary — grants no read/write rights, only display attribution.
+- The effectiveness engine itself (`interventionEffectiveness.ts`'s `buildInterventionEffectiveness`, `resolveStateAtIntervention`, `aggregateCurrentState`, confidence logic, `learningState.ts`, `outcomeCounters.ts`) is unchanged — this fixes assignment identity, not the effectiveness model.
+- 10 new unit cases plus 10 new rules integration tests. Full suite 132 unit suites / 2170 tests, 5 rules suites / 350 tests.
+
+### Phase 44A — Intervention Effectiveness (`213abd1`, 2026-08-21)
 - New pure service `src/features/teacher/services/interventionEffectiveness.ts`: compares the state an intervention itself recorded — the assignment submission's frozen `questionOutcomes` — against the student's live learning state from Phase 42's `buildLearningState`. No new collection, no Cloud Function, no rules change, no stored snapshot.
 - A verdict requires work done *after* the intervention: nothing reviewed since → `insufficient_data`, however good the current numbers look.
 - Two documented judgement calls: `struggle` counts `struggled` only (not `again`), matching `learningState.ts` rather than `assignmentOutcomeInsights.ts`, so `persistent_struggle` cannot mean two different things across one comparison; and `one_off_struggle → recovering` reads as worsened, because the counters are monotonic.
@@ -23,7 +57,7 @@ All notable changes to this project are documented here.
 - Wired into `ClassPerformanceScreen` and `StudentPerformanceScreen` via `useClassPerformance`; `classTopicInsights.ts`, `studentPerformance.ts`, and `teacherActionSummary.ts` extended to feed it.
 
 ### Phase 42 — Persistent Learning Struggles Surfaced to Teachers (`36142c8`, 2026-08-21)
-- New `src/features/study/services/learningState.ts` (`buildLearningState`) — the shared definition of a student's learning state, later reused by Phase 44.
+- New `src/features/study/services/learningState.ts` (`buildLearningState`) — the shared definition of a student's learning state, later reused by Phase 44A.
 - `studentAttention.ts` and `classTopicInsights.ts` extended to surface persistent struggle on both teacher screens.
 
 ### Phase 41 — Cumulative Learning Outcome Signals (`faf7528`, 2026-08-21)

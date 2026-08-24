@@ -89,8 +89,22 @@ Still TBD as originally written. The only external-model integration in the tree
 Ordered newest first. Phase numbers are given only where a commit message
 states or directly implies one.
 
-## Phase 44 — Intervention effectiveness ✅
+## Phase 47 — Post-intervention teacher next action ✅
+`903a528`. `postInterventionAction.ts`'s `resolvePostInterventionAction(effectiveness, confidence)`: turns Phase 44B's effectiveness verdict into one of `monitor`/`follow_up`/`escalate`, wired into `StudentPerformanceScreen`. `improved` always resolves to `monitor` regardless of confidence (recovered students can never re-enter a repeat-intervention loop); `insufficient_data` is always low-confidence by construction and also resolves to `monitor`. Reuses the existing intervention-composer route; no new collection, schema, or CTA channel.
+
+## Phase 46 — Cumulative-evidence reinforce selection ✅
+`d0bdbb5`. `smartAssignmentSelection.ts`'s reinforce strategy gains `cumulativeStruggleCount` on `TargetedQuestionSignal` (summed Phase 41 outcome counters across targeted students), used as a stable-sort tiebreak within the existing `struggled` tier. Mirrors Phase 45's fix for the adaptive plan; tier membership, `focus`/`balanced` selection, and dedupe are unchanged. Zero new Firestore reads.
+
+## Phase 45 — Cumulative-evidence adaptive prioritization ✅
+`b5b66e7`. `dailyPracticePlan.ts`'s `adaptiveComparator` gains one ordered tie-break step — each item's `outcomeHistory.struggledCount` (question-level, from Phase 41) — inserted after mastery/recency and before the existing `nextReviewAt`/id fallback, so two questions in the same topic with tied topic-level signals now order by how many times the student actually struggled with that exact question. Tier order and the non-adaptive plan are untouched.
+
+## Phase 44B — Explicit intervention attribution ✅
+`b385c6e`. Root cause: `selectMostRecentIntervention` picked simply the most recently delivered assignment targeting a student and assumed it was the intervention — an unrelated assignment published afterward could silently hijack `InterventionOutcomeCard`'s verdict. Fix: `Assignment` gains an additive, optional `interventionOf: { subject, topic } | null` field, set only by the two explicit Phase 43 intervention CTAs and validated/frozen in `firestore.rules`. `selectMostRecentIntervention` now prefers explicit `interventionOf` evidence over the old "most recent, period" heuristic, falling back to it only for fully legacy histories. Does not change the effectiveness model itself (`interventionEffectiveness.ts` unchanged) — this fixes assignment identity, not the verdict logic.
+
+## Phase 44A — Intervention effectiveness ✅
 `213abd1`. `interventionEffectiveness.ts` + `useInterventionEffectiveness` + `InterventionOutcomeCard`: compares an assignment submission's frozen `questionOutcomes` against the student's live learning state, and refuses a verdict (`insufficient_data`) unless work was done *after* the intervention. No new collection, Cloud Function, or rules change.
+
+*Note: `213abd1`'s own commit message and `b385c6e`'s both call themselves "Phase 44" — this file previously merged them under one heading. Split into 44A/44B per the numbering canonicalized ahead of Phase 48; commit hashes and messages are unchanged.*
 
 ## Phase 43 — Diagnosis → intervention ✅
 `460f1bf`. `teacherIntervention.ts` turns a class/student diagnosis into a targeted assignment action inside `ClassPerformanceScreen`/`StudentPerformanceScreen`.
