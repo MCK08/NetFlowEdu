@@ -4,6 +4,10 @@ Companion to [ROADMAP.md](ROADMAP.md) — this file exists only to make Phase
 48's runtime acceptance pass repeatable. It does not itself claim demo
 readiness; see "Phase 48 scenarios" below for the honest current status.
 
+For running an actual presentation (golden-path script, talk track, timed
+scenes, safe/unsafe claims), see [DEMO_RUNBOOK.md](DEMO_RUNBOOK.md) — this
+file stays QA-oriented; that one is presenter-oriented.
+
 ## Environment
 
 - Firebase emulators (`firebase.json`: auth 9099, firestore 8080, storage
