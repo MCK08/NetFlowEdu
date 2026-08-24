@@ -18,6 +18,7 @@ import { typography } from "@theme/typography";
 import { InterventionOutcomeCard } from "../components/InterventionOutcomeCard";
 import { useInterventionEffectiveness } from "../hooks/useInterventionEffectiveness";
 import { useStudentPerformanceDetail } from "../hooks/useStudentPerformanceDetail";
+import { resolvePostInterventionAction } from "../services/postInterventionAction";
 import { buildStudentAttentionInsight } from "../services/studentAttention";
 import { resolveStudentInterventionTopic } from "../services/teacherIntervention";
 
@@ -94,6 +95,17 @@ export function StudentPerformanceScreen({ classId, studentId, studentName }: St
     studentId,
     items,
   );
+
+  // Phase 47 — the only thing consuming Phase 44's verdict today. Pure,
+  // in-memory, zero extra reads: derived straight from interventionOutcome,
+  // which useInterventionEffectiveness above already computed from data this
+  // screen already loaded. null exactly when interventionOutcome is null (no
+  // delivered assignment ever targeted this student) — in that case the
+  // CTA below falls back to its original, effectiveness-independent
+  // behavior, unchanged from before this phase.
+  const postInterventionAction = interventionOutcome
+    ? resolvePostInterventionAction(interventionOutcome.effectiveness, interventionOutcome.confidence)
+    : null;
 
   // Phase 43 — the single topic a student-level intervention should be
   // about, or null when there is nothing to intervene on. This IS the gate:
@@ -237,7 +249,19 @@ export function StudentPerformanceScreen({ classId, studentId, studentName }: St
               whether the previous one landed. Rendered only when this
               student was actually targeted by a delivered assignment. */}
           {intervention && interventionOutcome ? (
-            <InterventionOutcomeCard result={interventionOutcome} title={intervention.title} />
+            <>
+              <InterventionOutcomeCard result={interventionOutcome} title={intervention.title} />
+              {/* Phase 47 — "şimdi ne yapmalıyım?", right under the verdict
+                  that answers "işe yaradı mı?". Same observational tone as
+                  the card above it; never a claim about what caused the
+                  result. */}
+              {postInterventionAction ? (
+                <Card style={styles.card}>
+                  <Text style={styles.sectionLabel}>Sonraki adım</Text>
+                  <Text style={styles.bodyText}>{postInterventionAction.reason}</Text>
+                </Card>
+              ) : null}
+            </>
           ) : null}
 
           {/* Phase 42 — the distinction the dashboard could not previously
@@ -267,11 +291,20 @@ export function StudentPerformanceScreen({ classId, studentId, studentName }: St
                   <Text style={styles.bodyTextMuted}>
                     {interventionTopic.subject} · {interventionTopic.topic}
                   </Text>
-                  <PrimaryButton
-                    label="Takip Ödevi Oluştur"
-                    onPress={openInterventionForStudent}
-                    accessibilityHint={`${interventionTopic.topic} konusunda bu öğrenci için ödev oluşturur`}
-                  />
+                  {/* Phase 47 §7 — this button used to render unconditionally
+                      whenever interventionTopic resolved, which is a LIFETIME
+                      signal that never clears even after a student recovers.
+                      Suppressed only when a real verdict says so ("monitor"
+                      — improved, or evidence too thin to act on); with no
+                      verdict at all (postInterventionAction === null), this
+                      renders exactly as it always has. */}
+                  {!postInterventionAction || postInterventionAction.kind !== "monitor" ? (
+                    <PrimaryButton
+                      label="Takip Ödevi Oluştur"
+                      onPress={openInterventionForStudent}
+                      accessibilityHint={`${interventionTopic.topic} konusunda bu öğrenci için ödev oluşturur`}
+                    />
+                  ) : null}
                 </>
               ) : null}
             </Card>
