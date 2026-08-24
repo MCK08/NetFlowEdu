@@ -65,7 +65,10 @@ export const db = getFirestore(app);
 export const storage = getStorage(app);
 export const functions = getFunctions(app);
 
-const useEmulators = process.env.EXPO_PUBLIC_USE_FIREBASE_EMULATORS === "true";
+// Exported so multiAccountAuth.ts's named per-account/staging Auth
+// instances can apply the exact same emulator guard this file applies to
+// the default instance below — see that file's getOrCreateNamedAuth.
+export const useEmulators = process.env.EXPO_PUBLIC_USE_FIREBASE_EMULATORS === "true";
 
 if (useEmulators && !globalThis.__netflowEduEmulatorsConnected__) {
   const host = resolveEmulatorHost();

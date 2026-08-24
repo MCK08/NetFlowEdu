@@ -82,7 +82,15 @@ function assertEmulatorOnly(): void {
 
 assertEmulatorOnly();
 
-const PROJECT_ID = "netflowedu-demo-emulator";
+// MUST match the real app's EXPO_PUBLIC_FIREBASE_PROJECT_ID (see .env).
+// Unlike Firestore's `singleProjectMode` (firebase.json), the Auth emulator
+// partitions users strictly by project id with no coalescing — seeding
+// under a different, synthetic project id here would create Auth users the
+// real app (configured for the actual project id) can never sign in as,
+// while Firestore writes would silently appear to "work" via the
+// single-project-mode warning. Override via DEMO_SEED_PROJECT_ID only if
+// the app's own configured project id ever changes.
+const PROJECT_ID = process.env.DEMO_SEED_PROJECT_ID ?? "netflowedu-2a8a9";
 initializeApp({ projectId: PROJECT_ID });
 const db = getFirestore();
 const auth = getAuth();

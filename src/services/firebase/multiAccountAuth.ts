@@ -1,6 +1,7 @@
 import { deleteApp, FirebaseApp, getApps, initializeApp } from "firebase/app";
 import {
   Auth,
+  connectAuthEmulator,
   inMemoryPersistence,
   initializeAuth,
   Persistence,
@@ -9,8 +10,10 @@ import {
   User,
 } from "firebase/auth";
 
+import { resolveEmulatorHost, EMULATOR_PORTS } from "@constants/firebase";
+
 import { getAccountPersistence } from "./accountPersistence";
-import { auth as defaultAuth, firebaseConfig } from "./config";
+import { auth as defaultAuth, firebaseConfig, useEmulators } from "./config";
 
 // ---------------------------------------------------------------------------
 // Device account switcher — architecture
@@ -84,6 +87,18 @@ function getOrCreateNamedAuth(appName: string, persistence: Persistence): Auth {
     getApps().find((existing) => existing.name === appName) ??
     initializeApp(firebaseConfig, appName);
   const authInstance = initializeAuth(app, { persistence });
+  // Same emulator guard config.ts applies to the single default `auth` —
+  // without this, every named instance (one per stored account, plus the
+  // staging instance every add-account/switch-to-new-account sign-in runs
+  // against first) silently talks to real Firebase Auth even when the app
+  // itself is running against the emulator suite, so "Hesap Ekle"/adding an
+  // account not already stored fails for every emulator-only account.
+  if (useEmulators) {
+    const host = resolveEmulatorHost();
+    connectAuthEmulator(authInstance, `http://${host}:${EMULATOR_PORTS.auth}`, {
+      disableWarnings: true,
+    });
+  }
   authInstances.set(appName, authInstance);
   return authInstance;
 }
