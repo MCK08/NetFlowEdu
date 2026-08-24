@@ -14,7 +14,8 @@
     "test:rules": "firebase emulators:exec --only firestore,storage,auth \"jest --config jest.rules.config.js\"",
     "emulators": "firebase emulators:start",
     "functions:build": "cd functions && npm run build",
-    "verify": "npm run lint && npm run typecheck && npm run test && npm run functions:build"
+    "verify": "npm run lint && npm run typecheck && npm run test && npm run functions:build",
+    "demo:seed": "firebase emulators:exec --only auth,firestore \"node functions/scripts/seedDemoFixtures.mts\""
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",
