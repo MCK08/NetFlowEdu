@@ -85,7 +85,12 @@ EXPO_PUBLIC_USE_FIREBASE_EMULATORS=true npm run web
 
 **`EXPO_PUBLIC_USE_FIREBASE_EMULATORS=true` is a LOCAL, TEMPORARY
 configuration only.** Do not commit it. Two ways to set it for the demo,
-either is fine:
+either is fine as of `src/services/firebase/config.ts`'s current fix
+(a bracket-access env read — see that file's own doc comment for why a
+plain `process.env.EXPO_PUBLIC_X` dot-access previously ignored the shell
+override and silently kept the app on production; verified live that
+`auth.emulatorConfig` is now non-null before any login when the shell
+prefix method is used):
 
 - Prefix the start command as shown above (`EXPO_PUBLIC_USE_FIREBASE_EMULATORS=true npm run web`) — cleanest, nothing touches `.env`.
 - Or temporarily edit the `EXPO_PUBLIC_USE_FIREBASE_EMULATORS` line in your

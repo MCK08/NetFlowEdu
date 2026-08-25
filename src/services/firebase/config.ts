@@ -68,7 +68,34 @@ export const functions = getFunctions(app);
 // Exported so multiAccountAuth.ts's named per-account/staging Auth
 // instances can apply the exact same emulator guard this file applies to
 // the default instance below — see that file's getOrCreateNamedAuth.
-export const useEmulators = process.env.EXPO_PUBLIC_USE_FIREBASE_EMULATORS === "true";
+//
+// WHY THIS IS NOT PLAIN `process.env.EXPO_PUBLIC_USE_FIREBASE_EMULATORS`
+//
+// Expo/Metro statically replaces any literal `process.env.EXPO_PUBLIC_X`
+// member expression with a reference into its own bundle-time "virtual env"
+// snapshot (`expo/virtual/env`) — a snapshot built directly from `.env`
+// FILE contents, not from the live Node process's environment. A value
+// exported at the shell (`EXPO_PUBLIC_USE_FIREBASE_EMULATORS=true npm run
+// web`) genuinely reaches `process.env` at runtime (confirmed: Expo's own
+// dev-mode "HMR env vars" polyfill block correctly mirrors it), but that
+// live object is never what a literal dot-access reads once Metro has
+// statically rewritten it — the rewritten code reads `.env`'s own committed
+// value instead, silently ignoring the shell override. This was verified
+// directly: a fresh `--clear` restart with the shell var set still produced
+// `auth.emulatorConfig === null` (i.e. still bound to production), while
+// the exact same running process's live `process.env` object held "true".
+//
+// A COMPUTED (bracket) property read is not a literal member expression, so
+// Metro's inliner does not pattern-match and rewrite it — this line
+// therefore reads the REAL, shell-aware `process.env` at runtime instead of
+// the file-only snapshot. Verified empirically: switching to bracket access
+// changed the observed value from "false" to "true" for the exact same
+// shell invocation, with no other change. Keep this as bracket access
+// deliberately; reverting to `process.env.EXPO_PUBLIC_USE_FIREBASE_EMULATORS`
+// silently reintroduces the bug (compiles fine, boots fine, quietly talks
+// to production).
+const EMULATOR_FLAG_KEY = "EXPO_PUBLIC_USE_FIREBASE_EMULATORS";
+export const useEmulators = process.env[EMULATOR_FLAG_KEY] === "true";
 
 if (useEmulators && !globalThis.__netflowEduEmulatorsConnected__) {
   const host = resolveEmulatorHost();
@@ -79,4 +106,18 @@ if (useEmulators && !globalThis.__netflowEduEmulatorsConnected__) {
   connectFunctionsEmulator(functions, host, EMULATOR_PORTS.functions);
 
   globalThis.__netflowEduEmulatorsConnected__ = true;
+
+  // Fail closed, not silently open: `useEmulators` being true and
+  // `connectAuthEmulator` running is exactly the state that silently talked
+  // to production before this fix (see the doc comment above). This is a
+  // narrow, dev-only sanity check on the one property the SDK exposes for
+  // it — not a diagnostics framework — and it only ever fires in emulator
+  // mode, so production-mode behavior below is untouched either way.
+  if (!auth.emulatorConfig) {
+    throw new Error(
+      "EXPO_PUBLIC_USE_FIREBASE_EMULATORS is true but Firebase Auth did not bind to the " +
+        "local emulator (auth.emulatorConfig is still null after connectAuthEmulator). " +
+        "Refusing to continue rather than silently sending demo credentials to production.",
+    );
+  }
 }
