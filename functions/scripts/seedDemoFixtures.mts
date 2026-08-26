@@ -420,10 +420,22 @@ async function seedAssignment(seed: AssignmentSeed): Promise<void> {
     targetStudentIds: [seed.studentUid],
     questionIds: seed.questionIds,
     targetCount: seed.questionIds.length,
+    // dueAt stays a plain epoch-ms NUMBER on purpose: assignmentService.ts's
+    // toAssignment reads it with `typeof data.dueAt === "number"`, unlike
+    // createdAt/updatedAt below. The two really are different shapes in the
+    // production schema; matching each one exactly is the whole point here.
     dueAt: seed.createdAt + 7 * DAY_MS,
     status: "published",
-    createdAt: seed.createdAt,
-    updatedAt: seed.createdAt,
+    // MUST be Firestore Timestamps, not raw numbers. Production writes these
+    // via serverTimestamp(), and assignmentService.ts's toAssignment reads
+    // them through `toMillis = value instanceof Timestamp ? value.toMillis() : 0`.
+    // Writing plain numbers here made every seeded assignment resolve to
+    // createdAt = 0 in the app, which silently collapsed the Phase 44B
+    // ordering test: with all candidates tied at 0, selectMostRecentIntervention
+    // fell through to its `id.localeCompare` tiebreak and picked the OLDEST
+    // explicit intervention, while the UI showed an identical title either way.
+    createdAt: ts(seed.createdAt),
+    updatedAt: ts(seed.createdAt),
     interventionOf: seed.interventionOf,
   });
 
