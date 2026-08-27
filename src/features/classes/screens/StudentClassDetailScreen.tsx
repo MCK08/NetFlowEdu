@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { Alert, ActivityIndicator, FlatList, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { Alert, ActivityIndicator, FlatList, Pressable, Text, useWindowDimensions, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AnimatedPressable } from "@components/ui/AnimatedPressable";
@@ -12,6 +12,7 @@ import { colors, darkColors } from "@theme/colors";
 import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 import { Question } from "@/types/question";
 
 import { ImageSourcePicker } from "../components/ImageSourcePicker";
@@ -197,7 +198,7 @@ export function StudentClassDetailScreen({ classId }: StudentClassDetailScreenPr
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   flex: {
     flex: 1,
     backgroundColor: colors.background,
@@ -301,4 +302,4 @@ const styles = StyleSheet.create({
   loadingMore: {
     paddingVertical: spacing.xl,
   },
-});
+}));

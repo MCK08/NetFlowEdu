@@ -1,6 +1,8 @@
 import { Stack } from "expo-router";
+import { useThemeSubscription } from "@theme/ThemeProvider";
 
 export default function StudentLayout() {
+  useThemeSubscription();
   return (
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="(tabs)" />

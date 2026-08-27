@@ -1,11 +1,12 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, Text, View } from "react-native";
 
 import { colors } from "@theme/colors";
 import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
 import { minTouchTarget } from "@theme/sizes";
+import { themedStyles } from "@theme/themeRuntime";
 
 interface CheckboxProps {
   label: string;
@@ -48,7 +49,7 @@ export function Checkbox({ label, checked, onToggle, errorMessage }: CheckboxPro
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   container: {
     gap: spacing.xxs,
   },
@@ -85,4 +86,4 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.danger,
   },
-});
+}));

@@ -1,8 +1,9 @@
-import { ActivityIndicator, Pressable, StyleSheet, Text } from "react-native";
+import { ActivityIndicator, Pressable, Text } from "react-native";
 
 import { colors } from "@theme/colors";
 import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
+import { themedStyles } from "@theme/themeRuntime";
 
 interface PrimaryButtonProps {
   label: string;
@@ -47,7 +48,7 @@ export function PrimaryButton({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   button: {
     minHeight: 48,
     borderRadius: radius.md,
@@ -76,4 +77,4 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
   },
-});
+}));

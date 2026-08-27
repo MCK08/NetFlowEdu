@@ -1,6 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect } from "react";
-import { StyleSheet } from "react-native";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -11,6 +10,7 @@ import Animated, {
 import { colors } from "@theme/colors";
 import { duration, spring } from "@theme/animation";
 import { spacing } from "@theme/spacing";
+import { themedStyles } from "@theme/themeRuntime";
 
 interface StudyOutcomeSuccessFlourishProps {
   // Any non-null value mounts and animates the flourish in; the outcome
@@ -59,10 +59,10 @@ export function StudyOutcomeSuccessFlourish({ visible }: StudyOutcomeSuccessFlou
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   container: {
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: spacing.xs,
   },
-});
+}));

@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { colors } from "@theme/colors";
 import { spacing } from "@theme/spacing";
+import { themedStyles } from "@theme/themeRuntime";
 
 interface GlassHeaderProps {
   children: ReactNode;
@@ -24,7 +25,7 @@ export function GlassHeader({ children }: GlassHeaderProps) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   container: {
     backgroundColor: "rgba(255,255,255,0.85)",
     paddingHorizontal: spacing.lg,
@@ -32,4 +33,4 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.divider,
   },
-});
+}));

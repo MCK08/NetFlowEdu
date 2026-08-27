@@ -1,4 +1,4 @@
-import { StyleSheet, Text, View } from "react-native";
+import { Text, View } from "react-native";
 
 import { BottomActionSheet } from "@components/ui/BottomActionSheet";
 import { Chip } from "@components/ui/Chip";
@@ -7,6 +7,7 @@ import { GRADE_LEVELS, getTopicsForSubject, QUESTION_SUBJECTS } from "@features/
 import { colors } from "@theme/colors";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 
 import { EMPTY_FEED_FILTER, FeedFilter } from "../services/feedFilters";
 
@@ -89,7 +90,7 @@ export function FeedFilterSheet({ visible, filter, onChange, onClose }: FeedFilt
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   label: {
     ...typography.caption,
     fontWeight: "600",
@@ -107,4 +108,4 @@ const styles = StyleSheet.create({
     color: colors.textTertiary,
     marginBottom: spacing.sm,
   },
-});
+}));

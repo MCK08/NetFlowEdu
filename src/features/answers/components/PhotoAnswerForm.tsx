@@ -1,13 +1,14 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { useEffect } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Text, View } from "react-native";
 
 import { PrimaryButton } from "@components/ui/PrimaryButton";
 import { colors } from "@theme/colors";
 import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
 import { iconSize } from "@theme/sizes";
+import { themedStyles } from "@theme/themeRuntime";
 
 import { usePhotoAnswer } from "../hooks/usePhotoAnswer";
 
@@ -67,7 +68,7 @@ export function PhotoAnswerForm({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   container: {
     gap: spacing.md,
   },
@@ -97,4 +98,4 @@ const styles = StyleSheet.create({
   flex: {
     flex: 1,
   },
-});
+}));

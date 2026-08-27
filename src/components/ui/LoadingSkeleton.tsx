@@ -1,5 +1,5 @@
 import { memo, useEffect } from "react";
-import { DimensionValue, StyleSheet, ViewStyle } from "react-native";
+import { DimensionValue, ViewStyle } from "react-native";
 import Animated, {
   cancelAnimation,
   useAnimatedStyle,
@@ -10,6 +10,8 @@ import Animated, {
 
 import { colors } from "@theme/colors";
 import { radius } from "@theme/radius";
+import { themedStyles } from "@theme/themeRuntime";
+import { useThemeSubscription } from "@theme/ThemeProvider";
 
 interface LoadingSkeletonProps {
   width?: DimensionValue;
@@ -30,6 +32,10 @@ export const LoadingSkeleton = memo(function LoadingSkeleton({
   borderRadius: cornerRadius = radius.sm,
   style,
 }: LoadingSkeletonProps) {
+  // Phase 49 — memo() blocks prop-driven re-renders, but NOT context
+  // updates; without this subscription this component would keep its
+  // previous theme's styles after a live theme switch.
+  useThemeSubscription();
   const opacity = useSharedValue(0.5);
 
   useEffect(() => {
@@ -51,8 +57,8 @@ export const LoadingSkeleton = memo(function LoadingSkeleton({
   );
 });
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   base: {
     backgroundColor: colors.surfaceMuted,
   },
-});
+}));

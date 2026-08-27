@@ -1,11 +1,12 @@
 import { Ionicons } from "@expo/vector-icons";
-import { StyleSheet, TextInput, TextInputProps, View } from "react-native";
+import { TextInput, TextInputProps, View } from "react-native";
 
 import { colors } from "@theme/colors";
 import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
 import { iconSize } from "@theme/sizes";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 
 interface SearchInputProps extends Omit<TextInputProps, "style"> {
   placeholder?: string;
@@ -30,7 +31,7 @@ export function SearchInput({ placeholder = "Ara", ...inputProps }: SearchInputP
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   container: {
     flexDirection: "row",
     alignItems: "center",
@@ -45,4 +46,4 @@ const styles = StyleSheet.create({
     ...typography.body,
     color: colors.textPrimary,
   },
-});
+}));

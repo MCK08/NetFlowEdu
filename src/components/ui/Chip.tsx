@@ -1,10 +1,12 @@
 import { memo } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, Text, View } from "react-native";
 
 import { colors } from "@theme/colors";
 import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
+import { useThemeSubscription } from "@theme/ThemeProvider";
 
 interface ChipProps {
   label: string;
@@ -18,6 +20,10 @@ interface ChipProps {
 // filter chip" (onPress + selected) — the two only differ in interactivity,
 // not appearance, so this intentionally isn't split into two components.
 export const Chip = memo(function Chip({ label, onPress, selected = false }: ChipProps) {
+  // Phase 49 — memo() blocks prop-driven re-renders, but NOT context
+  // updates; without this subscription this component would keep its
+  // previous theme's styles after a live theme switch.
+  useThemeSubscription();
   const content = (
     <Text
       style={[styles.text, selected ? styles.textSelected : null]}
@@ -43,7 +49,7 @@ export const Chip = memo(function Chip({ label, onPress, selected = false }: Chi
   );
 });
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   container: {
     borderRadius: radius.pill,
     paddingHorizontal: spacing.sm,
@@ -61,4 +67,4 @@ const styles = StyleSheet.create({
   textSelected: {
     color: colors.primary,
   },
-});
+}));

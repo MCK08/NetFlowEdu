@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { memo } from "react";
-import { Share, StyleSheet, Text, View } from "react-native";
+import { Share, Text, View } from "react-native";
 
 import { AnimatedPressable } from "@components/ui/AnimatedPressable";
 import { Avatar } from "@components/ui/Avatar";
@@ -12,7 +12,9 @@ import { radius } from "@theme/radius";
 import { shadows } from "@theme/shadows";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 import { ClassRoom } from "@/types/class";
+import { useThemeSubscription } from "@theme/ThemeProvider";
 
 interface ClassCardProps {
   classRoom: ClassRoom;
@@ -37,6 +39,10 @@ async function shareCode(name: string, code: string) {
 // every mounted card even though each `classRoom` prop reference is
 // unchanged.
 export const ClassCard = memo(function ClassCard({ classRoom }: ClassCardProps) {
+  // Phase 49 — memo() blocks prop-driven re-renders, but NOT context
+  // updates; without this subscription this component would keep its
+  // previous theme's styles after a live theme switch.
+  useThemeSubscription();
   const isArchived = classRoom.status !== "active";
 
   return (
@@ -90,7 +96,7 @@ export const ClassCard = memo(function ClassCard({ classRoom }: ClassCardProps) 
   );
 });
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   card: {
     backgroundColor: colors.surface,
     borderRadius: radius.xl,
@@ -145,4 +151,4 @@ const styles = StyleSheet.create({
     letterSpacing: 2,
     flex: 1,
   },
-});
+}));

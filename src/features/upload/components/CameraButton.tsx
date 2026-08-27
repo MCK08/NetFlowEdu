@@ -1,8 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
-import { ActivityIndicator, StyleSheet } from "react-native";
+import { ActivityIndicator } from "react-native";
 
 import { AnimatedPressable } from "@components/ui/AnimatedPressable";
 import { colors } from "@theme/colors";
+import { themedStyles } from "@theme/themeRuntime";
 
 interface CameraButtonProps {
   onPress: () => void;
@@ -28,7 +29,7 @@ export function CameraButton({ onPress, isLoading }: CameraButtonProps) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   button: {
     position: "absolute",
     bottom: 32,
@@ -50,4 +51,4 @@ const styles = StyleSheet.create({
   disabled: {
     opacity: 0.6,
   },
-});
+}));

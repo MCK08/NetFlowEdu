@@ -2,14 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { router } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
-import {
-  FlatList,
-  ListRenderItemInfo,
-  StyleSheet,
-  Text,
-  useWindowDimensions,
-  View,
-} from "react-native";
+import { FlatList, ListRenderItemInfo, Text, useWindowDimensions, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { ImageViewer } from "@components/ImageViewer";
@@ -25,6 +18,7 @@ import { colors } from "@theme/colors";
 import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 import { resolvePublicIdentity } from "@utils/publicIdentity";
 import { Question } from "@/types/question";
 
@@ -190,7 +184,7 @@ function Header() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   flex: {
     flex: 1,
     backgroundColor: colors.background,
@@ -256,4 +250,4 @@ const styles = StyleSheet.create({
     width: "100%",
     height: "100%",
   },
-});
+}));

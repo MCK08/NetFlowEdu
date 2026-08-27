@@ -21,6 +21,7 @@ import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
 import { minTouchTarget } from "@theme/sizes";
+import { themedStyles } from "@theme/themeRuntime";
 import { KnownAccount } from "@services/firebase/accountRegistry";
 
 import { AccountRow } from "./AccountRow";
@@ -246,7 +247,7 @@ export default function AccountSwitcherSheet() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   backdrop: {
     flex: 1,
     backgroundColor: colors.overlay,
@@ -303,4 +304,4 @@ const styles = StyleSheet.create({
     ...typography.subtitle,
     color: colors.textSecondary,
   },
-});
+}));

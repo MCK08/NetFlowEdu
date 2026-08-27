@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, Text, View } from "react-native";
 
 import { Card } from "@components/ui/Card";
 import { PrimaryButton } from "@components/ui/PrimaryButton";
@@ -9,6 +9,8 @@ import { assignmentDueLabel } from "@features/assignments/services/assignmentUrg
 import { colors } from "@theme/colors";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
+import { useThemeSubscription } from "@theme/ThemeProvider";
 
 interface AssignedWorkSectionProps {
   cards: readonly StudentAssignmentCard[];
@@ -25,6 +27,10 @@ export const AssignedWorkSection = memo(function AssignedWorkSection({
   cards,
   onOpen,
 }: AssignedWorkSectionProps) {
+  // Phase 49 — memo() blocks prop-driven re-renders, but NOT context
+  // updates; without this subscription this component would keep its
+  // previous theme's styles after a live theme switch.
+  useThemeSubscription();
   if (cards.length === 0) return null;
 
   // One clock reading for the whole list, so two cards rendered in the same
@@ -66,7 +72,7 @@ export const AssignedWorkSection = memo(function AssignedWorkSection({
   );
 });
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   container: {
     gap: spacing.xs,
   },
@@ -88,4 +94,4 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.textTertiary,
   },
-});
+}));

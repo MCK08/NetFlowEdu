@@ -1,8 +1,10 @@
 import { useAuth } from "@features/authentication";
 import { useSignOut } from "@features/authentication/hooks/useSignOut";
 import { GoogleOnboardingScreen } from "@features/authentication/screens/GoogleOnboardingScreen";
+import { useThemeSubscription } from "@theme/ThemeProvider";
 
 export default function GoogleOnboarding() {
+  useThemeSubscription();
   const { firebaseUser } = useAuth();
   const { signOut, isSigningOut } = useSignOut();
 

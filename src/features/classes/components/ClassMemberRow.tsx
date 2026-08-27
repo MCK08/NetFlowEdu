@@ -1,10 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Alert, StyleSheet, Text, View } from "react-native";
+import { Alert, Text, View } from "react-native";
 
 import { AnimatedPressable } from "@components/ui/AnimatedPressable";
 import { Avatar } from "@components/ui/Avatar";
 import { colors } from "@theme/colors";
 import { spacing } from "@theme/spacing";
+import { themedStyles } from "@theme/themeRuntime";
 import { roleLabel } from "@utils/roleLabels";
 import { resolvePublicIdentity } from "@utils/publicIdentity";
 import { ClassMember } from "@/types/class";
@@ -58,7 +59,7 @@ export function ClassMemberRow({ member, canRemove, onRemove }: ClassMemberRowPr
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   row: {
     flexDirection: "row",
     alignItems: "center",
@@ -89,4 +90,4 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-});
+}));

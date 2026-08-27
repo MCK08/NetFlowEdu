@@ -2,18 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  ActivityIndicator,
-  FlatList,
-  NativeScrollEvent,
-  NativeSyntheticEvent,
-  Pressable,
-  RefreshControl,
-  StyleSheet,
-  Text,
-  View,
-  useWindowDimensions,
-} from "react-native";
+import { ActivityIndicator, FlatList, NativeScrollEvent, NativeSyntheticEvent, Pressable, RefreshControl, Text, View, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { EmptyState as SharedEmptyState } from "@components/ui/EmptyState";
@@ -31,6 +20,7 @@ import { useUpload } from "@features/upload/hooks/useUpload";
 import { colors } from "@theme/colors";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 
 import { EmptyState } from "../components/EmptyState";
 import { FeedCard } from "../components/FeedCard";
@@ -368,7 +358,7 @@ export function FeedScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   flex: {
     flex: 1,
     backgroundColor: colors.background,
@@ -440,4 +430,4 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: colors.textInverse,
   },
-});
+}));

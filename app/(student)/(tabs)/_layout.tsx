@@ -3,14 +3,21 @@ import { Tabs } from "expo-router";
 
 import { ProfileTabButton } from "@features/authentication/components/ProfileTabButton";
 import { colors } from "@theme/colors";
+import { useThemeSubscription } from "@theme/ThemeProvider";
 
 export default function StudentTabsLayout() {
+  useThemeSubscription();
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.textTertiary,
+        // Phase 49 — without these the tab bar and the screen behind it keep
+        // their default light chrome, which reads as a white strip under a
+        // dark app.
+        tabBarStyle: { backgroundColor: colors.background, borderTopColor: colors.divider },
+        sceneStyle: { backgroundColor: colors.background },
       }}
     >
       <Tabs.Screen

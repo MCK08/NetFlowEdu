@@ -1,10 +1,12 @@
 import { memo } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Text, View } from "react-native";
 
 import { colors } from "@theme/colors";
 import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
+import { useThemeSubscription } from "@theme/ThemeProvider";
 
 interface ChatDateSeparatorProps {
   label: string;
@@ -16,6 +18,10 @@ interface ChatDateSeparatorProps {
 export const ChatDateSeparator = memo(function ChatDateSeparator({
   label,
 }: ChatDateSeparatorProps) {
+  // Phase 49 — memo() blocks prop-driven re-renders, but NOT context
+  // updates; without this subscription this component would keep its
+  // previous theme's styles after a live theme switch.
+  useThemeSubscription();
   return (
     <View style={styles.row}>
       <View style={styles.pill}>
@@ -25,7 +31,7 @@ export const ChatDateSeparator = memo(function ChatDateSeparator({
   );
 });
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   row: {
     alignItems: "center",
     paddingVertical: spacing.sm,
@@ -40,4 +46,4 @@ const styles = StyleSheet.create({
     ...typography.label,
     color: colors.textSecondary,
   },
-});
+}));

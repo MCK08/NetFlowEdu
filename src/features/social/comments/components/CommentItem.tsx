@@ -4,6 +4,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { useProfileHandle } from "@features/profiles";
 import { QuestionComment } from "@/types/comment";
+import { colors } from "@theme/colors";
 
 function formatDate(createdAt: number): string {
   if (!createdAt) return "";
@@ -29,7 +30,7 @@ export function CommentItem({ comment, isOwnComment, onDelete }: CommentItemProp
         <Image source={{ uri: photoURL }} style={styles.avatar} contentFit="cover" />
       ) : (
         <View style={styles.avatarPlaceholder}>
-          <Ionicons name="person" size={14} color="#8A8F98" />
+          <Ionicons name="person" size={14} color={colors.textTertiary} />
         </View>
       )}
 
@@ -56,7 +57,7 @@ export function CommentItem({ comment, isOwnComment, onDelete }: CommentItemProp
           accessibilityLabel="Yorumu sil"
           hitSlop={8}
         >
-          <Ionicons name="trash-outline" size={16} color="#8A8F98" />
+          <Ionicons name="trash-outline" size={16} color={colors.textTertiary} />
         </Pressable>
       ) : null}
     </View>
@@ -78,7 +79,7 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: "#F2F2F2",
+    backgroundColor: colors.surfaceMuted,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -99,15 +100,15 @@ const styles = StyleSheet.create({
   },
   handle: {
     fontSize: 11,
-    color: "#8A8F98",
+    color: colors.textTertiary,
   },
   date: {
     fontSize: 11,
-    color: "#8A8F98",
+    color: colors.textTertiary,
   },
   text: {
     fontSize: 14,
-    color: "#1A1A1A",
+    color: colors.textPrimary,
   },
   deleteButton: {
     minWidth: 32,

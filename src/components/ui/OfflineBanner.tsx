@@ -1,11 +1,12 @@
 import { Ionicons } from "@expo/vector-icons";
-import { StyleSheet, Text } from "react-native";
+import { Text } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useNetworkStatus } from "@hooks/useNetworkStatus";
 import { colors } from "@theme/colors";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 
 // Mounted once at the root layout — a single global badge rather than each
 // screen re-implementing its own connectivity check. Renders nothing while
@@ -27,7 +28,7 @@ export function OfflineBanner() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   banner: {
     ...typography.caption,
     position: "absolute",
@@ -40,4 +41,4 @@ const styles = StyleSheet.create({
     textAlign: "center",
     paddingBottom: spacing.xxs,
   },
-});
+}));

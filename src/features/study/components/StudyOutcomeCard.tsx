@@ -4,6 +4,7 @@ import { StyleProp, StyleSheet, View, ViewStyle } from "react-native";
 import { colors } from "@theme/colors";
 import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
+import { themedStyles } from "@theme/themeRuntime";
 
 interface StudyOutcomeCardProps {
   children: ReactNode;
@@ -23,7 +24,7 @@ export function StudyOutcomeCard({ children, style }: StudyOutcomeCardProps) {
   return <View style={[styles.card, style]}>{children}</View>;
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   card: {
     backgroundColor: colors.background,
     borderRadius: radius.xl,
@@ -32,4 +33,4 @@ const styles = StyleSheet.create({
     padding: spacing.sm,
     gap: spacing.sm,
   },
-});
+}));

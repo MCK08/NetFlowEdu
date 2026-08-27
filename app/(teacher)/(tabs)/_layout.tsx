@@ -4,6 +4,7 @@ import { Tabs } from "expo-router";
 import { ProfileTabButton } from "@features/authentication/components/ProfileTabButton";
 import { colors } from "@theme/colors";
 import { typography } from "@theme/typography";
+import { useThemeSubscription } from "@theme/ThemeProvider";
 
 // Mirrors (student)/(tabs)/_layout.tsx's structure — Phase 10 replaced the
 // teacher's previous single-screen "just class creation" experience with
@@ -14,14 +15,21 @@ import { typography } from "@theme/typography";
 // Deliberately scoped to THIS file — the student tab bar is a separate
 // layout and is intentionally left untouched.
 export default function TeacherTabsLayout() {
+  useThemeSubscription();
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.textTertiary,
+        // Phase 49 — without these the tab bar and the screen behind it keep
+        // their default light chrome, which reads as a white strip under a
+        // dark app.
+        sceneStyle: { backgroundColor: colors.background },
         tabBarLabelStyle: typography.label,
-        tabBarStyle: { borderTopColor: colors.divider },
+        // backgroundColor added in Phase 49 — the pre-existing rule only set
+        // borderTopColor, leaving the bar itself light under a dark app.
+        tabBarStyle: { backgroundColor: colors.background, borderTopColor: colors.divider },
       }}
     >
       <Tabs.Screen

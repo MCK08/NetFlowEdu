@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useRef } from "react";
-import { StyleSheet, Text, TextInput, View } from "react-native";
+import { Text, TextInput, View } from "react-native";
 
 import { Divider } from "@components/ui/Divider";
 import { FormError } from "@components/ui/FormError";
@@ -11,6 +11,7 @@ import { colors } from "@theme/colors";
 import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 
 import { AuthShell } from "../components/AuthShell";
 import { OnboardingProgress } from "../components/OnboardingProgress";
@@ -135,7 +136,7 @@ export function GoogleOnboardingScreen({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   identity: {
     flexDirection: "row",
     alignItems: "center",
@@ -162,4 +163,4 @@ const styles = StyleSheet.create({
   divider: {
     marginTop: spacing.xxs,
   },
-});
+}));

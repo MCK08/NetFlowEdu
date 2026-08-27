@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { memo, ReactNode } from "react";
-import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Text, View } from "react-native";
 
 import { AnimatedPressable } from "@components/ui/AnimatedPressable";
 import { Avatar } from "@components/ui/Avatar";
@@ -9,7 +9,9 @@ import { colors } from "@theme/colors";
 import { minTouchTarget } from "@theme/sizes";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 import { UserRole } from "@/types/user";
+import { useThemeSubscription } from "@theme/ThemeProvider";
 
 interface SocialUserRowProps {
   primaryName: string;
@@ -45,6 +47,10 @@ export const SocialUserRow = memo(function SocialUserRow({
   isBusy = false,
   actions,
 }: SocialUserRowProps) {
+  // Phase 49 — memo() blocks prop-driven re-renders, but NOT context
+  // updates; without this subscription this component would keep its
+  // previous theme's styles after a live theme switch.
+  useThemeSubscription();
   return (
     <View style={styles.row}>
       <AnimatedPressable
@@ -88,7 +94,7 @@ export const SocialUserRow = memo(function SocialUserRow({
   );
 });
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   row: {
     flexDirection: "row",
     alignItems: "center",
@@ -132,4 +138,4 @@ const styles = StyleSheet.create({
   busy: {
     minWidth: minTouchTarget,
   },
-});
+}));

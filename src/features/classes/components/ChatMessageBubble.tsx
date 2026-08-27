@@ -1,13 +1,15 @@
 import { Ionicons } from "@expo/vector-icons";
 import { memo } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, Text, View } from "react-native";
 
 import { Avatar } from "@components/ui/Avatar";
 import { colors } from "@theme/colors";
 import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 import { ChatListMessage } from "@/types/message";
+import { useThemeSubscription } from "@theme/ThemeProvider";
 
 // Reserved gutter so every incoming bubble in a group lines up on the same
 // left edge, whether or not this particular row draws the avatar.
@@ -40,6 +42,10 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
   isLastInGroup,
   onRetry,
 }: ChatMessageBubbleProps) {
+  // Phase 49 — memo() blocks prop-driven re-renders, but NOT context
+  // updates; without this subscription this component would keep its
+  // previous theme's styles after a live theme switch.
+  useThemeSubscription();
   const isFailed = message.status === "failed";
   const isPending = message.status === "pending";
   const time = formatTime(message.createdAt);
@@ -132,7 +138,7 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
   );
 });
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   row: {
     flexDirection: "row",
     alignItems: "flex-end",
@@ -243,4 +249,4 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: colors.danger,
   },
-});
+}));

@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router, useNavigation } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
+import { Alert, Pressable, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AnimatedPressable } from "@components/ui/AnimatedPressable";
@@ -9,6 +9,7 @@ import { useAuth } from "@features/authentication";
 import { colors } from "@theme/colors";
 import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
+import { themedStyles } from "@theme/themeRuntime";
 
 import { DrawingBoard } from "../components/DrawingBoard";
 import { PhotoAnswerForm } from "../components/PhotoAnswerForm";
@@ -146,7 +147,7 @@ export function AnswerScreen({ questionId }: AnswerScreenProps) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   flex: {
     flex: 1,
     backgroundColor: colors.background,
@@ -199,4 +200,4 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: spacing.xl,
   },
-});
+}));

@@ -1,6 +1,6 @@
 import { Image } from "expo-image";
 import { router } from "expo-router";
-import { StyleSheet, Text, View } from "react-native";
+import { Text, View } from "react-native";
 
 import { AnimatedPressable } from "@components/ui/AnimatedPressable";
 import { Avatar } from "@components/ui/Avatar";
@@ -12,6 +12,7 @@ import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
 import { minTouchTarget } from "@theme/sizes";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 
 import { AnswerMethodBadge } from "./AnswerMethodBadge";
 import { Answer } from "../types";
@@ -96,7 +97,7 @@ export function AnswerCard({ answer, onPressImage }: AnswerCardProps) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   card: {
     borderRadius: radius.xl,
     backgroundColor: colors.surface,
@@ -141,4 +142,4 @@ const styles = StyleSheet.create({
     color: colors.textTertiary,
     marginLeft: "auto",
   },
-});
+}));

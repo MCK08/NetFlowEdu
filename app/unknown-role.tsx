@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { StyleSheet, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { FormError } from "@components/ui/FormError";
@@ -10,6 +10,8 @@ import { colors } from "@theme/colors";
 import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
+import { useThemeSubscription } from "@theme/ThemeProvider";
 
 const GENERIC_MESSAGE =
   "Hesabınızla ilgili bir sorun oluştu. Lütfen daha sonra tekrar deneyin veya destek ekibiyle iletişime geçin.";
@@ -19,6 +21,7 @@ const GENERIC_MESSAGE =
 // a corrupted profile write, or a role removed server-side. Fails closed: no
 // dashboard is guessed, and signing out is the only way forward.
 export default function UnknownRoleScreen() {
+  useThemeSubscription();
   const { profileError } = useAuth();
   // Shared guarded sign-out: a failure here used to be an unhandled
   // rejection on the one screen whose ONLY action is signing out, leaving
@@ -46,7 +49,7 @@ export default function UnknownRoleScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   flex: {
     flex: 1,
     backgroundColor: colors.background,
@@ -77,4 +80,4 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginBottom: spacing.xs,
   },
-});
+}));

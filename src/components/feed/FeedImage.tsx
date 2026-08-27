@@ -4,6 +4,8 @@ import { ActivityIndicator, StyleSheet, View } from "react-native";
 
 import { colors } from "@theme/colors";
 import { duration } from "@theme/animation";
+import { themedStyles } from "@theme/themeRuntime";
+import { useThemeSubscription } from "@theme/ThemeProvider";
 
 interface FeedImageProps {
   uri: string;
@@ -28,6 +30,10 @@ export const FeedImage = memo(function FeedImage({
   contentFit,
   accessibilityLabel,
 }: FeedImageProps) {
+  // Phase 49 — memo() blocks prop-driven re-renders, but NOT context
+  // updates; without this subscription this component would keep its
+  // previous theme's styles after a live theme switch.
+  useThemeSubscription();
   const [isLoading, setIsLoading] = useState(true);
 
   return (
@@ -50,7 +56,7 @@ export const FeedImage = memo(function FeedImage({
   );
 });
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   container: {
     flex: 1,
   },
@@ -62,4 +68,4 @@ const styles = StyleSheet.create({
   image: {
     flex: 1,
   },
-});
+}));

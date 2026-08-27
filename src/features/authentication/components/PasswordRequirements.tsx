@@ -1,9 +1,10 @@
 import { Ionicons } from "@expo/vector-icons";
-import { StyleSheet, Text, View } from "react-native";
+import { Text, View } from "react-native";
 
 import { colors } from "@theme/colors";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 
 import { evaluatePasswordRules } from "../validation";
 
@@ -46,7 +47,7 @@ export function PasswordRequirements({ password }: PasswordRequirementsProps) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   container: {
     gap: spacing.xxs,
   },
@@ -64,4 +65,4 @@ const styles = StyleSheet.create({
   textSatisfied: {
     color: colors.success,
   },
-});
+}));

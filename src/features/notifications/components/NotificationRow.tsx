@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { memo } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Text, View } from "react-native";
 
 import { AnimatedPressable } from "@components/ui/AnimatedPressable";
 import { Avatar } from "@components/ui/Avatar";
@@ -8,9 +8,11 @@ import { colors } from "@theme/colors";
 import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 import { NotificationRecord } from "@/types/notification";
 
 import { notificationAccessibilityLabel, presentNotification } from "../services/notificationPresentation";
+import { useThemeSubscription } from "@theme/ThemeProvider";
 
 interface NotificationRowProps {
   notification: NotificationRecord;
@@ -30,6 +32,10 @@ export const NotificationRow = memo(function NotificationRow({
   notification,
   onPress,
 }: NotificationRowProps) {
+  // Phase 49 — memo() blocks prop-driven re-renders, but NOT context
+  // updates; without this subscription this component would keep its
+  // previous theme's styles after a live theme switch.
+  useThemeSubscription();
   const presentation = presentNotification(notification);
   const accessibilityLabel = notificationAccessibilityLabel(notification, presentation);
 
@@ -65,7 +71,7 @@ export const NotificationRow = memo(function NotificationRow({
   );
 });
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   row: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -117,4 +123,4 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     marginTop: 6,
   },
-});
+}));

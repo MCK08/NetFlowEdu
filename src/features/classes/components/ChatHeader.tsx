@@ -1,10 +1,11 @@
-import { StyleSheet, Text, View } from "react-native";
+import { Text, View } from "react-native";
 
 import { Divider } from "@components/ui/Divider";
 import { IconButton } from "@components/ui/IconButton";
 import { colors } from "@theme/colors";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 
 interface ChatHeaderProps {
   onBack: () => void;
@@ -42,7 +43,7 @@ export function ChatHeader({ onBack }: ChatHeaderProps) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   row: {
     flexDirection: "row",
     alignItems: "center",
@@ -61,4 +62,4 @@ const styles = StyleSheet.create({
   trailingSpacer: {
     width: 44,
   },
-});
+}));

@@ -1,8 +1,9 @@
-import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Text, View } from "react-native";
 
 import { colors } from "@theme/colors";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 
 const BOOTSTRAP_MESSAGE = "Oturumun hazırlanıyor…";
 
@@ -34,7 +35,7 @@ export function AuthBootstrapScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   container: {
     flex: 1,
     alignItems: "center",
@@ -54,4 +55,4 @@ const styles = StyleSheet.create({
     color: colors.textTertiary,
     textAlign: "center",
   },
-});
+}));

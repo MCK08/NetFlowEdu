@@ -9,9 +9,11 @@ import { radius } from "@theme/radius";
 import { minTouchTarget } from "@theme/sizes";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 
 import { StudyOutcome } from "../domain/studyTypes";
 import { OUTCOME_OPTIONS } from "../services/studyPresentation";
+import { useThemeSubscription } from "@theme/ThemeProvider";
 
 interface StudyOutcomeButtonsProps {
   onSelect: (outcome: StudyOutcome) => void;
@@ -46,6 +48,10 @@ export const StudyOutcomeButtons = memo(function StudyOutcomeButtons({
   title = "Bu soruyu nasıl çözdün?",
   visibleOutcomes,
 }: StudyOutcomeButtonsProps) {
+  // Phase 49 — memo() blocks prop-driven re-renders, but NOT context
+  // updates; without this subscription this component would keep its
+  // previous theme's styles after a live theme switch.
+  useThemeSubscription();
   const isBusy = pendingOutcome !== null;
   const options = visibleOutcomes
     ? OUTCOME_OPTIONS.filter((option) => visibleOutcomes.includes(option.outcome))
@@ -101,7 +107,7 @@ export const StudyOutcomeButtons = memo(function StudyOutcomeButtons({
   );
 });
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   container: {
     gap: spacing.xs,
   },
@@ -154,4 +160,4 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontWeight: "700",
   },
-});
+}));

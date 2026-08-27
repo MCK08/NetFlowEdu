@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
-import { StyleSheet, Text, View } from "react-native";
+import { Text, View } from "react-native";
 
 import { Divider } from "@components/ui/Divider";
 import { FormError } from "@components/ui/FormError";
@@ -9,6 +9,7 @@ import { colors } from "@theme/colors";
 import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 
 import { AuthShell } from "../components/AuthShell";
 import { OnboardingProgress } from "../components/OnboardingProgress";
@@ -115,7 +116,7 @@ export function VerifyEmailScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   emailPanel: {
     flexDirection: "row",
     alignItems: "center",
@@ -143,4 +144,4 @@ const styles = StyleSheet.create({
   divider: {
     marginTop: spacing.xs,
   },
-});
+}));

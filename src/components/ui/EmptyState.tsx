@@ -1,11 +1,13 @@
 import { Ionicons } from "@expo/vector-icons";
 import { memo } from "react";
-import { StyleSheet, Text, View, ViewStyle } from "react-native";
+import { Text, View, ViewStyle } from "react-native";
 
 import { colors } from "@theme/colors";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
 import { iconSize } from "@theme/sizes";
+import { themedStyles } from "@theme/themeRuntime";
+import { useThemeSubscription } from "@theme/ThemeProvider";
 
 interface EmptyStateProps {
   icon?: keyof typeof Ionicons.glyphMap;
@@ -28,6 +30,10 @@ export const EmptyState = memo(function EmptyState({
   description,
   style,
 }: EmptyStateProps) {
+  // Phase 49 — memo() blocks prop-driven re-renders, but NOT context
+  // updates; without this subscription this component would keep its
+  // previous theme's styles after a live theme switch.
+  useThemeSubscription();
   return (
     <View style={[styles.container, style]}>
       <Ionicons name={icon} size={iconSize.xl} color={colors.textTertiary} />
@@ -37,7 +43,7 @@ export const EmptyState = memo(function EmptyState({
   );
 });
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   container: {
     alignItems: "center",
     justifyContent: "center",
@@ -55,4 +61,4 @@ const styles = StyleSheet.create({
     color: colors.textTertiary,
     textAlign: "center",
   },
-});
+}));

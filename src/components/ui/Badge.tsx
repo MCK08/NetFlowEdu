@@ -1,10 +1,12 @@
 import { memo } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Text, View } from "react-native";
 
 import { colors } from "@theme/colors";
 import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
+import { useThemeSubscription } from "@theme/ThemeProvider";
 
 export type BadgeVariant = "neutral" | "primary" | "danger" | "success";
 
@@ -24,6 +26,10 @@ const VARIANT_COLORS: Record<BadgeVariant, { background: string; text: string }>
 // status/count label) builds on, instead of each screen re-implementing
 // its own "rounded background + small bold text" View.
 export const Badge = memo(function Badge({ label, variant = "neutral" }: BadgeProps) {
+  // Phase 49 — memo() blocks prop-driven re-renders, but NOT context
+  // updates; without this subscription this component would keep its
+  // previous theme's styles after a live theme switch.
+  useThemeSubscription();
   const palette = VARIANT_COLORS[variant];
   return (
     <View style={[styles.container, { backgroundColor: palette.background }]}>
@@ -34,7 +40,7 @@ export const Badge = memo(function Badge({ label, variant = "neutral" }: BadgePr
   );
 });
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   container: {
     borderRadius: radius.sm,
     paddingHorizontal: spacing.xs,
@@ -44,4 +50,4 @@ const styles = StyleSheet.create({
   text: {
     ...typography.label,
   },
-});
+}));

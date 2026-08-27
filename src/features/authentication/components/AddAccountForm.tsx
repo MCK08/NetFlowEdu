@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { StyleSheet, Text, TextInput, View } from "react-native";
+import { Text, TextInput, View } from "react-native";
 
 import { Divider } from "@components/ui/Divider";
 import { FormError } from "@components/ui/FormError";
@@ -9,6 +9,7 @@ import { TextField } from "@components/ui/TextField";
 import { colors } from "@theme/colors";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 
 import { GoogleSignInButton } from "./GoogleSignInButton";
 import { useAddAccountForm } from "../hooks/useAddAccountForm";
@@ -118,7 +119,7 @@ export function AddAccountForm({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   container: {
     gap: spacing.sm,
   },
@@ -145,4 +146,4 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.textTertiary,
   },
-});
+}));

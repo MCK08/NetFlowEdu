@@ -1,17 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router, useNavigation } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  ActivityIndicator,
-  Alert,
-  FlatList,
-  Platform,
-  Pressable,
-  StyleSheet,
-  Text,
-  useWindowDimensions,
-  View,
-} from "react-native";
+import { ActivityIndicator, Alert, FlatList, Platform, Pressable, Text, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { EmptyState } from "@components/ui/EmptyState";
@@ -23,6 +13,7 @@ import { colors } from "@theme/colors";
 import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 import { Question } from "@/types/question";
 
 import { useAssignmentSession } from "@features/assignments/hooks/useAssignmentSession";
@@ -498,7 +489,7 @@ export function StudySessionScreen({ mode, assignmentId }: StudySessionScreenPro
 
 const HEADER_HEIGHT = 48;
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   flex: {
     flex: 1,
     backgroundColor: colors.background,
@@ -559,4 +550,4 @@ const styles = StyleSheet.create({
     color: colors.textTertiary,
     textAlign: "center",
   },
-});
+}));

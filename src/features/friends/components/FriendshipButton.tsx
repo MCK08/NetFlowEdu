@@ -1,11 +1,12 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Alert, StyleSheet, Text, View } from "react-native";
+import { Alert, Text, View } from "react-native";
 
 import { LoadingSkeleton } from "@components/ui/LoadingSkeleton";
 import { colors } from "@theme/colors";
 import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 
 import { useFriendshipAction } from "../hooks/useFriendshipAction";
 import {
@@ -116,7 +117,7 @@ export function FriendshipButton({ ownUid, otherUid, isOwnProfile = false }: Fri
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   container: {
     alignSelf: "stretch",
     alignItems: "center",
@@ -147,4 +148,4 @@ const styles = StyleSheet.create({
     color: colors.danger,
     flexShrink: 1,
   },
-});
+}));

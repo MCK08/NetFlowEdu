@@ -1,10 +1,11 @@
 import { ReactNode } from "react";
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from "react-native";
+import { KeyboardAvoidingView, Platform, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { colors } from "@theme/colors";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 
 interface AuthShellProps {
   title: string;
@@ -60,7 +61,7 @@ export function AuthShell({ title, description, children, footer }: AuthShellPro
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   flex: {
     flex: 1,
     backgroundColor: colors.background,
@@ -101,4 +102,4 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     alignItems: "center",
   },
-});
+}));

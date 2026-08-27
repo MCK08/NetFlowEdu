@@ -1,6 +1,6 @@
 import { Link, router } from "expo-router";
 import { useRef } from "react";
-import { StyleSheet, Text, TextInput, View } from "react-native";
+import { Text, TextInput, View } from "react-native";
 
 import { Checkbox } from "@components/ui/Checkbox";
 import { FormError } from "@components/ui/FormError";
@@ -11,6 +11,7 @@ import { ROUTES } from "@constants/routes";
 import { colors } from "@theme/colors";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 
 import { AuthShell } from "../components/AuthShell";
 import { OnboardingProgress } from "../components/OnboardingProgress";
@@ -159,7 +160,7 @@ export function RegisterScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   section: {
     gap: spacing.sm,
   },
@@ -176,4 +177,4 @@ const styles = StyleSheet.create({
     textAlign: "center",
     paddingVertical: spacing.xs,
   },
-});
+}));

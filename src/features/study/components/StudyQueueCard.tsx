@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { memo } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Text, View } from "react-native";
 
 import { AnimatedPressable } from "@components/ui/AnimatedPressable";
 import { Badge } from "@components/ui/Badge";
@@ -9,6 +9,7 @@ import { colors } from "@theme/colors";
 import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 
 import { StudyOutcome } from "../domain/studyTypes";
 import { ResolvedQueueEntry } from "../services/studyService";
@@ -16,6 +17,7 @@ import { studyStatusLabel } from "../services/studyPresentation";
 import { toHydratedStudyItem } from "../services/studyItemParser";
 import { StudyOutcomeCard } from "./StudyOutcomeCard";
 import { StudyOutcomeControls } from "./StudyOutcomeControls";
+import { useThemeSubscription } from "@theme/ThemeProvider";
 
 interface StudyQueueCardProps {
   entry: ResolvedQueueEntry;
@@ -36,6 +38,10 @@ export const StudyQueueCard = memo(function StudyQueueCard({
   pendingOutcome,
   error,
 }: StudyQueueCardProps) {
+  // Phase 49 — memo() blocks prop-driven re-renders, but NOT context
+  // updates; without this subscription this component would keep its
+  // previous theme's styles after a live theme switch.
+  useThemeSubscription();
   const { item, question } = entry;
 
   if (!question) {
@@ -93,7 +99,7 @@ export const StudyQueueCard = memo(function StudyQueueCard({
   );
 });
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   preview: {
     gap: spacing.xs,
   },
@@ -131,4 +137,4 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.textTertiary,
   },
-});
+}));

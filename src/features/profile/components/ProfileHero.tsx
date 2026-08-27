@@ -1,12 +1,14 @@
 import { memo, ReactNode } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Text, View } from "react-native";
 
 import { Avatar } from "@components/ui/Avatar";
 import { RoleBadge } from "@components/ui/RoleBadge";
 import { colors } from "@theme/colors";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 import { UserRole } from "@/types/user";
+import { useThemeSubscription } from "@theme/ThemeProvider";
 
 interface ProfileHeroProps {
   photoURL: string | null;
@@ -34,6 +36,10 @@ export const ProfileHero = memo(function ProfileHero({
   role,
   children,
 }: ProfileHeroProps) {
+  // Phase 49 — memo() blocks prop-driven re-renders, but NOT context
+  // updates; without this subscription this component would keep its
+  // previous theme's styles after a live theme switch.
+  useThemeSubscription();
   return (
     <View style={styles.container}>
       <Avatar photoURL={photoURL} displayName={primaryName} size="xl" />
@@ -59,7 +65,7 @@ export const ProfileHero = memo(function ProfileHero({
   );
 });
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   container: {
     alignItems: "center",
     gap: spacing.sm,
@@ -81,4 +87,4 @@ const styles = StyleSheet.create({
     ...typography.body,
     color: colors.textTertiary,
   },
-});
+}));

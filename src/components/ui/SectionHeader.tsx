@@ -1,9 +1,11 @@
 import { memo } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Text, View } from "react-native";
 
 import { colors } from "@theme/colors";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
+import { useThemeSubscription } from "@theme/ThemeProvider";
 
 interface SectionHeaderProps {
   title: string;
@@ -11,6 +13,10 @@ interface SectionHeaderProps {
 }
 
 export const SectionHeader = memo(function SectionHeader({ title, action }: SectionHeaderProps) {
+  // Phase 49 — memo() blocks prop-driven re-renders, but NOT context
+  // updates; without this subscription this component would keep its
+  // previous theme's styles after a live theme switch.
+  useThemeSubscription();
   return (
     <View style={styles.row}>
       <Text style={styles.title}>{title}</Text>
@@ -23,7 +29,7 @@ export const SectionHeader = memo(function SectionHeader({ title, action }: Sect
   );
 });
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   row: {
     flexDirection: "row",
     alignItems: "center",
@@ -39,4 +45,4 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontWeight: "600",
   },
-});
+}));

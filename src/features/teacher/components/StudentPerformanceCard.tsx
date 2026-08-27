@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Text, View } from "react-native";
 
 import { AnimatedPressable } from "@components/ui/AnimatedPressable";
 import { Avatar } from "@components/ui/Avatar";
@@ -8,8 +8,10 @@ import { colors } from "@theme/colors";
 import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 
 import { StudentPerformanceCard as StudentPerformanceCardData } from "../services/studentPerformance";
+import { useThemeSubscription } from "@theme/ThemeProvider";
 
 interface StudentPerformanceCardProps {
   card: StudentPerformanceCardData;
@@ -31,6 +33,10 @@ export const StudentPerformanceCard = memo(function StudentPerformanceCard({
   card,
   onPress,
 }: StudentPerformanceCardProps) {
+  // Phase 49 — memo() blocks prop-driven re-renders, but NOT context
+  // updates; without this subscription this component would keep its
+  // previous theme's styles after a live theme switch.
+  useThemeSubscription();
   const { snapshot } = card;
   const progressPercent = snapshot.successRatePercent ?? 0;
   const barColor = tierColor(card.tier);
@@ -84,7 +90,7 @@ export const StudentPerformanceCard = memo(function StudentPerformanceCard({
   );
 });
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   card: {
     gap: spacing.sm,
   },
@@ -119,4 +125,4 @@ const styles = StyleSheet.create({
     height: "100%",
     borderRadius: radius.pill,
   },
-});
+}));

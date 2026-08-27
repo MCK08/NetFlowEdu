@@ -1,14 +1,16 @@
 import { Ionicons } from "@expo/vector-icons";
 import { memo } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Text, View } from "react-native";
 
 import { colors } from "@theme/colors";
 import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 
 import { StudySummary } from "../services/studyService";
 import { goalProgress, goalProgressLabel, streakLabel } from "../services/studyPresentation";
+import { useThemeSubscription } from "@theme/ThemeProvider";
 
 interface StudyProgressCardProps {
   summary: StudySummary;
@@ -41,6 +43,10 @@ export const StudyProgressCard = memo(function StudyProgressCard({
   summary,
   dueCount,
 }: StudyProgressCardProps) {
+  // Phase 49 — memo() blocks prop-driven re-renders, but NOT context
+  // updates; without this subscription this component would keep its
+  // previous theme's styles after a live theme switch.
+  useThemeSubscription();
   const progress = goalProgress(summary.reviewedToday, summary.dailyGoal);
   const progressPercent: `${number}%` = `${Math.round(progress * 100)}%`;
 
@@ -76,7 +82,7 @@ export const StudyProgressCard = memo(function StudyProgressCard({
   );
 });
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   card: {
     backgroundColor: colors.surface,
     borderRadius: radius.xl,
@@ -130,4 +136,4 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.textTertiary,
   },
-});
+}));

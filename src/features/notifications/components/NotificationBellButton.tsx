@@ -1,12 +1,13 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { StyleSheet, Text, View } from "react-native";
+import { Text, View } from "react-native";
 
 import { AnimatedPressable } from "@components/ui/AnimatedPressable";
 import { colors } from "@theme/colors";
 import { radius } from "@theme/radius";
 import { iconSize, minTouchTarget } from "@theme/sizes";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 
 import { useUnreadNotificationCount } from "../hooks/useUnreadNotificationCount";
 import { formatUnreadBadge, unreadBadgeAccessibilityLabel } from "../services/unreadBadge";
@@ -48,7 +49,7 @@ export function NotificationBellButton({ uid, route }: NotificationBellButtonPro
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   hitArea: {
     minWidth: minTouchTarget,
     minHeight: minTouchTarget,
@@ -73,4 +74,4 @@ const styles = StyleSheet.create({
     lineHeight: 11,
     color: colors.textInverse,
   },
-});
+}));

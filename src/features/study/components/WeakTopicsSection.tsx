@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Text, View } from "react-native";
 
 import { AnimatedPressable } from "@components/ui/AnimatedPressable";
 import { Badge } from "@components/ui/Badge";
@@ -9,8 +9,10 @@ import { SectionHeader } from "@components/ui/SectionHeader";
 import { colors } from "@theme/colors";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 
 import { TopicInsight } from "../services/learningInsights";
+import { useThemeSubscription } from "@theme/ThemeProvider";
 
 interface WeakTopicsSectionProps {
   topics: readonly TopicInsight[];
@@ -42,6 +44,10 @@ export const WeakTopicsSection = memo(function WeakTopicsSection({
   topics,
   onSelectTopic,
 }: WeakTopicsSectionProps) {
+  // Phase 49 — memo() blocks prop-driven re-renders, but NOT context
+  // updates; without this subscription this component would keep its
+  // previous theme's styles after a live theme switch.
+  useThemeSubscription();
   if (topics.length === 0) return null;
 
   return (
@@ -81,7 +87,7 @@ export const WeakTopicsSection = memo(function WeakTopicsSection({
   );
 });
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   container: {
     gap: spacing.xs,
   },
@@ -110,4 +116,4 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.textTertiary,
   },
-});
+}));

@@ -1,9 +1,11 @@
 import { memo } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Text, View } from "react-native";
 
 import { colors } from "@theme/colors";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
+import { useThemeSubscription } from "@theme/ThemeProvider";
 
 interface FeedCaptionProps {
   description: string | null;
@@ -23,6 +25,10 @@ interface FeedCaptionProps {
 // reader came to look at. The full text remains available on the question
 // detail screen, which both cards already navigate to.
 export const FeedCaption = memo(function FeedCaption({ description }: FeedCaptionProps) {
+  // Phase 49 — memo() blocks prop-driven re-renders, but NOT context
+  // updates; without this subscription this component would keep its
+  // previous theme's styles after a live theme switch.
+  useThemeSubscription();
   const text = description?.trim();
   if (!text) return null;
 
@@ -35,7 +41,7 @@ export const FeedCaption = memo(function FeedCaption({ description }: FeedCaptio
   );
 });
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   container: {
     marginTop: spacing.xs,
   },
@@ -44,4 +50,4 @@ const styles = StyleSheet.create({
     color: colors.textInverse,
     opacity: 0.94,
   },
-});
+}));

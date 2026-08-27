@@ -2,6 +2,7 @@ import { StyleSheet, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { PrimaryButton } from "@components/ui/PrimaryButton";
+import { colors } from "@theme/colors";
 
 interface CommentComposerProps {
   draft: string;
@@ -23,7 +24,7 @@ export function CommentComposer({ draft, onChangeDraft, isSubmitting, onSubmit }
         value={draft}
         onChangeText={onChangeDraft}
         placeholder="Bir yorum yaz..."
-        placeholderTextColor="#8A8F98"
+        placeholderTextColor={colors.textTertiary}
         style={styles.input}
         multiline
         maxLength={500}
@@ -50,14 +51,14 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     backgroundColor: "white",
     borderTopWidth: 1,
-    borderTopColor: "#EDEEF0",
+    borderTopColor: colors.divider,
   },
   input: {
     flex: 1,
     minHeight: 44,
     maxHeight: 120,
     borderWidth: 1,
-    borderColor: "#D0D5DD",
+    borderColor: colors.border,
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 10,

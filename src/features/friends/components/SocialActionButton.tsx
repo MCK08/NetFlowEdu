@@ -7,8 +7,10 @@ import { radius } from "@theme/radius";
 import { minTouchTarget } from "@theme/sizes";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 
 import { SocialAction } from "../services/friendshipPresentation";
+import { useThemeSubscription } from "@theme/ThemeProvider";
 
 interface SocialActionButtonProps {
   action: SocialAction;
@@ -33,6 +35,10 @@ export const SocialActionButton = memo(function SocialActionButton({
   isBusy,
   fill = false,
 }: SocialActionButtonProps) {
+  // Phase 49 — memo() blocks prop-driven re-renders, but NOT context
+  // updates; without this subscription this component would keep its
+  // previous theme's styles after a live theme switch.
+  useThemeSubscription();
   const toneStyle =
     action.tone === "primary"
       ? styles.primary
@@ -72,7 +78,7 @@ export const SocialActionButton = memo(function SocialActionButton({
   );
 });
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   button: {
     minHeight: minTouchTarget,
     justifyContent: "center",
@@ -117,4 +123,4 @@ const styles = StyleSheet.create({
   destructiveText: {
     color: colors.danger,
   },
-});
+}));

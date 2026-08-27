@@ -1,11 +1,12 @@
 import { forwardRef } from "react";
-import { StyleSheet, Text, TextInput, TextInputProps, View } from "react-native";
+import { Text, TextInput, TextInputProps, View } from "react-native";
 
 import { colors } from "@theme/colors";
 import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
 import { inputFontSize, minTouchTarget } from "@theme/sizes";
+import { themedStyles } from "@theme/themeRuntime";
 
 interface TextFieldProps extends TextInputProps {
   label: string;
@@ -55,7 +56,7 @@ export const TextField = forwardRef<TextInput, TextFieldProps>(function TextFiel
   );
 });
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   container: {
     gap: spacing.xxs,
   },
@@ -83,4 +84,4 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.textTertiary,
   },
-});
+}));

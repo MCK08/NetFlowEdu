@@ -4,11 +4,13 @@ import { ActivityIndicator, View } from "react-native";
 
 import { useAuth } from "@features/authentication";
 import { PublicProfileScreen } from "@features/profile";
+import { useThemeSubscription } from "@theme/ThemeProvider";
 
 // Mirrors (student)/user/[userId].tsx exactly — same shared
 // PublicProfileScreen, own-profile redirect to the teacher's own Profil tab
 // instead of the student one.
 export default function TeacherPublicProfile() {
+  useThemeSubscription();
   const { userId } = useLocalSearchParams<{ userId: string }>();
   const { firebaseUser } = useAuth();
 

@@ -1,6 +1,6 @@
 import { router } from "expo-router";
 import { memo } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, Text, View } from "react-native";
 
 import {
   FeedActionRail,
@@ -17,11 +17,13 @@ import { useLike } from "@features/social/likes";
 import { colors, darkColors } from "@theme/colors";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 import { formatRelativeTime } from "@utils/feedFormat";
 import { visibilityLabel } from "@utils/questionLabels";
 import { roleLabel } from "@utils/roleLabels";
 
 import { Question } from "../types";
+import { useThemeSubscription } from "@theme/ThemeProvider";
 
 interface FeedCardProps {
   question: Question;
@@ -40,6 +42,10 @@ const BOTTOM_OVERLAY_RESERVE = 150;
 // here: making them their own Pressables would silently change where a tap
 // in that area navigates.
 function FeedCardComponent({ question, height }: FeedCardProps) {
+  // Phase 49 — memo() blocks prop-driven re-renders, but NOT context
+  // updates; without this subscription this component would keep its
+  // previous theme's styles after a live theme switch.
+  useThemeSubscription();
   const { firebaseUser } = useAuth();
   const { primaryName, usernameHandle, photoURL } = useProfileHandle(question.ownerId);
   const { liked, likeCount, toggle } = useLike({
@@ -124,7 +130,7 @@ function FeedCardComponent({ question, height }: FeedCardProps) {
 // re-renders with it.
 export const FeedCard = memo(FeedCardComponent);
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   card: {
     width: "100%",
     backgroundColor: darkColors.background,
@@ -149,4 +155,4 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
     flexDirection: "row",
   },
-});
+}));

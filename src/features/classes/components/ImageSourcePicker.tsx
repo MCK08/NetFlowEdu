@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Animated, Pressable, StyleSheet, Text } from "react-native";
 
 import { QuestionImageSource } from "@features/upload/services/uploadService";
+import { colors } from "@theme/colors";
 
 interface ImageSourcePickerProps {
   visible: boolean;
@@ -113,7 +114,7 @@ const styles = StyleSheet.create({
     minHeight: 52,
     borderRadius: 12,
     borderWidth: 1.5,
-    borderColor: "#D0D5DD",
+    borderColor: colors.border,
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: 8,
@@ -132,6 +133,6 @@ const styles = StyleSheet.create({
   cancelText: {
     fontSize: 15,
     fontWeight: "600",
-    color: "#5B5F66",
+    color: colors.textSecondary,
   },
 });

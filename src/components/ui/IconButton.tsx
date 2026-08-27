@@ -1,9 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
-import { StyleSheet } from "react-native";
 
 import { colors } from "@theme/colors";
 import { iconSize } from "@theme/sizes";
 import { minTouchTarget } from "@theme/sizes";
+import { themedStyles } from "@theme/themeRuntime";
 
 import { AnimatedPressable } from "./AnimatedPressable";
 
@@ -43,11 +43,11 @@ export function IconButton({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   hitArea: {
     minWidth: minTouchTarget,
     minHeight: minTouchTarget,
     alignItems: "center",
     justifyContent: "center",
   },
-});
+}));

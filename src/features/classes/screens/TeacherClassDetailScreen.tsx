@@ -1,14 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import {
-  ActivityIndicator,
-  FlatList,
-  Pressable,
-  StyleSheet,
-  Text,
-  useWindowDimensions,
-  View,
-} from "react-native";
+import { ActivityIndicator, FlatList, Pressable, Text, useWindowDimensions, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { EmptyState } from "@components/ui/EmptyState";
@@ -16,6 +8,7 @@ import { useAuth } from "@features/authentication";
 import { QuestionGridItem } from "@features/profile/components/QuestionGridItem";
 import { useNavigationGuard } from "@hooks/useNavigationGuard";
 import { colors } from "@theme/colors";
+import { themedStyles } from "@theme/themeRuntime";
 import { Question } from "@/types/question";
 
 import { ClassMemberRow } from "../components/ClassMemberRow";
@@ -104,7 +97,7 @@ export function TeacherClassDetailScreen({ classId }: TeacherClassDetailScreenPr
                 accessibilityRole="button"
                 accessibilityLabel="Kodu yenile"
               >
-                <Ionicons name="refresh" size={16} color="#3358D9" />
+                <Ionicons name="refresh" size={16} color={colors.primary} />
                 <Text style={styles.regenerateText}>Yenile</Text>
               </Pressable>
             </View>
@@ -128,7 +121,7 @@ export function TeacherClassDetailScreen({ classId }: TeacherClassDetailScreenPr
               accessibilityRole="button"
               accessibilityLabel="Sınıf performansını görüntüle"
             >
-              <Ionicons name="stats-chart-outline" size={18} color="#3358D9" />
+              <Ionicons name="stats-chart-outline" size={18} color={colors.primary} />
               <Text style={styles.performanceButtonText}>Sınıf Performansı</Text>
             </Pressable>
 
@@ -177,7 +170,7 @@ export function TeacherClassDetailScreen({ classId }: TeacherClassDetailScreenPr
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   flex: {
     flex: 1,
     backgroundColor: "white",
@@ -213,7 +206,7 @@ const styles = StyleSheet.create({
   },
   codeLabel: {
     fontSize: 13,
-    color: "#8A8F98",
+    color: colors.textTertiary,
   },
   code: {
     fontSize: 16,
@@ -231,10 +224,10 @@ const styles = StyleSheet.create({
   regenerateText: {
     fontSize: 13,
     fontWeight: "600",
-    color: "#3358D9",
+    color: colors.primary,
   },
   error: {
-    color: "#D92D20",
+    color: colors.danger,
     fontSize: 13,
   },
   chatButton: {
@@ -244,7 +237,7 @@ const styles = StyleSheet.create({
     gap: 8,
     minHeight: 48,
     borderRadius: 10,
-    backgroundColor: "#3358D9",
+    backgroundColor: colors.primary,
   },
   chatButtonText: {
     color: "white",
@@ -259,10 +252,10 @@ const styles = StyleSheet.create({
     minHeight: 48,
     borderRadius: 10,
     borderWidth: 1.5,
-    borderColor: "#3358D9",
+    borderColor: colors.primary,
   },
   performanceButtonText: {
-    color: "#3358D9",
+    color: colors.primary,
     fontSize: 15,
     fontWeight: "600",
   },
@@ -273,7 +266,7 @@ const styles = StyleSheet.create({
     gap: 8,
     minHeight: 48,
     borderRadius: 10,
-    backgroundColor: "#3358D9",
+    backgroundColor: colors.primary,
   },
   uploadButtonDisabled: {
     opacity: 0.6,
@@ -292,4 +285,4 @@ const styles = StyleSheet.create({
   loadingMore: {
     paddingVertical: 24,
   },
-});
+}));

@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Text, View } from "react-native";
 
 import { AnimatedPressable } from "@components/ui/AnimatedPressable";
 import { Avatar } from "@components/ui/Avatar";
@@ -10,6 +10,7 @@ import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
 import { minTouchTarget } from "@theme/sizes";
+import { themedStyles } from "@theme/themeRuntime";
 import { KnownAccount } from "@services/firebase/accountRegistry";
 
 import { AccountRowPresentation } from "../services/accountSwitchPresentation";
@@ -122,7 +123,7 @@ export function AccountRow({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   row: {
     flexDirection: "row",
     alignItems: "center",
@@ -194,4 +195,4 @@ const styles = StyleSheet.create({
   actionTextWarning: {
     color: colors.danger,
   },
-});
+}));

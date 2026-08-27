@@ -1,12 +1,13 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { StyleSheet, Text, View } from "react-native";
+import { Text, View } from "react-native";
 
 import { AnimatedPressable } from "@components/ui/AnimatedPressable";
 import { colors } from "@theme/colors";
 import { minTouchTarget } from "@theme/sizes";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 
 export function QuestionHeader({ title = "Soru" }: { title?: string }) {
   return (
@@ -26,7 +27,7 @@ export function QuestionHeader({ title = "Soru" }: { title?: string }) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -45,4 +46,4 @@ const styles = StyleSheet.create({
     fontSize: 20,
     color: colors.textPrimary,
   },
-});
+}));

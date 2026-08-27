@@ -23,11 +23,13 @@ import { GoogleSignInButton } from "@features/authentication/components/GoogleSi
 import { useSignOut } from "@features/authentication/hooks/useSignOut";
 import { useSocialMeta } from "@features/friends";
 import { useNavigationGuard } from "@hooks/useNavigationGuard";
+import { AppearanceSelector } from "@theme/AppearanceSelector";
 import { ROUTES } from "@constants/routes";
 import { colors } from "@theme/colors";
 import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 import { resolvePublicIdentity } from "@utils/publicIdentity";
 import { Question } from "@/types/question";
 
@@ -177,6 +179,13 @@ export function ProfileScreen() {
               />
             </View>
 
+            {/* Phase 49 — appearance sits above the account card: it is a
+                device setting anyone can use, including before any of the
+                account-specific rows below mean anything. */}
+            <View style={styles.sectionWrapper}>
+              <AppearanceSelector />
+            </View>
+
             <View style={styles.sectionWrapper}>
               <Card>
                 <SectionHeader title="Hesap" />
@@ -281,7 +290,7 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   flex: {
     flex: 1,
     backgroundColor: colors.background,
@@ -367,4 +376,4 @@ const styles = StyleSheet.create({
   loadingMore: {
     paddingVertical: spacing.xl,
   },
-});
+}));

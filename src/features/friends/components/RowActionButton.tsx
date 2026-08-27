@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { StyleSheet, Text } from "react-native";
+import { Text } from "react-native";
 
 import { AnimatedPressable } from "@components/ui/AnimatedPressable";
 import { colors } from "@theme/colors";
@@ -7,8 +7,10 @@ import { radius } from "@theme/radius";
 import { minTouchTarget } from "@theme/sizes";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 
 import { SocialActionTone } from "../services/friendshipPresentation";
+import { useThemeSubscription } from "@theme/ThemeProvider";
 
 interface RowActionButtonProps {
   label: string;
@@ -27,6 +29,10 @@ export const RowActionButton = memo(function RowActionButton({
   tone,
   onPress,
 }: RowActionButtonProps) {
+  // Phase 49 — memo() blocks prop-driven re-renders, but NOT context
+  // updates; without this subscription this component would keep its
+  // previous theme's styles after a live theme switch.
+  useThemeSubscription();
   const toneStyle = tone === "primary" ? styles.primary : tone === "destructive" ? styles.destructive : styles.neutral;
   const textStyle =
     tone === "primary" ? styles.primaryText : tone === "destructive" ? styles.destructiveText : styles.neutralText;
@@ -45,7 +51,7 @@ export const RowActionButton = memo(function RowActionButton({
   );
 });
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   button: {
     minHeight: minTouchTarget,
     paddingHorizontal: spacing.sm,
@@ -75,4 +81,4 @@ const styles = StyleSheet.create({
   destructiveText: {
     color: colors.danger,
   },
-});
+}));

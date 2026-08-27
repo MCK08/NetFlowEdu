@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { memo } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Text, View } from "react-native";
 
 import {
   FeedActionRail,
@@ -20,11 +20,13 @@ import { colors, darkColors } from "@theme/colors";
 import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 import { formatRelativeTime } from "@utils/feedFormat";
 import { roleLabel } from "@utils/roleLabels";
 import { Question } from "@/types/question";
 
 import { useNavigationGuard } from "@hooks/useNavigationGuard";
+import { useThemeSubscription } from "@theme/ThemeProvider";
 
 interface ClassFeedCardProps {
   question: Question;
@@ -55,6 +57,10 @@ function ClassFeedCardComponent({
   topInset,
   bottomInset,
 }: ClassFeedCardProps) {
+  // Phase 49 — memo() blocks prop-driven re-renders, but NOT context
+  // updates; without this subscription this component would keep its
+  // previous theme's styles after a live theme switch.
+  useThemeSubscription();
   const { firebaseUser } = useAuth();
   const { primaryName, usernameHandle, photoURL } = useProfileHandle(question.ownerId);
   const { liked, likeCount, toggle } = useLike({
@@ -163,7 +169,7 @@ function ClassFeedCardComponent({
 
 export const ClassFeedCard = memo(ClassFeedCardComponent);
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   card: {
     width: "100%",
     backgroundColor: darkColors.background,
@@ -204,4 +210,4 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: darkColors.background,
   },
-});
+}));

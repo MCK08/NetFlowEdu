@@ -7,6 +7,7 @@ import { colors } from "@theme/colors";
 import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 
 import { googleAvailability, useGoogleIdTokenRequest } from "../services/googleAuth";
 import { GOOGLE_UNCONFIGURED_MESSAGE } from "../services/googleAuthAvailability";
@@ -118,7 +119,7 @@ function GoogleSignInButtonConfigured({ onIdToken, onError, label }: GoogleSignI
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   button: {
     minHeight: 48,
     borderRadius: radius.md,
@@ -160,4 +161,4 @@ const styles = StyleSheet.create({
     color: colors.textTertiary,
     flex: 1,
   },
-});
+}));

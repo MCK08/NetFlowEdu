@@ -1,11 +1,12 @@
 import { forwardRef, useState } from "react";
-import { Pressable, StyleSheet, Text, TextInput, TextInputProps, View } from "react-native";
+import { Pressable, Text, TextInput, TextInputProps, View } from "react-native";
 
 import { colors } from "@theme/colors";
 import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
 import { inputFontSize, minTouchTarget } from "@theme/sizes";
+import { themedStyles } from "@theme/themeRuntime";
 
 interface PasswordFieldProps extends TextInputProps {
   label: string;
@@ -66,7 +67,7 @@ export const PasswordField = forwardRef<TextInput, PasswordFieldProps>(function 
   );
 });
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   container: {
     gap: spacing.xxs,
   },
@@ -115,4 +116,4 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.textTertiary,
   },
-});
+}));

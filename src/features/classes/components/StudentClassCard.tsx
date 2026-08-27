@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { memo } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Text, View } from "react-native";
 
 import { ClassRoom } from "@/types/class";
 import { AnimatedPressable } from "@components/ui/AnimatedPressable";
@@ -11,6 +11,8 @@ import { radius } from "@theme/radius";
 import { shadows } from "@theme/shadows";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
+import { useThemeSubscription } from "@theme/ThemeProvider";
 
 interface StudentClassCardProps {
   classRoom: ClassRoom;
@@ -20,6 +22,10 @@ interface StudentClassCardProps {
 // as ClassCard's memo (join-modal state changes shouldn't re-render every
 // card whose `classRoom` prop reference is unchanged).
 export const StudentClassCard = memo(function StudentClassCard({ classRoom }: StudentClassCardProps) {
+  // Phase 49 — memo() blocks prop-driven re-renders, but NOT context
+  // updates; without this subscription this component would keep its
+  // previous theme's styles after a live theme switch.
+  useThemeSubscription();
   return (
     <AnimatedPressable
       style={[styles.card, shadows.sm]}
@@ -42,7 +48,7 @@ export const StudentClassCard = memo(function StudentClassCard({ classRoom }: St
   );
 });
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   card: {
     flexDirection: "row",
     alignItems: "center",
@@ -68,4 +74,4 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.textTertiary,
   },
-});
+}));

@@ -1,9 +1,10 @@
 import { ReactNode } from "react";
-import { StyleSheet, View } from "react-native";
+import { View } from "react-native";
 import { Edge, SafeAreaView } from "react-native-safe-area-context";
 
 import { colors } from "@theme/colors";
 import { spacing } from "@theme/spacing";
+import { themedStyles } from "@theme/themeRuntime";
 
 interface ScreenContainerProps {
   children: ReactNode;
@@ -27,7 +28,7 @@ export function ScreenContainer({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   flex: {
     flex: 1,
     backgroundColor: colors.background,
@@ -35,4 +36,4 @@ const styles = StyleSheet.create({
   padded: {
     padding: spacing.xl,
   },
-});
+}));

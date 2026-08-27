@@ -1,9 +1,10 @@
-import { StyleSheet, Text, View } from "react-native";
+import { Text, View } from "react-native";
 
 import { Card } from "@components/ui/Card";
 import { colors } from "@theme/colors";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 
 import {
   InterventionConfidence,
@@ -72,7 +73,7 @@ export function InterventionOutcomeCard({ result, title }: InterventionOutcomeCa
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   card: {
     gap: spacing.xxs,
   },
@@ -108,4 +109,4 @@ const styles = StyleSheet.create({
   evidenceRow: {
     marginTop: spacing.xxs,
   },
-});
+}));

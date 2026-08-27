@@ -1,10 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
-import { StyleSheet, Text } from "react-native";
+import { Text } from "react-native";
 
 import { AnimatedPressable } from "@components/ui/AnimatedPressable";
 import { colors } from "@theme/colors";
 import { minTouchTarget } from "@theme/sizes";
 import { spacing } from "@theme/spacing";
+import { themedStyles } from "@theme/themeRuntime";
 
 interface LikeButtonProps {
   liked: boolean;
@@ -46,7 +47,7 @@ export function LikeButton({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   button: {
     alignItems: "center",
     gap: spacing.xxs,
@@ -58,4 +59,4 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "600",
   },
-});
+}));

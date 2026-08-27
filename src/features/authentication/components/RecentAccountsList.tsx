@@ -6,6 +6,7 @@ import { PrimaryButton } from "@components/ui/PrimaryButton";
 import { colors } from "@theme/colors";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 import { KnownAccount } from "@services/firebase/accountRegistry";
 
 import { AccountRow } from "./AccountRow";
@@ -118,7 +119,7 @@ export function RecentAccountsList({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   container: {
     gap: spacing.xs,
     paddingBottom: spacing.md,
@@ -131,4 +132,4 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     textTransform: "uppercase",
   },
-});
+}));

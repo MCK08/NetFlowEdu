@@ -1,15 +1,17 @@
 import { memo } from "react";
-import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Text, View } from "react-native";
 
 import { Badge } from "@components/ui/Badge";
 import { colors } from "@theme/colors";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 
 import { StudyOutcome } from "../domain/studyTypes";
 import { HydratedStudyItem } from "../services/studyItemParser";
 import { summarizeStudyState } from "../services/studyStatePresentation";
 import { StudyOutcomeButtons } from "./StudyOutcomeButtons";
+import { useThemeSubscription } from "@theme/ThemeProvider";
 
 interface StudyOutcomeControlsProps {
   item: HydratedStudyItem | null;
@@ -63,6 +65,10 @@ export const StudyOutcomeControls = memo(function StudyOutcomeControls({
   onDarkSurface = false,
   visibleOutcomes,
 }: StudyOutcomeControlsProps) {
+  // Phase 49 — memo() blocks prop-driven re-renders, but NOT context
+  // updates; without this subscription this component would keep its
+  // previous theme's styles after a live theme switch.
+  useThemeSubscription();
   const summary = summarizeStudyState(item, now);
   // Same opacity/weight, readable tone. textInverse is the exact white the
   // surrounding feed captions and timestamps already use.
@@ -112,7 +118,7 @@ export const StudyOutcomeControls = memo(function StudyOutcomeControls({
   );
 });
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   container: {
     gap: spacing.xs,
   },
@@ -148,4 +154,4 @@ const styles = StyleSheet.create({
     color: colors.textInverse,
     opacity: 0.85,
   },
-});
+}));

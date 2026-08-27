@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { ActivityIndicator, StyleSheet, TextInput, View } from "react-native";
+import { ActivityIndicator, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AnimatedPressable } from "@components/ui/AnimatedPressable";
@@ -9,6 +9,7 @@ import { radius } from "@theme/radius";
 import { minTouchTarget } from "@theme/sizes";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 
 import { MAX_MESSAGE_LENGTH } from "../services/messageValidation";
 
@@ -73,7 +74,7 @@ export function ChatComposer({ draft, onChangeDraft, isSending, onSend }: ChatCo
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   container: {
     backgroundColor: colors.background,
   },
@@ -115,4 +116,4 @@ const styles = StyleSheet.create({
   sendButtonIdle: {
     backgroundColor: colors.surfaceMuted,
   },
-});
+}));

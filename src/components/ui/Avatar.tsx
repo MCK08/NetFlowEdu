@@ -1,10 +1,12 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { memo, useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Text, View } from "react-native";
 
 import { avatarSize } from "@theme/sizes";
 import { colors } from "@theme/colors";
+import { themedStyles } from "@theme/themeRuntime";
+import { useThemeSubscription } from "@theme/ThemeProvider";
 
 export type AvatarSize = keyof typeof avatarSize;
 
@@ -28,6 +30,10 @@ function initialsFrom(name?: string | null): string | null {
 // improvement over the current bare person-icon placeholder, kept subtle
 // enough not to read as a redesign.
 export const Avatar = memo(function Avatar({ photoURL, displayName, size = "md" }: AvatarProps) {
+  // Phase 49 — memo() blocks prop-driven re-renders, but NOT context
+  // updates; without this subscription this component would keep its
+  // previous theme's styles after a live theme switch.
+  useThemeSubscription();
   const dimension = avatarSize[size];
   const dimensionStyle = { width: dimension, height: dimension, borderRadius: dimension / 2 };
 
@@ -63,7 +69,7 @@ export const Avatar = memo(function Avatar({ photoURL, displayName, size = "md" 
   );
 });
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   image: {
     backgroundColor: colors.surfaceMuted,
   },
@@ -76,4 +82,4 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: colors.textSecondary,
   },
-});
+}));

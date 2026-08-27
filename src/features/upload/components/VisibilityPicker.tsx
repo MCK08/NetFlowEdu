@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Animated, Pressable, StyleSheet, Text } from "react-native";
 
 import { QuestionVisibility } from "@/types/question";
+import { colors } from "@theme/colors";
 
 interface VisibilityOption {
   value: QuestionVisibility;
@@ -156,7 +157,7 @@ const styles = StyleSheet.create({
     minHeight: 52,
     borderRadius: 12,
     borderWidth: 1.5,
-    borderColor: "#D0D5DD",
+    borderColor: colors.border,
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: 8,
@@ -170,11 +171,11 @@ const styles = StyleSheet.create({
     color: "black",
   },
   optionTextDisabled: {
-    color: "#8A8F98",
+    color: colors.textTertiary,
   },
   hint: {
     fontSize: 12,
-    color: "#8A8F98",
+    color: colors.textTertiary,
     marginTop: 2,
   },
   cancelButton: {
@@ -186,6 +187,6 @@ const styles = StyleSheet.create({
   cancelText: {
     fontSize: 15,
     fontWeight: "600",
-    color: "#5B5F66",
+    color: colors.textSecondary,
   },
 });

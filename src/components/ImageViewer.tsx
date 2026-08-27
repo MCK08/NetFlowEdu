@@ -14,6 +14,7 @@ import { colors } from "@theme/colors";
 import { minTouchTarget } from "@theme/sizes";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 
 interface ImageViewerProps {
   visible: boolean;
@@ -173,7 +174,7 @@ export function ImageViewer({ visible, uri, onClose }: ImageViewerProps) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   flex: {
     flex: 1,
     backgroundColor: "black",
@@ -210,4 +211,4 @@ const styles = StyleSheet.create({
     color: colors.textInverse,
     textAlign: "center",
   },
-});
+}));

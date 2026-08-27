@@ -1,6 +1,6 @@
 import { Image } from "expo-image";
 import { router } from "expo-router";
-import { StyleSheet, Text, View } from "react-native";
+import { Text, View } from "react-native";
 
 import { AnimatedPressable } from "@components/ui/AnimatedPressable";
 import { Avatar } from "@components/ui/Avatar";
@@ -12,6 +12,7 @@ import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
 import { minTouchTarget } from "@theme/sizes";
+import { themedStyles } from "@theme/themeRuntime";
 import { visibilityLabel } from "@utils/questionLabels";
 import { Question } from "@/types/question";
 
@@ -103,7 +104,7 @@ export function QuestionDetailCard({ question, answerCount, onPressImage }: Ques
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   container: {
     gap: spacing.sm,
   },
@@ -153,4 +154,4 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: spacing.xxs,
   },
-});
+}));

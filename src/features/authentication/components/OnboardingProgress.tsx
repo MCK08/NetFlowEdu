@@ -1,9 +1,10 @@
-import { StyleSheet, Text, View } from "react-native";
+import { Text, View } from "react-native";
 
 import { colors } from "@theme/colors";
 import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 
 import {
   OnboardingFlow,
@@ -52,7 +53,7 @@ export function OnboardingProgress({ flow, currentStep }: OnboardingProgressProp
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   container: {
     gap: spacing.xxs,
   },
@@ -85,4 +86,4 @@ const styles = StyleSheet.create({
   segmentFilled: {
     backgroundColor: colors.primary,
   },
-});
+}));

@@ -5,6 +5,7 @@ import { colors } from "@theme/colors";
 import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 
 interface BottomActionSheetProps {
   visible: boolean;
@@ -37,7 +38,7 @@ export function BottomActionSheet({ visible, onClose, title, children }: BottomA
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   backdrop: {
     flex: 1,
     backgroundColor: colors.overlay,
@@ -60,4 +61,4 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginBottom: spacing.xs,
   },
-});
+}));

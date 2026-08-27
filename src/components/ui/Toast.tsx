@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { StyleSheet, Text } from "react-native";
+import { Text } from "react-native";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -12,6 +12,7 @@ import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
 import { duration } from "@theme/animation";
+import { themedStyles } from "@theme/themeRuntime";
 
 export type ToastVariant = "neutral" | "danger" | "success";
 
@@ -58,7 +59,7 @@ export function Toast({ message, variant = "neutral" }: ToastProps) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   container: {
     position: "absolute",
     left: spacing.xl,
@@ -72,4 +73,4 @@ const styles = StyleSheet.create({
     color: colors.textInverse,
     textAlign: "center",
   },
-});
+}));

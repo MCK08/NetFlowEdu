@@ -1,17 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useCallback, useMemo, useRef, useState } from "react";
-import {
-  ActivityIndicator,
-  FlatList,
-  NativeScrollEvent,
-  NativeSyntheticEvent,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-  useWindowDimensions,
-} from "react-native";
+import { ActivityIndicator, FlatList, NativeScrollEvent, NativeSyntheticEvent, Pressable, Text, View, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAuth } from "@features/authentication";
@@ -19,6 +9,7 @@ import { FeedItem } from "@features/classes/services/feedItems";
 import { RatingCard } from "@features/study/components/RatingCard";
 import { useInterleavedStudyFeed } from "@features/study/hooks/useInterleavedStudyFeed";
 import { colors } from "@theme/colors";
+import { themedStyles } from "@theme/themeRuntime";
 
 import { ClassFeedCard } from "../components/ClassFeedCard";
 import { useClassFeed } from "../hooks/useClassFeed";
@@ -213,7 +204,7 @@ export function ClassFeedScreen({ classId }: ClassFeedScreenProps) {
   if (questions.length === 0) {
     return (
       <View style={styles.fullscreenCentered}>
-        <Ionicons name="albums-outline" size={44} color="#8A8F98" />
+        <Ionicons name="albums-outline" size={44} color={colors.textTertiary} />
         <Text style={styles.stateTitle}>Henüz soru yok</Text>
         <Text style={styles.stateSubtitle}>
           Öğretmenin bu sınıfta henüz soru paylaşmadı. Yeni sorular eklendiğinde burada görünecek.
@@ -339,7 +330,7 @@ export function ClassFeedScreen({ classId }: ClassFeedScreenProps) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   flex: {
     flex: 1,
     backgroundColor: "#0B0B0F",
@@ -463,4 +454,4 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
   },
-});
+}));

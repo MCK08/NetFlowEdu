@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from "react";
-import { StyleSheet, Text, TextInput, View } from "react-native";
+import { Text, TextInput, View } from "react-native";
 
 import { AnimatedPressable } from "@components/ui/AnimatedPressable";
 import { FormError } from "@components/ui/FormError";
@@ -9,6 +9,7 @@ import { radius } from "@theme/radius";
 import { inputFontSize, minTouchTarget } from "@theme/sizes";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 
 import { mapStudyErrorToMessage } from "../services/studyErrorMapper";
 import { DAILY_GOAL_PRESETS, validateDailyGoal } from "../services/dailyGoalValidation";
@@ -138,7 +139,7 @@ export function DailyGoalEditor({ currentGoal, onSaved }: DailyGoalEditorProps) 
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   trigger: {
     minHeight: minTouchTarget,
     justifyContent: "center",
@@ -197,4 +198,4 @@ const styles = StyleSheet.create({
   actions: {
     gap: spacing.xs,
   },
-});
+}));

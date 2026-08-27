@@ -1,8 +1,10 @@
 import { memo } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Text, View } from "react-native";
 
 import { colors } from "@theme/colors";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
+import { useThemeSubscription } from "@theme/ThemeProvider";
 
 interface StatTileProps {
   value: string | number;
@@ -13,6 +15,10 @@ interface StatTileProps {
 // `friendStatLabel` styles (currently duplicated per-stat there) into a
 // reusable tile any screen showing a number+caption pair can use.
 export const StatTile = memo(function StatTile({ value, label }: StatTileProps) {
+  // Phase 49 — memo() blocks prop-driven re-renders, but NOT context
+  // updates; without this subscription this component would keep its
+  // previous theme's styles after a live theme switch.
+  useThemeSubscription();
   return (
     <View style={styles.container}>
       <Text style={styles.value}>{value}</Text>
@@ -21,7 +27,7 @@ export const StatTile = memo(function StatTile({ value, label }: StatTileProps) 
   );
 });
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   container: {
     alignItems: "center",
     gap: 2,
@@ -34,4 +40,4 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.textTertiary,
   },
-});
+}));

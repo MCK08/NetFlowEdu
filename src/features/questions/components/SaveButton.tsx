@@ -1,9 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
-import { StyleSheet } from "react-native";
 
 import { AnimatedPressable } from "@components/ui/AnimatedPressable";
 import { colors } from "@theme/colors";
 import { minTouchTarget } from "@theme/sizes";
+import { themedStyles } from "@theme/themeRuntime";
 
 interface SaveButtonProps {
   saved: boolean;
@@ -33,11 +33,11 @@ export function SaveButton({ saved, onPress, size = 26, color = colors.textInver
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   button: {
     alignItems: "center",
     justifyContent: "center",
     minWidth: minTouchTarget,
     minHeight: minTouchTarget,
   },
-});
+}));

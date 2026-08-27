@@ -1,8 +1,10 @@
 import { useLocalSearchParams } from "expo-router";
 
 import { AnswerScreen } from "@features/answers";
+import { useThemeSubscription } from "@theme/ThemeProvider";
 
 export default function Answer() {
+  useThemeSubscription();
   const { questionId } = useLocalSearchParams<{ questionId: string }>();
 
   // Phase 17B removed the `visibility` param that used to be threaded through

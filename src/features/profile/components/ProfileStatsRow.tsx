@@ -5,8 +5,10 @@ import { Divider } from "@components/ui/Divider";
 import { LoadingSkeleton } from "@components/ui/LoadingSkeleton";
 import { colors } from "@theme/colors";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 
 import { formatStatValue, ProfileStat } from "../services/profileStats";
+import { useThemeSubscription } from "@theme/ThemeProvider";
 
 interface ProfileStatsRowProps {
   stats: ProfileStat[];
@@ -19,6 +21,10 @@ interface ProfileStatsRowProps {
 // unavailable representation, and adding one would change how it renders
 // on the screens already using it.
 export const ProfileStatsRow = memo(function ProfileStatsRow({ stats }: ProfileStatsRowProps) {
+  // Phase 49 — memo() blocks prop-driven re-renders, but NOT context
+  // updates; without this subscription this component would keep its
+  // previous theme's styles after a live theme switch.
+  useThemeSubscription();
   return (
     <View style={styles.row}>
       {stats.map((stat, index) => (
@@ -50,7 +56,7 @@ export const ProfileStatsRow = memo(function ProfileStatsRow({ stats }: ProfileS
   );
 });
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   row: {
     flexDirection: "row",
     alignSelf: "stretch",
@@ -78,4 +84,4 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.textTertiary,
   },
-});
+}));

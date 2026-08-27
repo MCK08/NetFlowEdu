@@ -4,8 +4,10 @@ import { ActivityIndicator, View } from "react-native";
 
 import { useAuth } from "@features/authentication";
 import { PublicProfileScreen } from "@features/profile";
+import { useThemeSubscription } from "@theme/ThemeProvider";
 
 export default function PublicProfile() {
+  useThemeSubscription();
   const { userId } = useLocalSearchParams<{ userId: string }>();
   const { firebaseUser } = useAuth();
 

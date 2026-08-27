@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useMemo } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { Card } from "@components/ui/Card";
@@ -14,6 +14,7 @@ import { LearningTrend } from "@features/study/services/learningTrend";
 import { colors } from "@theme/colors";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 
 import { InterventionOutcomeCard } from "../components/InterventionOutcomeCard";
 import { useInterventionEffectiveness } from "../hooks/useInterventionEffectiveness";
@@ -347,7 +348,7 @@ export function StudentPerformanceScreen({ classId, studentId, studentName }: St
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   flex: {
     flex: 1,
     backgroundColor: colors.background,
@@ -439,4 +440,4 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
     marginTop: spacing.xxs,
   },
-});
+}));

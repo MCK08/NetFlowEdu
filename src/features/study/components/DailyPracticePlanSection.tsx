@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { memo } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Text, View } from "react-native";
 
 import { Card } from "@components/ui/Card";
 import { PrimaryButton } from "@components/ui/PrimaryButton";
@@ -8,9 +8,11 @@ import { SectionHeader } from "@components/ui/SectionHeader";
 import { colors } from "@theme/colors";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 
 import { DailyPracticePlan } from "../services/dailyPracticePlan";
 import { goalProgressLabel, planReasonLabel } from "../services/studyPresentation";
+import { useThemeSubscription } from "@theme/ThemeProvider";
 
 interface DailyPracticePlanSectionProps {
   plan: DailyPracticePlan;
@@ -64,6 +66,10 @@ export const DailyPracticePlanSection = memo(function DailyPracticePlanSection({
   plan,
   onStart,
 }: DailyPracticePlanSectionProps) {
+  // Phase 49 — memo() blocks prop-driven re-renders, but NOT context
+  // updates; without this subscription this component would keep its
+  // previous theme's styles after a live theme switch.
+  useThemeSubscription();
   if (plan.dueCount === 0 && plan.planItems.length === 0) return null;
 
   const reinforceItems = plan.planItems.filter(
@@ -137,7 +143,7 @@ export const DailyPracticePlanSection = memo(function DailyPracticePlanSection({
   );
 });
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   container: {
     gap: spacing.xs,
   },
@@ -169,4 +175,4 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.textTertiary,
   },
-});
+}));

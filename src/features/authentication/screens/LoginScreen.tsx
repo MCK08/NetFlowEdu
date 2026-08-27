@@ -1,6 +1,6 @@
 import { Link, router } from "expo-router";
 import { useRef, useState } from "react";
-import { StyleSheet, Text, TextInput, View } from "react-native";
+import { Text, TextInput, View } from "react-native";
 
 import { Divider } from "@components/ui/Divider";
 import { FormError } from "@components/ui/FormError";
@@ -11,6 +11,7 @@ import { ROUTES } from "@constants/routes";
 import { colors } from "@theme/colors";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 import { KnownAccount } from "@services/firebase/accountRegistry";
 
 import { AuthShell } from "../components/AuthShell";
@@ -128,7 +129,7 @@ export function LoginScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   forgotLink: {
     ...typography.caption,
     color: colors.primary,
@@ -157,4 +158,4 @@ const styles = StyleSheet.create({
     textAlign: "center",
     paddingVertical: spacing.xs,
   },
-});
+}));

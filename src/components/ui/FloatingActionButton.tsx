@@ -1,9 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
-import { StyleSheet } from "react-native";
 
 import { colors } from "@theme/colors";
 import { shadows } from "@theme/shadows";
 import { iconSize } from "@theme/sizes";
+import { themedStyles } from "@theme/themeRuntime";
 
 import { AnimatedPressable } from "./AnimatedPressable";
 
@@ -28,7 +28,7 @@ export function FloatingActionButton({ icon, onPress, accessibilityLabel }: Floa
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   button: {
     width: SIZE,
     height: SIZE,
@@ -37,4 +37,4 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-});
+}));

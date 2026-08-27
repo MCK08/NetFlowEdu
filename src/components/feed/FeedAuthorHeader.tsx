@@ -1,5 +1,5 @@
 import { memo, ReactNode } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Text, View } from "react-native";
 
 import { AnimatedPressable } from "@components/ui/AnimatedPressable";
 import { Avatar } from "@components/ui/Avatar";
@@ -7,8 +7,10 @@ import { colors } from "@theme/colors";
 import { minTouchTarget } from "@theme/sizes";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 
 import { FeedPill } from "./FeedPill";
+import { useThemeSubscription } from "@theme/ThemeProvider";
 
 interface FeedAuthorHeaderProps {
   photoURL: string | null;
@@ -40,6 +42,10 @@ export const FeedAuthorHeader = memo(function FeedAuthorHeader({
   onPress,
   meta,
 }: FeedAuthorHeaderProps) {
+  // Phase 49 — memo() blocks prop-driven re-renders, but NOT context
+  // updates; without this subscription this component would keep its
+  // previous theme's styles after a live theme switch.
+  useThemeSubscription();
   return (
     <AnimatedPressable
       style={styles.row}
@@ -69,7 +75,7 @@ export const FeedAuthorHeader = memo(function FeedAuthorHeader({
   );
 });
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   row: {
     flexDirection: "row",
     alignItems: "center",
@@ -103,4 +109,4 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     marginTop: 2,
   },
-});
+}));

@@ -6,8 +6,10 @@ import { SectionHeader } from "@components/ui/SectionHeader";
 import { colors } from "@theme/colors";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 
 import { SubjectSummary } from "../services/learningInsights";
+import { useThemeSubscription } from "@theme/ThemeProvider";
 
 interface SubjectBreakdownSectionProps {
   subjects: readonly SubjectSummary[];
@@ -21,6 +23,10 @@ interface SubjectBreakdownSectionProps {
 export const SubjectBreakdownSection = memo(function SubjectBreakdownSection({
   subjects,
 }: SubjectBreakdownSectionProps) {
+  // Phase 49 — memo() blocks prop-driven re-renders, but NOT context
+  // updates; without this subscription this component would keep its
+  // previous theme's styles after a live theme switch.
+  useThemeSubscription();
   if (subjects.length === 0) return null;
 
   return (
@@ -50,7 +56,7 @@ export const SubjectBreakdownSection = memo(function SubjectBreakdownSection({
   );
 });
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   container: {
     gap: spacing.xs,
   },
@@ -85,4 +91,4 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.success,
   },
-});
+}));

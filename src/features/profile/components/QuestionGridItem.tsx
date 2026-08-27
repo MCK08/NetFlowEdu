@@ -1,9 +1,10 @@
 import { Image } from "expo-image";
 import { router } from "expo-router";
-import { StyleSheet, Text, View } from "react-native";
+import { Text, View } from "react-native";
 
 import { AnimatedPressable } from "@components/ui/AnimatedPressable";
 import { colors } from "@theme/colors";
+import { themedStyles } from "@theme/themeRuntime";
 import { roleLabel } from "@utils/roleLabels";
 import { Question } from "@/types/question";
 
@@ -44,7 +45,7 @@ export function QuestionGridItem({ question, size, showPosterRoleBadge = false }
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   item: {
     padding: GRID_GAP / 2,
   },
@@ -72,4 +73,4 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: colors.textInverse,
   },
-});
+}));

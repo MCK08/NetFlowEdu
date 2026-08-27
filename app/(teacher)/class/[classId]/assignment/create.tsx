@@ -1,8 +1,10 @@
 import { useLocalSearchParams } from "expo-router";
 
 import { CreateAssignmentScreen } from "@features/assignments/screens/CreateAssignmentScreen";
+import { useThemeSubscription } from "@theme/ThemeProvider";
 
 export default function TeacherCreateAssignment() {
+  useThemeSubscription();
   const { classId, subject, topic, gradeLevel, studentIds, intervention } = useLocalSearchParams<{
     classId: string;
     subject?: string;

@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
+import { FlatList, Pressable, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { Card } from "@components/ui/Card";
@@ -11,6 +11,7 @@ import { colors } from "@theme/colors";
 import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 
 import { useAssignmentDetail } from "../hooks/useAssignmentDetail";
 import { StudentAssignmentRow } from "../services/teacherAssignmentProgress";
@@ -201,7 +202,7 @@ function SummaryStat({ value, label }: { value: string; label: string }) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   flex: {
     flex: 1,
     backgroundColor: colors.background,
@@ -321,4 +322,4 @@ const styles = StyleSheet.create({
     ...typography.caption,
     fontWeight: "700",
   },
-});
+}));

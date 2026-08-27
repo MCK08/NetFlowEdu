@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
-import { ActivityIndicator, FlatList, ListRenderItemInfo, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, FlatList, ListRenderItemInfo, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { Divider } from "@components/ui/Divider";
@@ -15,6 +15,7 @@ import { colors } from "@theme/colors";
 import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 import { Friendship } from "@/types/friendship";
 
 import { FriendRow } from "../components/FriendRow";
@@ -228,7 +229,7 @@ export function FriendsScreen({ showBackButton = true }: FriendsScreenProps) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   flex: {
     flex: 1,
     backgroundColor: colors.background,
@@ -284,4 +285,4 @@ const styles = StyleSheet.create({
   skeletonText: {
     gap: spacing.xs,
   },
-});
+}));

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Modal, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { PrimaryButton } from "@components/ui/PrimaryButton";
+import { colors } from "@theme/colors";
 
 interface CreateClassModalProps {
   visible: boolean;
@@ -41,7 +42,7 @@ export function CreateClassModal({
           <TextInput
             style={styles.input}
             placeholder="Sınıf adı"
-            placeholderTextColor="#8A8F98"
+            placeholderTextColor={colors.textTertiary}
             value={name}
             onChangeText={setName}
             maxLength={80}
@@ -81,14 +82,14 @@ const styles = StyleSheet.create({
   input: {
     minHeight: 48,
     borderWidth: 1.5,
-    borderColor: "#D0D5DD",
+    borderColor: colors.border,
     borderRadius: 10,
     paddingHorizontal: 14,
     fontSize: 15,
     color: "black",
   },
   error: {
-    color: "#D92D20",
+    color: colors.danger,
     fontSize: 13,
     textAlign: "center",
   },
@@ -100,6 +101,6 @@ const styles = StyleSheet.create({
   cancelText: {
     fontSize: 15,
     fontWeight: "600",
-    color: "#5B5F66",
+    color: colors.textSecondary,
   },
 });

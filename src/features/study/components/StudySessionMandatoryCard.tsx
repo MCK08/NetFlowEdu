@@ -1,11 +1,12 @@
 import { Image } from "expo-image";
 import { memo } from "react";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { ScrollView, Text, View } from "react-native";
 
 import { colors } from "@theme/colors";
 import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 
 import { StudyOutcome } from "../domain/studyTypes";
 import { ResolvedQueueEntry } from "../services/studyService";
@@ -15,6 +16,7 @@ import { StudyAnswerButton } from "./StudyAnswerButton";
 import { StudyOutcomeCard } from "./StudyOutcomeCard";
 import { StudyOutcomeControls } from "./StudyOutcomeControls";
 import { StudyOutcomeSuccessFlourish } from "./StudyOutcomeSuccessFlourish";
+import { useThemeSubscription } from "@theme/ThemeProvider";
 
 interface StudySessionMandatoryCardProps {
   entry: ResolvedQueueEntry;
@@ -40,6 +42,10 @@ function StudySessionMandatoryCardComponent({
   justSucceeded,
   onSelectOutcome,
 }: StudySessionMandatoryCardProps) {
+  // Phase 49 — memo() blocks prop-driven re-renders, but NOT context
+  // updates; without this subscription this component would keep its
+  // previous theme's styles after a live theme switch.
+  useThemeSubscription();
   const { item, question } = entry;
 
   if (!question) {
@@ -100,7 +106,7 @@ function StudySessionMandatoryCardComponent({
 
 export const StudySessionMandatoryCard = memo(StudySessionMandatoryCardComponent);
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   page: {
     width: "100%",
     backgroundColor: colors.background,
@@ -143,4 +149,4 @@ const styles = StyleSheet.create({
     color: colors.textTertiary,
     textAlign: "center",
   },
-});
+}));

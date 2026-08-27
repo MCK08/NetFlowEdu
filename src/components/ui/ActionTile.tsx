@@ -1,11 +1,12 @@
 import { Ionicons } from "@expo/vector-icons";
-import { StyleProp, StyleSheet, Text, ViewStyle } from "react-native";
+import { StyleProp, Text, ViewStyle } from "react-native";
 
 import { colors } from "@theme/colors";
 import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
 import { iconSize } from "@theme/sizes";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 
 import { AnimatedPressable } from "./AnimatedPressable";
 
@@ -39,7 +40,7 @@ export function ActionTile({ icon, label, onPress, style }: ActionTileProps) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   container: {
     alignItems: "center",
     justifyContent: "center",
@@ -54,4 +55,4 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     textAlign: "center",
   },
-});
+}));

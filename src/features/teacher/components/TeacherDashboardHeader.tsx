@@ -1,4 +1,4 @@
-import { StyleSheet, Text, View } from "react-native";
+import { Text, View } from "react-native";
 
 import { Avatar } from "@components/ui/Avatar";
 import { IconButton } from "@components/ui/IconButton";
@@ -8,6 +8,7 @@ import { ROUTES } from "@constants/routes";
 import { colors } from "@theme/colors";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 
 interface TeacherDashboardHeaderProps {
   greeting: string;
@@ -75,7 +76,7 @@ export function TeacherDashboardHeader({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   container: {
     flexDirection: "row",
     alignItems: "center",
@@ -109,4 +110,4 @@ const styles = StyleSheet.create({
     color: colors.textTertiary,
     flexShrink: 1,
   },
-});
+}));

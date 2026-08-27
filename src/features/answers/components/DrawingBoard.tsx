@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { GestureResponderEvent, PanResponder, StyleSheet, View } from "react-native";
+import { GestureResponderEvent, PanResponder, View } from "react-native";
 import Svg, { Path } from "react-native-svg";
 
 import { AnimatedPressable } from "@components/ui/AnimatedPressable";
@@ -8,6 +8,7 @@ import { colors } from "@theme/colors";
 import { radius } from "@theme/radius";
 import { shadows } from "@theme/shadows";
 import { spacing } from "@theme/spacing";
+import { themedStyles } from "@theme/themeRuntime";
 
 import { toPngDataUri } from "../services/pngDataUri";
 import { clearAll, commitStroke, DrawnPath, PendingStroke, undoLast } from "../services/strokeReducer";
@@ -223,7 +224,7 @@ export function DrawingBoard({ onSave, isSaving, onDirtyChange }: DrawingBoardPr
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   container: {
     gap: spacing.md,
   },
@@ -265,5 +266,5 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: spacing.xs,
   },
-});
+}));
 

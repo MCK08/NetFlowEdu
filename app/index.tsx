@@ -1,4 +1,5 @@
 import { AuthBootstrapScreen } from "@features/authentication/components/AuthBootstrapScreen";
+import { useThemeSubscription } from "@theme/ThemeProvider";
 
 // RouteGuard (see app/_layout.tsx) redirects away from here based on auth
 // state as soon as it settles — this screen is only ever visible for a
@@ -6,5 +7,6 @@ import { AuthBootstrapScreen } from "@features/authentication/components/AuthBoo
 // guard's own overlay uses, so that frame can't flash a differently-styled
 // spinner on a differently-coloured background.
 export default function Index() {
+  useThemeSubscription();
   return <AuthBootstrapScreen />;
 }

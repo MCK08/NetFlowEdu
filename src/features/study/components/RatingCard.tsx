@@ -9,6 +9,7 @@ import { radius } from "@theme/radius";
 import { shadows } from "@theme/shadows";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 import { Question } from "@/types/question";
 
 import { StudyOutcome } from "../domain/studyTypes";
@@ -16,6 +17,7 @@ import { REVIEW_ADVANCE_DELAY_MS } from "../services/studyPresentation";
 import { useStudyQuestionState } from "../hooks/useStudyQuestionState";
 import { StudyOutcomeControls } from "./StudyOutcomeControls";
 import { StudyOutcomeSuccessFlourish } from "./StudyOutcomeSuccessFlourish";
+import { useThemeSubscription } from "@theme/ThemeProvider";
 
 const VISIBLE_OUTCOMES = ["struggled", "solved"] as const;
 // Spec: ~15-20px blur on the backdrop.
@@ -40,6 +42,10 @@ interface RatingCardProps {
 // it, which is what makes this immune to the swipe-timing races the
 // overlay-based Phase 19 and 19.1 revisions had.
 function RatingCardComponent({ question, height, isStudent, onOutcomeRecorded }: RatingCardProps) {
+  // Phase 49 — memo() blocks prop-driven re-renders, but NOT context
+  // updates; without this subscription this component would keep its
+  // previous theme's styles after a live theme switch.
+  useThemeSubscription();
   const study = useStudyQuestionState({ questionId: question.id, enabled: isStudent });
   const [showFlourish, setShowFlourish] = useState(false);
   const dismissTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -110,7 +116,7 @@ function RatingCardComponent({ question, height, isStudent, onOutcomeRecorded }:
 
 export const RatingCard = memo(RatingCardComponent);
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   card: {
     width: "100%",
     backgroundColor: colors.textPrimary,
@@ -150,4 +156,4 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     textAlign: "center",
   },
-});
+}));

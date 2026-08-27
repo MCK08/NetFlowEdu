@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { memo } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Text, View } from "react-native";
 
 import { Card } from "@components/ui/Card";
 import { PrimaryButton } from "@components/ui/PrimaryButton";
@@ -8,9 +8,11 @@ import { SectionHeader } from "@components/ui/SectionHeader";
 import { colors } from "@theme/colors";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 
 import { StudentNextAction, StudentNextActionKind } from "../services/studentNextAction";
 import { nextActionCopy } from "../services/studyPresentation";
+import { useThemeSubscription } from "@theme/ThemeProvider";
 
 interface NextActionSectionProps {
   action: StudentNextAction;
@@ -58,6 +60,10 @@ export const NextActionSection = memo(function NextActionSection({
   action,
   onStart,
 }: NextActionSectionProps) {
+  // Phase 49 — memo() blocks prop-driven re-renders, but NOT context
+  // updates; without this subscription this component would keep its
+  // previous theme's styles after a live theme switch.
+  useThemeSubscription();
   const copy = nextActionCopy(action, Date.now());
   const icon = ICONS[action.kind];
   const tint = COLORS[action.kind];
@@ -93,7 +99,7 @@ export const NextActionSection = memo(function NextActionSection({
   );
 });
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   container: {
     gap: spacing.xs,
   },
@@ -121,4 +127,4 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.textTertiary,
   },
-});
+}));

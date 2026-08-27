@@ -7,6 +7,7 @@ import { PrimaryButton } from "@components/ui/PrimaryButton";
 import { TextField } from "@components/ui/TextField";
 
 import { useEditProfileForm } from "../hooks/useEditProfileForm";
+import { colors } from "@theme/colors";
 
 export function EditProfileScreen() {
   const {
@@ -31,7 +32,7 @@ export function EditProfileScreen() {
           <Image source={{ uri: previewPhotoUri }} style={styles.avatar} contentFit="cover" />
         ) : (
           <View style={styles.avatarPlaceholder}>
-            <Ionicons name="person" size={40} color="#8A8F98" />
+            <Ionicons name="person" size={40} color={colors.textTertiary} />
           </View>
         )}
         <Text style={styles.changePhotoText}>Fotoğrafı Değiştir</Text>
@@ -77,24 +78,24 @@ const styles = StyleSheet.create({
     width: 96,
     height: 96,
     borderRadius: 48,
-    backgroundColor: "#F2F2F2",
+    backgroundColor: colors.surfaceMuted,
   },
   avatarPlaceholder: {
     width: 96,
     height: 96,
     borderRadius: 48,
-    backgroundColor: "#F2F2F2",
+    backgroundColor: colors.surfaceMuted,
     alignItems: "center",
     justifyContent: "center",
   },
   changePhotoText: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#3358D9",
+    color: colors.primary,
   },
   usernameLockedHint: {
     fontSize: 12,
-    color: "#8A8F98",
+    color: colors.textTertiary,
     marginTop: -8,
   },
 });

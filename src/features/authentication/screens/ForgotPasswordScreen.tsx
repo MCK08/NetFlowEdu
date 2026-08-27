@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Link } from "expo-router";
-import { StyleSheet, Text, View } from "react-native";
+import { Text, View } from "react-native";
 
 import { PrimaryButton } from "@components/ui/PrimaryButton";
 import { TextField } from "@components/ui/TextField";
@@ -9,6 +9,7 @@ import { colors } from "@theme/colors";
 import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 
 import { AuthShell } from "../components/AuthShell";
 import { useForgotPasswordForm } from "../hooks/useForgotPasswordForm";
@@ -59,7 +60,7 @@ export function ForgotPasswordScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   success: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -80,4 +81,4 @@ const styles = StyleSheet.create({
     textAlign: "center",
     paddingVertical: spacing.xs,
   },
-});
+}));

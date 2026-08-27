@@ -1,12 +1,13 @@
 import { Ionicons } from "@expo/vector-icons";
 import { ReactNode } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Text, View } from "react-native";
 
 import { colors } from "@theme/colors";
 import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
 import { iconSize } from "@theme/sizes";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 
 import { AnimatedPressable } from "./AnimatedPressable";
 
@@ -51,7 +52,7 @@ export function ListCard({ title, subtitle, leading, onPress, showChevron = fals
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   row: {
     flexDirection: "row",
     alignItems: "center",
@@ -72,4 +73,4 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.textTertiary,
   },
-});
+}));

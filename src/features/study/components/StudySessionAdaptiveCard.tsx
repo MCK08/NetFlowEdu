@@ -1,12 +1,13 @@
 import { Image } from "expo-image";
 import { memo, useEffect, useRef, useState } from "react";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { ScrollView, Text, View } from "react-native";
 
 import { colors } from "@theme/colors";
 import { duration } from "@theme/animation";
 import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 import { Question } from "@/types/question";
 
@@ -18,6 +19,7 @@ import { StudyAnswerButton } from "./StudyAnswerButton";
 import { StudyOutcomeCard } from "./StudyOutcomeCard";
 import { StudyOutcomeControls } from "./StudyOutcomeControls";
 import { StudyOutcomeSuccessFlourish } from "./StudyOutcomeSuccessFlourish";
+import { useThemeSubscription } from "@theme/ThemeProvider";
 
 interface StudySessionAdaptiveCardProps {
   question: Question;
@@ -45,6 +47,10 @@ function StudySessionAdaptiveCardComponent({
   onOutcomeRecorded,
   onSubmittingChange,
 }: StudySessionAdaptiveCardProps) {
+  // Phase 49 — memo() blocks prop-driven re-renders, but NOT context
+  // updates; without this subscription this component would keep its
+  // previous theme's styles after a live theme switch.
+  useThemeSubscription();
   const study = useStudyQuestionState({ questionId: question.id, enabled: true });
   const [showFlourish, setShowFlourish] = useState(false);
   const dismissTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -137,7 +143,7 @@ function StudySessionAdaptiveCardComponent({
 
 export const StudySessionAdaptiveCard = memo(StudySessionAdaptiveCardComponent);
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   page: {
     width: "100%",
     backgroundColor: colors.background,
@@ -166,4 +172,4 @@ const styles = StyleSheet.create({
     ...typography.body,
     color: colors.textSecondary,
   },
-});
+}));

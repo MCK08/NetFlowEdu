@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { memo } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Text, View } from "react-native";
 
 import { AnimatedPressable } from "@components/ui/AnimatedPressable";
 import { colors } from "@theme/colors";
@@ -8,7 +8,9 @@ import { radius } from "@theme/radius";
 import { minTouchTarget } from "@theme/sizes";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
+import { themedStyles } from "@theme/themeRuntime";
 import { formatCount } from "@utils/feedFormat";
+import { useThemeSubscription } from "@theme/ThemeProvider";
 
 const ICON_SIZE = 24;
 
@@ -97,6 +99,10 @@ export const FeedActionRail = memo(function FeedActionRail({
   saved,
   onToggleSave,
 }: FeedActionRailProps) {
+  // Phase 49 — memo() blocks prop-driven re-renders, but NOT context
+  // updates; without this subscription this component would keep its
+  // previous theme's styles after a live theme switch.
+  useThemeSubscription();
   return (
     <View style={styles.rail}>
       <Action
@@ -131,7 +137,7 @@ export const FeedActionRail = memo(function FeedActionRail({
   );
 });
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   rail: {
     alignItems: "center",
     gap: spacing.md,
@@ -158,4 +164,4 @@ const styles = StyleSheet.create({
     ...typography.label,
     color: colors.textInverse,
   },
-});
+}));
