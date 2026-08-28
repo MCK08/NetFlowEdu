@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { router, useFocusEffect } from "expo-router";
+import { router } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -16,11 +16,8 @@ import { EmptyState as SharedEmptyState } from "@components/ui/EmptyState";
 import { LoadingSkeleton } from "@components/ui/LoadingSkeleton";
 import { PrimaryButton } from "@components/ui/PrimaryButton";
 import { useAuth } from "@features/authentication";
-import { useStudentClasses } from "@features/classes/hooks/useStudentClasses";
-import { QuestionMetadataModal } from "@features/questions/components/QuestionMetadataModal";
-import { CameraButton } from "@features/upload/components/CameraButton";
-import { VisibilityPicker } from "@features/upload/components/VisibilityPicker";
-import { useUpload } from "@features/upload/hooks/useUpload";
+import { useTeacherClasses } from "@features/classes/hooks/useTeacherClasses";
+import { useClassPerformance } from "@features/teacher/hooks/useClassPerformance";
 import { colors } from "@theme/colors";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
@@ -29,10 +26,10 @@ import { themedStyles } from "@theme/themeRuntime";
 import { FeedChannelBar } from "../components/FeedChannelBar";
 import { FeedFilterSheet } from "../components/FeedFilterSheet";
 import { LaunchFeedCard } from "../components/LaunchFeedCard";
+import { StudentSignalCard } from "../components/StudentSignalCard";
 import { useClassScopedQuestions } from "../hooks/useClassScopedQuestions";
-import { useFeedPersonalizationSignals } from "../hooks/useFeedPersonalizationSignals";
 import { useSocialFeed } from "../hooks/useSocialFeed";
-import { selectStruggleQuestions } from "../services/channelSelection";
+import { selectOwnQuestions } from "../services/channelSelection";
 import {
   channelDescriptor,
   channelsForRole,
@@ -46,175 +43,156 @@ import {
   filterQuestions,
   isFeedFilterActive,
 } from "../services/feedFilters";
-import { buildQuestionFeedRanking } from "../services/feedRanking";
 import { Question } from "../types";
 
-// Phase 50 — the student's launch surface.
+// Phase 50 — the teacher's launch surface.
 //
-// WHAT CHANGED FROM THE PRE-PHASE-50 FEED
+// A DISCOVERY / ACTION ENTRY POINT, NOT A SECOND DASHBOARD (§19)
 //
-// The previous implementation was a full-screen paged feed (pagingEnabled +
-// snapToInterval = window height), which locks exactly one card to the
-// viewport. Phase 50 §15 asks for the opposite: a natural continuous scroll
-// where the next card peeks in, so the list below is a plain vertical
-// FlatList of intrinsically-sized LaunchFeedCards. Upload, filtering,
-// personalization and cursor pagination are all preserved unchanged — only
-// the presentation and the new channel layer are new.
+// Every card here leads INTO an existing screen (question detail, the
+// assignment composer, Student Performance). Nothing on this screen
+// computes a statistic of its own, and Class Performance / Teacher
+// Dashboard remain exactly where they were — this feed never replaces or
+// duplicates them.
 //
-// READ COST (§24): "Sana Özel", "Keşfet" and "Zorlandıklarım" all read the
-// SAME useSocialFeed pages (one shared fetch, filtered/reordered purely in
-// memory). Only "Derslerim" adds reads, and only while it is the selected
-// channel — see useClassScopedQuestions' own note.
+// READ COST (§24/§41): channels are lazy. "Keşfet"/"İçeriklerim" share the
+// one useSocialFeed fetch; "Sınıfım" and "Öğrenci Sinyalleri" only fetch
+// while selected. "Öğrenci Sinyalleri" reuses useClassPerformance — the
+// same already-aggregated per-class load the Class Performance screen
+// itself uses — and never issues a per-card student query.
 
-// The web/tablet content column. Phone stays full-bleed; anything wider
-// gets a centered reading column rather than cards stretched across a
-// monitor (§33).
 const MAX_CONTENT_WIDTH = 680;
 
 function keyExtractor(item: Question) {
   return item.id;
 }
 
-export function FeedScreen() {
+export function TeacherFeedScreen() {
   const { width } = useWindowDimensions();
-  const { firebaseUser, profile, role } = useAuth();
+  const { firebaseUser, role } = useAuth();
   const uid = firebaseUser?.uid;
-  const organizationId = profile?.organizationId ?? null;
 
   const channels = useMemo(() => channelsForRole(role), [role]);
   const [channel, setChannel] = useState<FeedChannel | null>(null);
-  // Narrowed through the role guard on every render, so a channel selected
-  // as one role can never survive an account switch into another (§22).
-  // `resolveChannelForRole` falls back to the role's own default.
   const activeChannel = resolveChannelForRole(channel, role);
 
   const [filter, setFilter] = useState<FeedFilter>(EMPTY_FEED_FILTER);
   const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
 
-  const {
-    questions,
-    isLoading,
-    isLoadingMore,
-    isRefreshing,
-    error,
-    hasMore,
-    loadMore,
-    refresh,
-    prepend,
-  } = useSocialFeed(uid);
+  const { questions, isLoading, isLoadingMore, isRefreshing, error, hasMore, loadMore, refresh } =
+    useSocialFeed(uid);
 
-  const {
-    isUploading,
-    isPickerOpen,
-    openPicker,
-    closePicker,
-    captureWithVisibility,
-    pendingImageUri,
-    metadataError,
-    cancelMetadata,
-    submitMetadata,
-  } = useUpload({ uid, organizationId, onUploaded: prepend });
-
-  const { signalsByQuestionId, refresh: refreshSignals } = useFeedPersonalizationSignals(uid);
-
-  // Fetched only while a channel that actually needs class content is
-  // selected — a channel the student never opens costs nothing.
-  //
-  // "Zorlandıklarım" needs this too, not just "Derslerim": a student's
-  // struggle evidence overwhelmingly sits on CLASS questions (that is what
-  // their teacher assigns), and useSocialFeed only ever loads own + public
-  // questions. Filtering the social pool alone produced an empty struggle
-  // channel for a student with real, recorded struggles — reproduced against
-  // the demo fixtures before this was widened.
-  const needsClassQuestions = activeChannel === "my_classes" || activeChannel === "struggles";
-  const { classes } = useStudentClasses(uid);
+  const { classes } = useTeacherClasses(uid);
   const classIds = useMemo(() => classes.map((classRoom) => classRoom.id), [classes]);
   const {
     questions: classQuestions,
     isLoading: isLoadingClasses,
     refresh: refreshClasses,
-  } = useClassScopedQuestions(classIds, needsClassQuestions);
+  } = useClassScopedQuestions(classIds, activeChannel === "my_class");
 
-  useFocusEffect(
-    useCallback(() => {
-      refreshSignals();
-    }, [refreshSignals]),
+  // KNOWN LIMITATION (documented, not hidden): signals are loaded for the
+  // teacher's FIRST class only. useClassPerformance is a per-class hook and
+  // fanning it out across every class would multiply its own per-student
+  // reads by the class count — exactly the fan-out §24/§41 forbid. The full
+  // multi-class picture stays one tap away in Class Performance.
+  const signalClassId = activeChannel === "student_signals" ? classIds[0] : undefined;
+  const { attentionCards, isLoading: isLoadingSignals } = useClassPerformance(signalClassId);
+
+  // Only students there is actually something to DO about — the exact same
+  // needs_attention/watch rule buildTeacherActionSummary already applies to
+  // the dashboard's action list, reused rather than re-derived. A student
+  // who is progressing or strong is not a signal to act on, and one with
+  // insufficient data must never be presented as one either; all three stay
+  // fully visible in Class Performance, which this channel links into.
+  const signalCards = useMemo(
+    () =>
+      attentionCards.filter(
+        (card) =>
+          card.insight.category === "needs_attention" || card.insight.category === "watch",
+      ),
+    [attentionCards],
   );
 
-  // The channel's own source list, before filters/ranking.
   const channelQuestions = useMemo(() => {
-    if (activeChannel === "my_classes") return classQuestions;
-    if (activeChannel === "struggles") {
-      // Both pools, deduped by id — a struggled question can be a class
-      // question, an own question, or a public one, and the channel must not
-      // silently drop whichever pool it did not come from.
-      const seen = new Set<string>();
-      const pool: Question[] = [];
-      for (const question of [...classQuestions, ...questions]) {
-        if (seen.has(question.id)) continue;
-        seen.add(question.id);
-        pool.push(question);
-      }
-      return selectStruggleQuestions(pool, signalsByQuestionId);
-    }
+    if (activeChannel === "my_class") return classQuestions;
+    if (activeChannel === "my_content") return selectOwnQuestions(questions, uid);
     return questions;
-  }, [activeChannel, classQuestions, questions, signalsByQuestionId]);
+  }, [activeChannel, classQuestions, questions, uid]);
 
-  const filteredQuestions = useMemo(
+  const visibleQuestions = useMemo(
     () => filterQuestions(channelQuestions, filter),
     [channelQuestions, filter],
   );
 
-  // Personalized ordering applies to "Sana Özel" only. "Keşfet" deliberately
-  // keeps the server's own newest-first order so it stays a genuinely
-  // different view rather than a relabelled copy of the personalized one,
-  // and the class/struggle channels are already scoped by their own rule.
-  const recentlyShownIdsRef = useRef<Set<string>>(new Set());
-  const visibleQuestions = useMemo(() => {
-    if (activeChannel !== "for_you") return filteredQuestions;
-    return buildQuestionFeedRanking({
-      questions: filteredQuestions,
-      signalsByQuestionId,
-      recentlyShownIds: recentlyShownIdsRef.current,
-    });
-  }, [activeChannel, filteredQuestions, signalsByQuestionId]);
-
   const listRef = useRef<FlatList<Question>>(null);
-
-  // §36 — changing channel or filters resets the feed to the top; nothing
-  // else does. Scrolling is otherwise never reset by unrelated state.
   useEffect(() => {
     listRef.current?.scrollToOffset({ offset: 0, animated: false });
   }, [activeChannel, filter]);
 
-  const openQuestion = useCallback((question: Question) => {
-    router.push({
-      pathname: "/(student)/question/[questionId]",
-      params: { questionId: question.id },
-    });
-  }, []);
+  // "Ödevde Kullan" — opens the EXISTING assignment composer prefilled from
+  // the question's own real metadata. No assignment is created here and no
+  // assignment semantics change (§18); the teacher still confirms and
+  // publishes in the composer exactly as before. gradeLevel is passed only
+  // when the question actually has one — never defaulted (§9).
+  //
+  // This is the teacher card's ONLY navigation target. Question detail lives
+  // at a (student)-group route with no teacher-group equivalent, and pushing
+  // across groups from the teacher stack is not a path this phase verified —
+  // so rather than ship an action that might strand a teacher in the wrong
+  // navigator, the card simply does not offer one when it cannot compose.
+  const openAssignmentComposer = useCallback(
+    (question: Question) => {
+      const classId = question.classId ?? classIds[0];
+      if (!classId) return;
+      const params: { classId: string } & Record<string, string> = { classId };
+      if (question.subject) params.subject = question.subject;
+      if (question.topic) params.topic = question.topic;
+      if (question.gradeLevel) params.gradeLevel = question.gradeLevel;
+      router.push({
+        pathname: "/(teacher)/class/[classId]/assignment/create",
+        params,
+      });
+    },
+    [classIds],
+  );
 
+  const openStudent = useCallback(
+    (studentUid: string) => {
+      const classId = signalClassId ?? classIds[0];
+      if (!classId) return;
+      router.push({
+        pathname: "/(teacher)/class/[classId]/student/[studentId]",
+        params: { classId, studentId: studentUid },
+      });
+    },
+    [classIds, signalClassId],
+  );
+
+  const canCompose = classIds.length > 0;
   const renderItem = useCallback(
     ({ item }: { item: Question }) => (
       <LaunchFeedCard
         question={item}
-        actionLabel="Cevapla"
-        onPressAction={() => openQuestion(item)}
-        onPressCard={() => openQuestion(item)}
+        // "Ödevde Kullan" is only offered where it can actually land: it
+        // needs a class to compose against. A teacher with no class yet gets
+        // a card with no action rather than a button that goes nowhere.
+        actionLabel={canCompose ? "Ödevde Kullan" : null}
+        onPressAction={() => openAssignmentComposer(item)}
+        onPressCard={() => {
+          if (canCompose) openAssignmentComposer(item);
+        }}
       />
     ),
-    [openQuestion],
+    [canCompose, openAssignmentComposer],
   );
 
   const handleEndReached = useCallback(() => {
-    // Only the shared social-feed channels page; the class channel loads its
-    // own bounded set in one pass.
-    if (activeChannel === "my_classes") return;
+    if (activeChannel === "my_class" || activeChannel === "student_signals") return;
     if (hasMore) loadMore();
   }, [activeChannel, hasMore, loadMore]);
 
   const handleRefresh = useCallback(() => {
-    if (activeChannel === "my_classes") {
+    if (activeChannel === "my_class") {
       refreshClasses();
       return;
     }
@@ -223,7 +201,12 @@ export function FeedScreen() {
 
   const activeFilterCount = activeFeedFilterCount(filter);
   const descriptor = activeChannel ? channelDescriptor(activeChannel, role) : null;
-  const isChannelLoading = needsClassQuestions ? isLoadingClasses || isLoading : isLoading;
+  const isSignalsChannel = activeChannel === "student_signals";
+  const isChannelLoading = isSignalsChannel
+    ? isLoadingSignals
+    : activeChannel === "my_class"
+      ? isLoadingClasses
+      : isLoading;
 
   const contentWidthStyle = width > MAX_CONTENT_WIDTH ? { maxWidth: MAX_CONTENT_WIDTH } : null;
 
@@ -231,32 +214,29 @@ export function FeedScreen() {
     <View style={styles.header}>
       <View style={styles.headerRow}>
         <Text style={styles.wordmark}>NetFlowEdu</Text>
-        <Pressable
-          onPress={() => setIsFilterSheetOpen(true)}
-          style={styles.filterButton}
-          accessibilityRole="button"
-          accessibilityLabel="Filtrele"
-        >
-          <Ionicons name="options-outline" size={16} color={colors.textSecondary} />
-          <Text style={styles.filterButtonText}>Filtrele</Text>
-          {activeFilterCount > 0 ? (
-            <View style={styles.filterCountBadge}>
-              <Text style={styles.filterCountText}>{activeFilterCount}</Text>
-            </View>
-          ) : null}
-        </Pressable>
+        {/* The signals channel is not a question list, so a question filter
+            would do nothing there — hidden rather than shown-and-inert. */}
+        {!isSignalsChannel ? (
+          <Pressable
+            onPress={() => setIsFilterSheetOpen(true)}
+            style={styles.filterButton}
+            accessibilityRole="button"
+            accessibilityLabel="Filtrele"
+          >
+            <Ionicons name="options-outline" size={16} color={colors.textSecondary} />
+            <Text style={styles.filterButtonText}>Filtrele</Text>
+            {activeFilterCount > 0 ? (
+              <View style={styles.filterCountBadge}>
+                <Text style={styles.filterCountText}>{activeFilterCount}</Text>
+              </View>
+            ) : null}
+          </Pressable>
+        ) : null}
       </View>
 
-      <FeedChannelBar
-        channels={channels}
-        activeChannel={activeChannel}
-        onSelect={setChannel}
-      />
+      <FeedChannelBar channels={channels} activeChannel={activeChannel} onSelect={setChannel} />
 
-      {/* Active filters, visible on the feed itself (§10). Each chip clears
-          just its own field, so the student never has to open the sheet to
-          undo one choice. */}
-      {activeFilterCount > 0 ? (
+      {activeFilterCount > 0 && !isSignalsChannel ? (
         <View style={styles.activeFilterRow}>
           {filter.subject ? (
             <Pressable
@@ -307,11 +287,31 @@ export function FeedScreen() {
               <LoadingSkeleton height={280} borderRadius={16} />
               <LoadingSkeleton height={280} borderRadius={16} />
             </View>
-          ) : error && questions.length === 0 ? (
+          ) : error && questions.length === 0 && !isSignalsChannel ? (
             <View style={styles.centered}>
               <SharedEmptyState icon="cloud-offline-outline" title={error} />
               <PrimaryButton label="Tekrar Dene" onPress={refresh} />
             </View>
+          ) : isSignalsChannel ? (
+            <FlatList
+              data={signalCards}
+              keyExtractor={(item) => item.studentUid}
+              renderItem={({ item }) => (
+                <StudentSignalCard
+                  displayName={item.displayName}
+                  reason={item.insight.reasons[0] ?? ""}
+                  onPress={() => openStudent(item.studentUid)}
+                />
+              )}
+              contentContainerStyle={styles.listContent}
+              showsVerticalScrollIndicator={false}
+              ListEmptyComponent={
+                <SharedEmptyState
+                  icon="checkmark-circle-outline"
+                  title={descriptor?.emptyTitle ?? "Şu anda dikkat gerektiren bir sinyal yok."}
+                />
+              }
+            />
           ) : (
             <FlatList
               ref={listRef}
@@ -334,7 +334,7 @@ export function FeedScreen() {
                   <SharedEmptyState
                     icon="filter-outline"
                     title="Bu filtreye uyan soru yok"
-                    description="Farklı bir ders, sınıf veya konu deneyebilirsin."
+                    description="Farklı bir ders, sınıf veya konu deneyebilirsiniz."
                   />
                 ) : (
                   <SharedEmptyState
@@ -344,18 +344,7 @@ export function FeedScreen() {
                 )
               }
               ListFooterComponent={
-                error && questions.length > 0 ? (
-                  <View style={styles.loadingMore}>
-                    <Text style={styles.paginationErrorText}>{error}</Text>
-                    <Pressable
-                      onPress={loadMore}
-                      accessibilityRole="button"
-                      accessibilityLabel="Daha fazla soru yüklemeyi tekrar dene"
-                    >
-                      <Text style={styles.paginationRetryText}>Tekrar dene</Text>
-                    </Pressable>
-                  </View>
-                ) : isLoadingMore ? (
+                isLoadingMore ? (
                   <View style={styles.loadingMore}>
                     <ActivityIndicator color={colors.textSecondary} />
                   </View>
@@ -365,23 +354,6 @@ export function FeedScreen() {
           )}
         </View>
       </View>
-
-      <CameraButton onPress={openPicker} isLoading={isUploading} />
-
-      <VisibilityPicker
-        visible={isPickerOpen}
-        onSelect={captureWithVisibility}
-        onCancel={closePicker}
-      />
-
-      <QuestionMetadataModal
-        visible={pendingImageUri !== null}
-        imageUri={pendingImageUri}
-        isUploading={isUploading}
-        errorMessage={metadataError}
-        onSubmit={submitMetadata}
-        onCancel={cancelMetadata}
-      />
 
       <FeedFilterSheet
         visible={isFilterSheetOpen}
@@ -414,6 +386,7 @@ const styles = themedStyles(() => ({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    minHeight: 36,
     paddingHorizontal: spacing.md,
     paddingBottom: spacing.xxs,
   },
@@ -490,15 +463,5 @@ const styles = themedStyles(() => ({
   loadingMore: {
     paddingVertical: spacing.xl,
     alignItems: "center",
-    gap: spacing.xs,
-  },
-  paginationErrorText: {
-    ...typography.caption,
-    color: colors.textTertiary,
-    textAlign: "center",
-  },
-  paginationRetryText: {
-    ...typography.bodyStrong,
-    color: colors.primary,
   },
 }));

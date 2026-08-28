@@ -32,8 +32,18 @@ export default function TeacherTabsLayout() {
         tabBarStyle: { backgroundColor: colors.background, borderTopColor: colors.divider },
       }}
     >
+      {/* Phase 50 — the launch feed takes index; the class list keeps its
+          own tab immediately beside it, so nothing a teacher could reach
+          before became harder to reach. */}
       <Tabs.Screen
         name="index"
+        options={{
+          title: "Akış",
+          tabBarIcon: ({ color, size }) => <Ionicons name="home" color={color} size={size} />,
+        }}
+      />
+      <Tabs.Screen
+        name="classes"
         options={{
           title: "Sınıflarım",
           tabBarIcon: ({ color, size }) => <Ionicons name="school" color={color} size={size} />,
