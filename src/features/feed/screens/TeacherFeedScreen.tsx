@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { BrandLockup } from "@components/ui/BrandMark";
 import { EmptyState as SharedEmptyState } from "@components/ui/EmptyState";
 import { LoadingSkeleton } from "@components/ui/LoadingSkeleton";
 import { PrimaryButton } from "@components/ui/PrimaryButton";
@@ -213,7 +214,10 @@ export function TeacherFeedScreen() {
   const header = (
     <View style={styles.header}>
       <View style={styles.headerRow}>
-        <Text style={styles.wordmark}>NetFlowEdu</Text>
+        {/* Phase 52 — compact on purpose: the feed is content-first,
+            so the brand identifies the surface without competing
+            with the first card. */}
+        <BrandLockup size="compact" />
         {/* The signals channel is not a question list, so a question filter
             would do nothing there — hidden rather than shown-and-inert. */}
         {!isSignalsChannel ? (
@@ -389,10 +393,6 @@ const styles = themedStyles(() => ({
     minHeight: 36,
     paddingHorizontal: spacing.md,
     paddingBottom: spacing.xxs,
-  },
-  wordmark: {
-    ...typography.title,
-    color: colors.textPrimary,
   },
   filterButton: {
     flexDirection: "row",

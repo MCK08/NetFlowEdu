@@ -21,11 +21,18 @@ interface ToastProps {
   variant?: ToastVariant;
 }
 
-const VARIANT_BACKGROUND: Record<ToastVariant, string> = {
-  neutral: colors.textPrimary,
-  danger: colors.danger,
-  success: colors.success,
-};
+// Phase 52 — a FUNCTION, not a module-scope constant. Read at import
+// time this map froze on whichever palette happened to be active when
+// the module first loaded, so it kept rendering light values in dark
+// mode. Same freeze Phase 49/51 fixed for StyleSheet.create, in a
+// plain object that the codemod never looked at.
+function variantBackground(): Record<ToastVariant, string> {
+  return {
+    neutral: colors.textPrimary,
+    danger: colors.danger,
+    success: colors.success,
+  };
+}
 
 // Purely presentational — mounts per-screen (via useToast below), NOT a
 // global provider wired into app/_layout.tsx. Wiring an app-wide toast host
@@ -48,7 +55,7 @@ export function Toast({ message, variant = "neutral" }: ToastProps) {
       pointerEvents="none"
       style={[
         styles.container,
-        { bottom: insets.bottom + spacing.xl, backgroundColor: VARIANT_BACKGROUND[variant] },
+        { bottom: insets.bottom + spacing.xl, backgroundColor: variantBackground()[variant] },
         animatedStyle,
       ]}
     >

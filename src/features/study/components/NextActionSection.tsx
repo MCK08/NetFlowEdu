@@ -37,14 +37,21 @@ const ICONS: Record<StudentNextActionKind, keyof typeof Ionicons.glyphMap> = {
   no_action: "checkmark-circle-outline",
 };
 
-const COLORS: Record<StudentNextActionKind, string> = {
-  continue_assignment: colors.danger,
-  due_review: colors.danger,
-  struggled_topic: colors.primary,
-  adaptive_practice: colors.primary,
-  goal_fill: colors.textSecondary,
-  no_action: colors.textTertiary,
-};
+// Phase 52 — a FUNCTION, not a module-scope constant. Read at import
+// time this map froze on whichever palette happened to be active when
+// the module first loaded, so it kept rendering light values in dark
+// mode. Same freeze Phase 49/51 fixed for StyleSheet.create, in a
+// plain object that the codemod never looked at.
+function actionColors(): Record<StudentNextActionKind, string> {
+  return {
+    continue_assignment: colors.danger,
+    due_review: colors.danger,
+    struggled_topic: colors.primary,
+    adaptive_practice: colors.primary,
+    goal_fill: colors.textSecondary,
+    no_action: colors.textTertiary,
+  };
+}
 
 // "Şimdi Ne Yapmalısın?" — the Hub's single headline answer. Deliberately
 // NOT a replacement for "Bugünkü Plan" below it: this card names the one
@@ -66,7 +73,7 @@ export const NextActionSection = memo(function NextActionSection({
   useThemeSubscription();
   const copy = nextActionCopy(action, Date.now());
   const icon = ICONS[action.kind];
-  const tint = COLORS[action.kind];
+  const tint = actionColors()[action.kind];
 
   return (
     <View style={styles.container}>

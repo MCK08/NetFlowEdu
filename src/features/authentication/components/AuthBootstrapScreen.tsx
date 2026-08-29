@@ -1,5 +1,6 @@
 import { ActivityIndicator, Text, View } from "react-native";
 
+import { BrandLockup } from "@components/ui/BrandMark";
 import { colors } from "@theme/colors";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
@@ -28,7 +29,9 @@ export function AuthBootstrapScreen() {
       accessibilityLabel={BOOTSTRAP_MESSAGE}
       accessibilityLiveRegion="polite"
     >
-      <Text style={styles.brand}>NetFlow Edu</Text>
+      {/* Phase 52 — visually continues the splash, which shows this
+          same mark on this same background. */}
+      <BrandLockup />
       <ActivityIndicator size="large" color={colors.primary} />
       <Text style={styles.message}>{BOOTSTRAP_MESSAGE}</Text>
     </View>
@@ -43,12 +46,6 @@ const styles = themedStyles(() => ({
     gap: spacing.sm,
     padding: spacing.xl,
     backgroundColor: colors.background,
-  },
-  brand: {
-    ...typography.label,
-    color: colors.primary,
-    letterSpacing: 1,
-    textTransform: "uppercase",
   },
   message: {
     ...typography.caption,

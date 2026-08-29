@@ -2,6 +2,7 @@ import { ReactNode } from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { BrandLockup } from "@components/ui/BrandMark";
 import { colors } from "@theme/colors";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
@@ -44,7 +45,10 @@ export function AuthShell({ title, description, children, footer }: AuthShellPro
         >
           <View style={styles.inner}>
             <View style={styles.header}>
-              <Text style={styles.brand}>NetFlow Edu</Text>
+              {/* Phase 52 — the mark itself, not just the product's name in
+                  uppercase. This is the first screen anyone sees, and a
+                  text eyebrow alone left it reading as a generic form. */}
+              <BrandLockup />
               {/* Wraps rather than truncates: a screen title the reader
                   cannot finish is worse than one that takes two lines. */}
               <Text style={styles.title}>{title}</Text>
@@ -78,13 +82,7 @@ const styles = themedStyles(() => ({
     gap: spacing.lg,
   },
   header: {
-    gap: spacing.xxs,
-  },
-  brand: {
-    ...typography.label,
-    color: colors.primary,
-    letterSpacing: 1,
-    textTransform: "uppercase",
+    gap: spacing.sm,
   },
   title: {
     ...typography.displayLg,
