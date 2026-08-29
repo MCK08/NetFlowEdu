@@ -2,6 +2,7 @@ import {
   channelDescriptor,
   channelsForRole,
   defaultChannelForRole,
+  feedSessionKey,
   isChannelAllowedForRole,
   resolveChannelForRole,
 } from "../../src/features/feed/services/feedChannels";
@@ -137,5 +138,32 @@ describe("channelDescriptor", () => {
 
   it("returns null for a channel the role does not have", () => {
     expect(channelDescriptor("my_content", "student")).toBeNull();
+  });
+});
+
+describe("feedSessionKey — Phase 54 immersive pager session identity", () => {
+  it("changes when the channel changes, so a stale rating card cannot survive", () => {
+    expect(feedSessionKey("for_you", "|")).not.toBe(feedSessionKey("discover", "|"));
+  });
+
+  it("changes when the filter changes, preserving Phase 21's own reset contract", () => {
+    expect(feedSessionKey("for_you", "Matematik||")).not.toBe(feedSessionKey("for_you", "|"));
+  });
+
+  it("is identical for identical channel + filter, so nothing resets on an unrelated re-render", () => {
+    expect(feedSessionKey("struggles", "Matematik|9|Denklemler")).toBe(
+      feedSessionKey("struggles", "Matematik|9|Denklemler"),
+    );
+  });
+
+  // The exact pair a channel-blind key would have collided: same filter,
+  // different pool.
+  it("distinguishes two channels that share the same (empty) filter", () => {
+    expect(feedSessionKey("my_classes", "|")).not.toBe(feedSessionKey("struggles", "|"));
+  });
+
+  it("is stable for a null channel rather than throwing", () => {
+    expect(feedSessionKey(null, "|")).toBe(feedSessionKey(null, "|"));
+    expect(feedSessionKey(null, "|")).not.toBe(feedSessionKey("for_you", "|"));
   });
 });

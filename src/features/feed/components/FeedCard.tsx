@@ -34,6 +34,15 @@ interface FeedCardProps {
 // sits clear of the author/caption content.
 const BOTTOM_OVERLAY_RESERVE = 150;
 
+// Phase 54 — the floating camera button (CameraButton: absolute, bottom 32,
+// 68pt tall) occupies 32–100pt from the bottom of this same screen. In the
+// immersive pager the card fills that whole area, so an overlay anchored at
+// the old bottom: spacing.xl ran straight underneath it and the button sat
+// on top of the author row. Anchoring the overlay above the button's top
+// edge is what keeps both usable, and it is measured from the button's real
+// geometry rather than a guessed constant.
+const CAMERA_BUTTON_CLEARANCE = 112;
+
 // Tapping anywhere on the card opens Question Detail, which is the single
 // entry point into the answer flow (its own "Cevapla" button pushes
 // AnswerScreen) — nested Pressables (owner row, like button) still win
@@ -81,7 +90,7 @@ function FeedCardComponent({ question, height }: FeedCardProps) {
           photograph with no scrim at all — unreadable over any light
           question image. */}
       <FeedScrim placement="top" height={96} />
-      <FeedScrim placement="bottom" height={BOTTOM_OVERLAY_RESERVE + 90} />
+      <FeedScrim placement="bottom" height={BOTTOM_OVERLAY_RESERVE + CAMERA_BUTTON_CLEARANCE + 60} />
 
       <View style={styles.actionRail} pointerEvents="box-none">
         <FeedActionRail
@@ -138,13 +147,13 @@ const styles = themedStyles(() => ({
   actionRail: {
     position: "absolute",
     right: spacing.sm,
-    bottom: BOTTOM_OVERLAY_RESERVE,
+    bottom: BOTTOM_OVERLAY_RESERVE + CAMERA_BUTTON_CLEARANCE,
   },
   infoOverlay: {
     position: "absolute",
     left: spacing.md,
     right: 78,
-    bottom: spacing.xl,
+    bottom: CAMERA_BUTTON_CLEARANCE,
   },
   timestamp: {
     ...typography.label,

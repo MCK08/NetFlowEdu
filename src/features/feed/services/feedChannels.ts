@@ -131,3 +131,25 @@ export function channelDescriptor(
 ): FeedChannelDescriptor | null {
   return channelsForRole(role).find((descriptor) => descriptor.id === channel) ?? null;
 }
+
+// Phase 54 — the identity of one immersive feed "session".
+//
+// useInterleavedStudyFeed resets its whole item list (and its session-local
+// reshow bookkeeping) whenever this value changes. Both inputs matter and
+// neither is sufficient alone:
+//
+//  · the CHANNEL decides which questions exist at all, so a reshow pair
+//    built for "Zorlandıklarım" must never survive into "Keşfet"
+//  · the FILTER narrows that same pool, which is the case Phase 21 already
+//    documented for the pre-Phase-50 feed
+//
+// Before Phase 54 only the filter was used, because the pre-Phase-50 feed
+// had no channels. Feeding a channel-blind key into the pager would leave a
+// stale rating card pointing at a question the new channel no longer
+// contains.
+export function feedSessionKey(
+  channel: FeedChannel | null | undefined,
+  filterKey: string,
+): string {
+  return `${channel ?? ""}|${filterKey}`;
+}

@@ -1,16 +1,18 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { router, useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
   Pressable,
-  RefreshControl,
   Text,
   View,
   useWindowDimensions,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { BrandLockup } from "@components/ui/BrandMark";
 import { EmptyState as SharedEmptyState } from "@components/ui/EmptyState";
@@ -19,21 +21,27 @@ import { PrimaryButton } from "@components/ui/PrimaryButton";
 import { useStudentAssignments } from "@features/assignments/hooks/useStudentAssignments";
 import { useAuth } from "@features/authentication";
 import { useStudentClasses } from "@features/classes/hooks/useStudentClasses";
-import { DailyFlowSection } from "@features/dailyFlow/components/DailyFlowSection";
+import { calculateActiveIndex } from "@features/classes/services/classFeedPagination";
+import { FeedItem } from "@features/classes/services/feedItems";
+import { DailyFlowSheet } from "@features/dailyFlow/components/DailyFlowSheet";
 import { buildStudentDailyFlow } from "@features/dailyFlow/services/buildStudentDailyFlow";
 import { DailyFlowItem } from "@features/dailyFlow/services/dailyFlowTypes";
 import { QuestionMetadataModal } from "@features/questions/components/QuestionMetadataModal";
+import { RatingCard } from "@features/study/components/RatingCard";
+import { useInterleavedStudyFeed } from "@features/study/hooks/useInterleavedStudyFeed";
 import { CameraButton } from "@features/upload/components/CameraButton";
 import { VisibilityPicker } from "@features/upload/components/VisibilityPicker";
 import { useUpload } from "@features/upload/hooks/useUpload";
 import { colors } from "@theme/colors";
+import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
 import { themedStyles } from "@theme/themeRuntime";
 
+import { EmptyState } from "../components/EmptyState";
+import { FeedCard } from "../components/FeedCard";
 import { FeedChannelBar } from "../components/FeedChannelBar";
 import { FeedFilterSheet } from "../components/FeedFilterSheet";
-import { LaunchFeedCard } from "../components/LaunchFeedCard";
 import { useClassScopedQuestions } from "../hooks/useClassScopedQuestions";
 import { useFeedPersonalizationSignals } from "../hooks/useFeedPersonalizationSignals";
 import { useSocialFeed } from "../hooks/useSocialFeed";
@@ -42,11 +50,13 @@ import {
   channelDescriptor,
   channelsForRole,
   FeedChannel,
+  feedSessionKey,
   resolveChannelForRole,
 } from "../services/feedChannels";
 import {
   activeFeedFilterCount,
   EMPTY_FEED_FILTER,
+  feedFilterKey,
   FeedFilter,
   filterQuestions,
   isFeedFilterActive,
@@ -54,53 +64,89 @@ import {
 import { buildQuestionFeedRanking } from "../services/feedRanking";
 import { Question } from "../types";
 
-// Phase 50 — the student's launch surface.
+// Phase 54 — the student's immersive learning feed, restored.
 //
-// WHAT CHANGED FROM THE PRE-PHASE-50 FEED
+// WHY THIS REVERSES PHASE 50 (FOR THIS SCREEN ONLY)
 //
-// The previous implementation was a full-screen paged feed (pagingEnabled +
-// snapToInterval = window height), which locks exactly one card to the
-// viewport. Phase 50 §15 asks for the opposite: a natural continuous scroll
-// where the next card peeks in, so the list below is a plain vertical
-// FlatList of intrinsically-sized LaunchFeedCards. Upload, filtering,
-// personalization and cursor pagination are all preserved unchanged — only
-// the presentation and the new channel layer are new.
+// Phase 50 replaced the one-page-per-viewport feed with a conventional
+// vertically scrolling list of cards. That made the student home read as an
+// ordinary social feed — several question cards stacked in one viewport —
+// which is not the intended product. This restores the proven pre-Phase-50
+// interaction:
 //
-// READ COST (§24): "Sana Özel", "Keşfet" and "Zorlandıklarım" all read the
-// SAME useSocialFeed pages (one shared fetch, filtered/reordered purely in
-// memory). Only "Derslerim" adds reads, and only while it is the selected
-// channel — see useClassScopedQuestions' own note.
+//     [QUESTION A] → swipe → [RATING A] → swipe → [QUESTION B] → ...
+//
+// RECOVERED, NOT REINVENTED
+//
+// Every mechanism below already existed and still exists at HEAD; Phase 50
+// only stopped calling it. The interleave engine (useInterleavedStudyFeed +
+// feedItems.ts), the rating interstitial (RatingCard, which owns its own
+// exactly-once write via useStudyQuestionState), the immersive card
+// (FeedCard) and the offset→index helper (calculateActiveIndex) are all
+// untouched by this phase and are used exactly as ClassFeedScreen — the
+// sibling immersive surface that kept this model through Phases 50–53 —
+// still uses them today.
+//
+// WHAT PHASE 51/52/53 KEPT
+//
+//  · Phase 51's camera-button clearance and its native-iOS hardening
+//  · Phase 52's BrandLockup header
+//  · Phase 53's Daily Flow intelligence and the outcomeHistory fix — Daily
+//    Flow moved from an inline section to a header pill + sheet, because any
+//    block above the pager would re-break the full-viewport page (see
+//    DailyFlowSheet's own doc comment)
+//  · Phase 50's channels and filters, as compact overlay chrome
+//
+// LAYOUT MODEL
+//
+// The list fills the whole area above the tab bar and the header/channel bar
+// float over it as absolutely-positioned chrome. That is what keeps the page
+// height exactly `windowHeight - tabBarHeight` — a single, deterministic
+// number that getItemLayout, snapToInterval and calculateActiveIndex all
+// agree on. Laying the header out in normal flow instead would make the page
+// height depend on the header's measured height, which is the class of
+// "magic height that only works on one iPhone" this phase rules out.
 
-// The web/tablet content column. Phone stays full-bleed; anything wider
-// gets a centered reading column rather than cards stretched across a
-// monitor (§33).
-const MAX_CONTENT_WIDTH = 680;
-
-function keyExtractor(item: Question) {
-  return item.id;
+function keyExtractor(item: FeedItem) {
+  return item.key;
 }
 
+// Filtered results are considered "thin" (worth eagerly fetching more of the
+// underlying unfiltered pages for) below this count — a narrow filter on a
+// big feed shouldn't look empty just because the next matching questions
+// haven't been paged in yet.
+const THIN_RESULT_THRESHOLD = 5;
+
+// The web/tablet reading column. A full-bleed page is right on a phone; on a
+// wide monitor an educational image stretched across 2000px is not.
+const MAX_CONTENT_WIDTH = 680;
+
 export function FeedScreen() {
-  const { width } = useWindowDimensions();
+  const { height: windowHeight, width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  // Each page is exactly the space above the tab bar, never the full window:
+  // otherwise the bar overlays the bottom of every page, hiding the card's
+  // own action rail behind it.
+  const tabBarHeight = useBottomTabBarHeight();
+  const pageHeight = windowHeight - tabBarHeight;
+
   const { firebaseUser, profile, role } = useAuth();
   const uid = firebaseUser?.uid;
   const organizationId = profile?.organizationId ?? null;
+  const isStudent = role === "student";
 
   const channels = useMemo(() => channelsForRole(role), [role]);
   const [channel, setChannel] = useState<FeedChannel | null>(null);
-  // Narrowed through the role guard on every render, so a channel selected
-  // as one role can never survive an account switch into another (§22).
-  // `resolveChannelForRole` falls back to the role's own default.
   const activeChannel = resolveChannelForRole(channel, role);
 
   const [filter, setFilter] = useState<FeedFilter>(EMPTY_FEED_FILTER);
   const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
+  const [isDailyFlowOpen, setIsDailyFlowOpen] = useState(false);
 
   const {
     questions,
     isLoading,
     isLoadingMore,
-    isRefreshing,
     error,
     hasMore,
     loadMore,
@@ -122,17 +168,6 @@ export function FeedScreen() {
 
   const { signalsByQuestionId, snapshot, refresh: refreshSignals } =
     useFeedPersonalizationSignals(uid);
-
-  // Phase 53 — Daily Flow.
-  //
-  // READ COST: the learning half (weak topics, due count, history) comes out
-  // of useFeedPersonalizationSignals' EXISTING single fetch — zero new
-  // reads. useStudentAssignments is the one genuinely new source, and it is
-  // required: an open assignment is the top of Phase 39's own priority
-  // ladder, and there is no other place on this screen that assignment
-  // state could be derived from. It is the same bounded read the Study Hub
-  // already performs (one query + one submission doc per assignment
-  // targeting this student), never per-class and never per-question.
   const { cards: assignmentCards, refresh: refreshAssignments } = useStudentAssignments(uid);
 
   const dailyFlowItems = useMemo(
@@ -146,28 +181,14 @@ export function FeedScreen() {
     [assignmentCards, snapshot],
   );
 
-  // Fetched only while a channel that actually needs class content is
-  // selected — a channel the student never opens costs nothing.
-  //
-  // "Zorlandıklarım" needs this too, not just "Derslerim": a student's
-  // struggle evidence overwhelmingly sits on CLASS questions (that is what
-  // their teacher assigns), and useSocialFeed only ever loads own + public
-  // questions. Filtering the social pool alone produced an empty struggle
-  // channel for a student with real, recorded struggles — reproduced against
-  // the demo fixtures before this was widened.
   const needsClassQuestions = activeChannel === "my_classes" || activeChannel === "struggles";
   const { classes } = useStudentClasses(uid);
   const classIds = useMemo(() => classes.map((classRoom) => classRoom.id), [classes]);
-  const {
-    questions: classQuestions,
-    isLoading: isLoadingClasses,
-    refresh: refreshClasses,
-  } = useClassScopedQuestions(classIds, needsClassQuestions);
+  const { questions: classQuestions, isLoading: isLoadingClasses } = useClassScopedQuestions(
+    classIds,
+    needsClassQuestions,
+  );
 
-  // §15/§33 — Daily Flow refreshes on the SAME focus trigger the feed's
-  // personalization already used. No polling, no timer, no new lifecycle:
-  // completing an assignment or recording an outcome elsewhere and coming
-  // back re-derives both.
   useFocusEffect(
     useCallback(() => {
       refreshSignals();
@@ -175,13 +196,11 @@ export function FeedScreen() {
     }, [refreshSignals, refreshAssignments]),
   );
 
-  // The channel's own source list, before filters/ranking.
+  // Phase 50's channel pools, unchanged — immersive paging is a presentation
+  // change and must not alter which questions a channel contains.
   const channelQuestions = useMemo(() => {
     if (activeChannel === "my_classes") return classQuestions;
     if (activeChannel === "struggles") {
-      // Both pools, deduped by id — a struggled question can be a class
-      // question, an own question, or a public one, and the channel must not
-      // silently drop whichever pool it did not come from.
       const seen = new Set<string>();
       const pool: Question[] = [];
       for (const question of [...classQuestions, ...questions]) {
@@ -199,12 +218,9 @@ export function FeedScreen() {
     [channelQuestions, filter],
   );
 
-  // Personalized ordering applies to "Sana Özel" only. "Keşfet" deliberately
-  // keeps the server's own newest-first order so it stays a genuinely
-  // different view rather than a relabelled copy of the personalized one,
-  // and the class/struggle channels are already scoped by their own rule.
+  // Phase 45/26 ranking, unchanged and still "Sana Özel" only.
   const recentlyShownIdsRef = useRef<Set<string>>(new Set());
-  const visibleQuestions = useMemo(() => {
+  const rankedQuestions = useMemo(() => {
     if (activeChannel !== "for_you") return filteredQuestions;
     return buildQuestionFeedRanking({
       questions: filteredQuestions,
@@ -213,56 +229,85 @@ export function FeedScreen() {
     });
   }, [activeChannel, filteredQuestions, signalsByQuestionId]);
 
-  const listRef = useRef<FlatList<Question>>(null);
+  useEffect(() => {
+    if (!isFeedFilterActive(filter)) return;
+    if (!hasMore || isLoadingMore) return;
+    if (filteredQuestions.length >= THIN_RESULT_THRESHOLD) return;
+    loadMore();
+  }, [filter, filteredQuestions.length, hasMore, isLoadingMore, loadMore]);
 
-  // §36 — changing channel or filters resets the feed to the top; nothing
-  // else does. Scrolling is otherwise never reset by unrelated state.
+  const listRef = useRef<FlatList<FeedItem>>(null);
+  const scrollToIndex = useCallback(
+    (index: number) => {
+      listRef.current?.scrollToOffset({ offset: pageHeight * index, animated: true });
+    },
+    [pageHeight],
+  );
+
+  // THE RESTORED INTERLEAVE. `resetKey` combines the filter AND the channel:
+  // both change which questions exist, and a reshow pair built for the old
+  // pool must never leak into the new one.
+  const sessionKey = feedSessionKey(activeChannel, feedFilterKey(filter));
+  const { items, handleOutcomeRecorded } = useInterleavedStudyFeed({
+    questions: rankedQuestions,
+    isStudent,
+    scrollToIndex,
+    resetKey: sessionKey,
+  });
+
+  // Changing channel or filter starts a new session, so the pager returns to
+  // the first page. Nothing else resets it.
   useEffect(() => {
     listRef.current?.scrollToOffset({ offset: 0, animated: false });
-  }, [activeChannel, filter]);
+  }, [sessionKey]);
 
-  const openQuestion = useCallback((question: Question) => {
-    router.push({
-      pathname: "/(student)/question/[questionId]",
-      params: { questionId: question.id },
-    });
-  }, []);
+  // Bookkeeping only — feeds the session-local "already seen" set that
+  // deprioritises (never hides) a question in later ranking passes. Never
+  // gates rendering, navigation or rating.
+  const handleMomentumScrollEnd = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const index = calculateActiveIndex(event.nativeEvent.contentOffset.y, pageHeight, items.length);
+      const questionId = items[index]?.question.id;
+      if (questionId) recentlyShownIdsRef.current.add(questionId);
+    },
+    [pageHeight, items],
+  );
 
   const renderItem = useCallback(
-    ({ item }: { item: Question }) => (
-      <LaunchFeedCard
-        question={item}
-        actionLabel="Cevapla"
-        onPressAction={() => openQuestion(item)}
-        onPressCard={() => openQuestion(item)}
-      />
-    ),
-    [openQuestion],
+    ({ item, index }: { item: FeedItem; index: number }) => {
+      if (item.type === "rating") {
+        return (
+          <RatingCard
+            question={item.question}
+            height={pageHeight}
+            isStudent={isStudent}
+            onOutcomeRecorded={(outcome, question) =>
+              handleOutcomeRecorded(outcome, question, index, item.questionIndex)
+            }
+          />
+        );
+      }
+      return <FeedCard question={item.question} height={pageHeight} />;
+    },
+    [pageHeight, isStudent, handleOutcomeRecorded],
+  );
+
+  const getItemLayout = useCallback(
+    (_: ArrayLike<FeedItem> | null | undefined, index: number) => ({
+      length: pageHeight,
+      offset: pageHeight * index,
+      index,
+    }),
+    [pageHeight],
   );
 
   const handleEndReached = useCallback(() => {
-    // Only the shared social-feed channels page; the class channel loads its
-    // own bounded set in one pass.
     if (activeChannel === "my_classes") return;
     if (hasMore) loadMore();
   }, [activeChannel, hasMore, loadMore]);
 
-  const handleRefresh = useCallback(() => {
-    if (activeChannel === "my_classes") {
-      refreshClasses();
-      return;
-    }
-    refresh();
-  }, [activeChannel, refresh, refreshClasses]);
-
-  const activeFilterCount = activeFeedFilterCount(filter);
-  const descriptor = activeChannel ? channelDescriptor(activeChannel, role) : null;
-  const isChannelLoading = needsClassQuestions ? isLoadingClasses || isLoading : isLoading;
-
-  const contentWidthStyle = width > MAX_CONTENT_WIDTH ? { maxWidth: MAX_CONTENT_WIDTH } : null;
-
-  // Every target maps to a route this app already had before Phase 53.
   const handleDailyFlowPress = useCallback((item: DailyFlowItem) => {
+    setIsDailyFlowOpen(false);
     switch (item.target.kind) {
       case "assignment":
         router.push({
@@ -283,42 +328,59 @@ export function FeedScreen() {
         });
         return;
       default:
-        // student_performance / assignment_composer are teacher-only targets
-        // and can never be produced by buildStudentDailyFlow.
         return;
     }
   }, []);
 
-  const header = (
-    <View style={styles.header}>
-      <View style={styles.headerRow}>
-        {/* Phase 52 — compact on purpose: the feed is content-first,
-            so the brand identifies the surface without competing
-            with the first card. */}
+  const activeFilterCount = activeFeedFilterCount(filter);
+  const descriptor = activeChannel ? channelDescriptor(activeChannel, role) : null;
+  const isChannelLoading = needsClassQuestions ? isLoadingClasses || isLoading : isLoading;
+
+  // Absolutely positioned chrome — see the layout note in this file's header
+  // for why it floats rather than taking flow space.
+  const chrome = (
+    <View style={[styles.chrome, { top: insets.top }]} pointerEvents="box-none">
+      <View style={styles.chromeRow}>
         <BrandLockup size="compact" />
-        <Pressable
-          onPress={() => setIsFilterSheetOpen(true)}
-          style={styles.filterButton}
-          accessibilityRole="button"
-          accessibilityLabel="Filtrele"
-        >
-          <Ionicons name="options-outline" size={16} color={colors.textSecondary} />
-          <Text style={styles.filterButtonText}>Filtrele</Text>
-          {activeFilterCount > 0 ? (
-            <View style={styles.filterCountBadge}>
-              <Text style={styles.filterCountText}>{activeFilterCount}</Text>
-            </View>
-          ) : null}
-        </Pressable>
+        <View style={styles.chromeActions}>
+          <Pressable
+            onPress={() => setIsDailyFlowOpen(true)}
+            style={styles.chromePill}
+            accessibilityRole="button"
+            accessibilityLabel="Bugünkü akışın"
+          >
+            <Ionicons name="sparkles-outline" size={14} color={colors.textInverse} />
+            {dailyFlowItems.length > 0 ? (
+              <View style={styles.chromeBadge}>
+                <Text style={styles.chromeBadgeText}>{dailyFlowItems.length}</Text>
+              </View>
+            ) : null}
+          </Pressable>
+          <Pressable
+            onPress={() => setIsFilterSheetOpen(true)}
+            style={styles.chromePill}
+            accessibilityRole="button"
+            accessibilityLabel="Filtrele"
+          >
+            <Ionicons name="options-outline" size={14} color={colors.textInverse} />
+            {activeFilterCount > 0 ? (
+              <View style={styles.chromeBadge}>
+                <Text style={styles.chromeBadgeText}>{activeFilterCount}</Text>
+              </View>
+            ) : null}
+          </Pressable>
+        </View>
       </View>
 
-      {/* Phase 53 §31 — Daily Flow belongs to the launch shell, above the
-          channel bar, so it neither disappears nor duplicates as the
-          student moves between Sana Özel / Keşfet / Derslerim /
-          Zorlandıklarım. §32: it is also deliberately outside the feed
-          filter, since a subject filter on the CONTENT feed must not hide
-          a genuinely important assignment or due review. */}
-      <DailyFlowSection
+      <FeedChannelBar channels={channels} activeChannel={activeChannel} onSelect={setChannel} />
+    </View>
+  );
+
+  const sheets = (
+    <>
+      <DailyFlowSheet
+        visible={isDailyFlowOpen}
+        onClose={() => setIsDailyFlowOpen(false)}
         title="Bugünkü Akışın"
         items={dailyFlowItems}
         emptyText={
@@ -328,125 +390,106 @@ export function FeedScreen() {
         }
         onPressItem={handleDailyFlowPress}
       />
-
-      <FeedChannelBar
-        channels={channels}
-        activeChannel={activeChannel}
-        onSelect={setChannel}
+      <FeedFilterSheet
+        visible={isFilterSheetOpen}
+        filter={filter}
+        onChange={setFilter}
+        onClose={() => setIsFilterSheetOpen(false)}
       />
-
-      {/* Active filters, visible on the feed itself (§10). Each chip clears
-          just its own field, so the student never has to open the sheet to
-          undo one choice. */}
-      {activeFilterCount > 0 ? (
-        <View style={styles.activeFilterRow}>
-          {filter.subject ? (
-            <Pressable
-              onPress={() => setFilter({ ...filter, subject: null })}
-              style={styles.activeFilterChip}
-              accessibilityRole="button"
-              accessibilityLabel={`${filter.subject} filtresini kaldır`}
-            >
-              <Text style={styles.activeFilterText}>{filter.subject}</Text>
-              <Ionicons name="close" size={12} color={colors.primary} />
-            </Pressable>
-          ) : null}
-          {filter.topic ? (
-            <Pressable
-              onPress={() => setFilter({ ...filter, topic: null })}
-              style={styles.activeFilterChip}
-              accessibilityRole="button"
-              accessibilityLabel={`${filter.topic} filtresini kaldır`}
-            >
-              <Text style={styles.activeFilterText}>{filter.topic}</Text>
-              <Ionicons name="close" size={12} color={colors.primary} />
-            </Pressable>
-          ) : null}
-          {filter.gradeLevel ? (
-            <Pressable
-              onPress={() => setFilter({ ...filter, gradeLevel: null })}
-              style={styles.activeFilterChip}
-              accessibilityRole="button"
-              accessibilityLabel={`${filter.gradeLevel}. sınıf filtresini kaldır`}
-            >
-              <Text style={styles.activeFilterText}>{filter.gradeLevel}. sınıf</Text>
-              <Ionicons name="close" size={12} color={colors.primary} />
-            </Pressable>
-          ) : null}
-        </View>
-      ) : null}
-    </View>
+    </>
   );
 
-  return (
-    <SafeAreaView style={styles.flex} edges={["top"]}>
-      <View style={styles.centerColumn}>
-        <View style={[styles.column, contentWidthStyle]}>
-          {header}
+  if (isChannelLoading) {
+    return (
+      <View style={styles.centered}>
+        <LoadingSkeleton width="86%" height={pageHeight * 0.6} borderRadius={24} />
+        {chrome}
+        {sheets}
+      </View>
+    );
+  }
 
-          {isChannelLoading ? (
-            <View style={styles.skeletonList}>
-              <LoadingSkeleton height={280} borderRadius={16} />
-              <LoadingSkeleton height={280} borderRadius={16} />
-            </View>
-          ) : error && questions.length === 0 ? (
-            <View style={styles.centered}>
-              <SharedEmptyState icon="cloud-offline-outline" title={error} />
-              <PrimaryButton label="Tekrar Dene" onPress={refresh} />
-            </View>
-          ) : (
-            <FlatList
-              ref={listRef}
-              data={visibleQuestions}
-              keyExtractor={keyExtractor}
-              renderItem={renderItem}
-              contentContainerStyle={styles.listContent}
-              showsVerticalScrollIndicator={false}
-              refreshControl={
-                <RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} />
-              }
-              onEndReachedThreshold={0.6}
-              onEndReached={handleEndReached}
-              initialNumToRender={4}
-              maxToRenderPerBatch={6}
-              windowSize={7}
-              removeClippedSubviews
-              ListEmptyComponent={
-                isFeedFilterActive(filter) ? (
-                  <SharedEmptyState
-                    icon="filter-outline"
-                    title="Bu filtreye uyan soru yok"
-                    description="Farklı bir ders, sınıf veya konu deneyebilirsin."
-                  />
-                ) : (
-                  <SharedEmptyState
-                    icon="sparkles-outline"
-                    title={descriptor?.emptyTitle ?? "Burada henüz içerik yok."}
-                  />
-                )
-              }
-              ListFooterComponent={
-                error && questions.length > 0 ? (
-                  <View style={styles.loadingMore}>
-                    <Text style={styles.paginationErrorText}>{error}</Text>
-                    <Pressable
-                      onPress={loadMore}
-                      accessibilityRole="button"
-                      accessibilityLabel="Daha fazla soru yüklemeyi tekrar dene"
-                    >
-                      <Text style={styles.paginationRetryText}>Tekrar dene</Text>
-                    </Pressable>
-                  </View>
-                ) : isLoadingMore ? (
-                  <View style={styles.loadingMore}>
-                    <ActivityIndicator color={colors.textSecondary} />
-                  </View>
-                ) : null
-              }
-            />
-          )}
+  if (error && questions.length === 0) {
+    return (
+      <View style={styles.centered}>
+        <SharedEmptyState icon="cloud-offline-outline" title={error} />
+        <PrimaryButton label="Tekrar Dene" onPress={refresh} />
+        {chrome}
+        {sheets}
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.flex}>
+      <View style={styles.centerColumn}>
+        <View style={[styles.column, width > MAX_CONTENT_WIDTH ? styles.columnCapped : null]}>
+          <FlatList
+            ref={listRef}
+            data={items}
+            keyExtractor={keyExtractor}
+            renderItem={renderItem}
+            getItemLayout={getItemLayout}
+            // pagingEnabled + a full-page item height is what guarantees one
+            // learning moment at rest — the exact combination ClassFeedScreen
+            // has used unchanged since Phase 19.2 and which Phase 51
+            // validated on device.
+            pagingEnabled
+            snapToInterval={pageHeight}
+            snapToAlignment="start"
+            decelerationRate="fast"
+            disableIntervalMomentum
+            showsVerticalScrollIndicator={false}
+            onMomentumScrollEnd={handleMomentumScrollEnd}
+            onEndReachedThreshold={0.5}
+            onEndReached={handleEndReached}
+            // Only a small window of full-page cards needs to stay mounted
+            // around the visible one.
+            initialNumToRender={1}
+            maxToRenderPerBatch={2}
+            windowSize={3}
+            removeClippedSubviews
+            ListEmptyComponent={
+              isFeedFilterActive(filter) ? (
+                <SharedEmptyState
+                  icon="filter-outline"
+                  title="Bu filtreye uyan soru yok"
+                  description="Farklı bir ders, sınıf veya konu deneyebilirsin."
+                  style={{ width: "100%", height: pageHeight, backgroundColor: colors.background }}
+                />
+              ) : descriptor ? (
+                <SharedEmptyState
+                  icon="sparkles-outline"
+                  title={descriptor.emptyTitle}
+                  style={{ width: "100%", height: pageHeight, backgroundColor: colors.background }}
+                />
+              ) : (
+                <EmptyState height={pageHeight} />
+              )
+            }
+            ListFooterComponent={
+              error && questions.length > 0 ? (
+                <View style={styles.loadingMore}>
+                  <Text style={styles.paginationErrorText}>{error}</Text>
+                  <Pressable
+                    onPress={loadMore}
+                    accessibilityRole="button"
+                    accessibilityLabel="Daha fazla soru yüklemeyi tekrar dene"
+                  >
+                    <Text style={styles.paginationRetryText}>Tekrar dene</Text>
+                  </Pressable>
+                </View>
+              ) : isLoadingMore ? (
+                <View style={styles.loadingMore}>
+                  <ActivityIndicator color={colors.textPrimary} />
+                </View>
+              ) : null
+            }
+          />
         </View>
       </View>
+
+      {chrome}
 
       <CameraButton onPress={openPicker} isLoading={isUploading} />
 
@@ -465,13 +508,8 @@ export function FeedScreen() {
         onCancel={cancelMetadata}
       />
 
-      <FeedFilterSheet
-        visible={isFilterSheetOpen}
-        filter={filter}
-        onChange={setFilter}
-        onClose={() => setIsFilterSheetOpen(false)}
-      />
-    </SafeAreaView>
+      {sheets}
+    </View>
   );
 }
 
@@ -483,39 +521,61 @@ const styles = themedStyles(() => ({
   centerColumn: {
     flex: 1,
     alignItems: "center",
+    backgroundColor: colors.background,
   },
   column: {
     flex: 1,
     width: "100%",
   },
-  header: {
-    gap: spacing.xxs,
-    paddingTop: spacing.xs,
+  columnCapped: {
+    maxWidth: MAX_CONTENT_WIDTH,
   },
-  headerRow: {
+  centered: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.background,
+    gap: spacing.md,
+    paddingHorizontal: spacing.xl,
+  },
+  chrome: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    gap: spacing.xxs,
+    zIndex: 10,
+  },
+  chromeRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: spacing.md,
-    paddingBottom: spacing.xxs,
+    paddingTop: spacing.xs,
   },
-  filterButton: {
+  chromeActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+  },
+  chromePill: {
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.xxs,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 999,
+    // Deliberately a literal scrim rather than a theme token: this chrome
+    // floats over an arbitrary full-bleed question photograph in BOTH
+    // themes, so it needs a constant dark ground for contrast — the same
+    // reasoning Phase 51 documented for ClassFeedScreen and ImageViewer.
+    backgroundColor: "rgba(0,0,0,0.45)",
+    borderRadius: radius.pill,
+    // 36pt tall with the padding below — a comfortable target for an
+    // icon-only control.
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
+    minWidth: 44,
     minHeight: 36,
+    justifyContent: "center",
   },
-  filterButtonText: {
-    ...typography.label,
-    color: colors.textSecondary,
-  },
-  filterCountBadge: {
+  chromeBadge: {
     minWidth: 16,
     height: 16,
     borderRadius: 8,
@@ -524,55 +584,13 @@ const styles = themedStyles(() => ({
     justifyContent: "center",
     paddingHorizontal: 4,
   },
-  filterCountText: {
+  chromeBadgeText: {
     fontSize: 10,
     fontWeight: "700",
     color: colors.textInverse,
   },
-  activeFilterRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.xs,
-    paddingHorizontal: spacing.md,
-    paddingBottom: spacing.xs,
-  },
-  activeFilterChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.xxs,
-    backgroundColor: colors.primaryMuted,
-    borderRadius: 999,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xxs,
-  },
-  activeFilterText: {
-    ...typography.label,
-    color: colors.primary,
-  },
-  listContent: {
-    padding: spacing.md,
-    paddingTop: spacing.xs,
-    gap: spacing.md,
-    // Phase 51 — clears the floating camera button, which is absolutely
-    // positioned at bottom:32 and 68pt tall. Without this the FAB sits ON TOP
-    // of the last card's media and action, permanently occluding them: caught
-    // on the iOS simulator, where the button covered the second card's own
-    // placeholder text. 32 + 68 + a spacing.sm gap.
-    paddingBottom: 32 + 68 + spacing.sm,
-  },
-  skeletonList: {
-    padding: spacing.md,
-    gap: spacing.md,
-  },
-  centered: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: spacing.md,
-    paddingHorizontal: spacing.xl,
-  },
   loadingMore: {
-    paddingVertical: spacing.xl,
+    paddingVertical: 24,
     alignItems: "center",
     gap: spacing.xs,
   },
