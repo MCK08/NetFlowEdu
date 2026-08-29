@@ -1,10 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, Text, View } from "react-native";
 
 import { useProfileHandle } from "@features/profiles";
 import { QuestionComment } from "@/types/comment";
 import { colors } from "@theme/colors";
+import { themedStyles } from "@theme/themeRuntime";
 
 function formatDate(createdAt: number): string {
   if (!createdAt) return "";
@@ -64,7 +65,7 @@ export function CommentItem({ comment, isOwnComment, onDelete }: CommentItemProp
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   row: {
     flexDirection: "row",
     gap: 10,
@@ -95,7 +96,7 @@ const styles = StyleSheet.create({
   author: {
     fontSize: 13,
     fontWeight: "700",
-    color: "black",
+    color: colors.textPrimary,
     flexShrink: 1,
   },
   handle: {
@@ -116,4 +117,4 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-});
+}));

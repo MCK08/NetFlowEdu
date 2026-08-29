@@ -1,8 +1,9 @@
-import { StyleSheet, TextInput, View } from "react-native";
+import { TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { PrimaryButton } from "@components/ui/PrimaryButton";
 import { colors } from "@theme/colors";
+import { themedStyles } from "@theme/themeRuntime";
 
 interface CommentComposerProps {
   draft: string;
@@ -42,14 +43,14 @@ export function CommentComposer({ draft, onChangeDraft, isSubmitting, onSubmit }
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   row: {
     flexDirection: "row",
     alignItems: "flex-end",
     gap: 8,
     paddingHorizontal: 16,
     paddingTop: 12,
-    backgroundColor: "white",
+    backgroundColor: colors.background,
     borderTopWidth: 1,
     borderTopColor: colors.divider,
   },
@@ -67,4 +68,4 @@ const styles = StyleSheet.create({
   sendButton: {
     minWidth: 88,
   },
-});
+}));

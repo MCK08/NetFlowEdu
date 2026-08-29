@@ -42,7 +42,13 @@ const styles = themedStyles(() => ({
     justifyContent: "center",
     borderWidth: 3,
     borderColor: colors.textPrimary,
-    shadowColor: colors.textPrimary,
+    // PLATFORM VALUE, deliberately not a token: a shadow is cast light, not
+    // painted colour, so it is black in every theme. This used to be
+    // colors.textPrimary, which is near-WHITE in dark mode and turned the
+    // button's shadow into a glowing halo (caught on the iOS simulator).
+    // Against the dark background a black shadow simply reads as no shadow,
+    // and the button's own 3pt border carries the separation instead.
+    shadowColor: "#000",
     shadowOpacity: 0.25,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 2 },

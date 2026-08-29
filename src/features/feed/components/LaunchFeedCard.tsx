@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
-import { memo } from "react";
-import { Pressable, Text, View } from "react-native";
+import { memo, useCallback, useState } from "react";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { useProfileHandle } from "@features/profiles";
 import { colors } from "@theme/colors";
@@ -52,10 +52,19 @@ function LaunchFeedCardComponent({
   useThemeSubscription();
   const { primaryName } = useProfileHandle(question.ownerId);
 
+  // Phase 51 — a question whose image FAILS to load used to leave the media
+  // slot as a bare 200pt block of surfaceMuted: no icon, no explanation, and
+  // still tall enough to push the card's action down. Tracking the failure
+  // lets it fall back to the same honest placeholder a question with no image
+  // already gets, instead of a dead grey slab.
+  const [hasImageFailed, setHasImageFailed] = useState(false);
+  const handleImageError = useCallback(() => setHasImageFailed(true), []);
+
   const subject = question.subject?.trim();
   const topic = question.topic?.trim();
   const postedAt = formatRelativeTime(question.createdAt);
-  const hasImage = typeof question.imageUrl === "string" && question.imageUrl.length > 0;
+  const hasImage =
+    typeof question.imageUrl === "string" && question.imageUrl.length > 0 && !hasImageFailed;
 
   return (
     <Pressable
@@ -99,23 +108,32 @@ function LaunchFeedCardComponent({
         </Text>
       ) : null}
 
-      {/* MEDIA — fixed aspect ratio so the list never reflows as images
-          decode at different sizes (§46's "avoid layout jumping"). A
-          question with no image gets a themed placeholder rather than a
-          collapsed gap or a fabricated illustration. */}
-      {hasImage ? (
-        <Image
-          source={{ uri: question.imageUrl }}
-          style={styles.media}
-          contentFit="cover"
-          transition={duration.normal}
-          accessibilityLabel="Soru görseli"
-        />
-      ) : (
-        <View style={[styles.media, styles.mediaPlaceholder]}>
-          <Ionicons name="document-text-outline" size={28} color={colors.textTertiary} />
-        </View>
-      )}
+      {/* MEDIA — fixed height so the list never reflows as images decode at
+          different sizes (§46's "avoid layout jumping").
+
+          Phase 51: the placeholder is the slot's BASE layer rather than an
+          either/or branch, and the image is laid over it. A question with no
+          image, one whose image is still in flight, and one whose image
+          failed all now show something legible instead of an unexplained
+          200pt void — previously only the "no image at all" case did, so a
+          slow or broken URL left a featureless grey slab dominating the card
+          (§33, §36). */}
+      <View style={[styles.media, styles.mediaPlaceholder]}>
+        <Ionicons name="document-text-outline" size={28} color={colors.textTertiary} />
+        <Text style={styles.mediaPlaceholderText}>
+          {hasImageFailed ? "Görsel yüklenemedi" : hasImage ? "Görsel yükleniyor" : "Görsel yok"}
+        </Text>
+        {hasImage ? (
+          <Image
+            source={{ uri: question.imageUrl }}
+            style={styles.mediaImage}
+            contentFit="cover"
+            transition={duration.normal}
+            onError={handleImageError}
+            accessibilityLabel="Soru görseli"
+          />
+        ) : null}
+      </View>
 
       {/* ACTION — one primary action, always real, omitted when the caller
           has no destination for it. */}
@@ -201,6 +219,15 @@ const styles = themedStyles(() => ({
   mediaPlaceholder: {
     alignItems: "center",
     justifyContent: "center",
+    gap: spacing.xxs,
+    overflow: "hidden",
+  },
+  mediaImage: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  mediaPlaceholderText: {
+    ...typography.label,
+    color: colors.textTertiary,
   },
   actionButton: {
     flexDirection: "row",

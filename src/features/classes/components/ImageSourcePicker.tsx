@@ -3,6 +3,7 @@ import { Animated, Pressable, StyleSheet, Text } from "react-native";
 
 import { QuestionImageSource } from "@features/upload/services/uploadService";
 import { colors } from "@theme/colors";
+import { themedStyles } from "@theme/themeRuntime";
 
 interface ImageSourcePickerProps {
   visible: boolean;
@@ -86,7 +87,7 @@ export function ImageSourcePicker({ visible, onSelect, onCancel }: ImageSourcePi
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   backdrop: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(0,0,0,0.4)",
@@ -96,7 +97,7 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
   },
   sheet: {
-    backgroundColor: "white",
+    backgroundColor: colors.background,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     padding: 20,
@@ -106,7 +107,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 16,
     fontWeight: "700",
-    color: "black",
+    color: colors.textPrimary,
     marginBottom: 8,
     textAlign: "center",
   },
@@ -122,7 +123,7 @@ const styles = StyleSheet.create({
   optionText: {
     fontSize: 15,
     fontWeight: "600",
-    color: "black",
+    color: colors.textPrimary,
   },
   cancelButton: {
     minHeight: 44,
@@ -135,4 +136,4 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: colors.textSecondary,
   },
-});
+}));

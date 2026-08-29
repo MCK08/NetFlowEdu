@@ -3,6 +3,7 @@ import { Animated, Pressable, StyleSheet, Text } from "react-native";
 
 import { QuestionVisibility } from "@/types/question";
 import { colors } from "@theme/colors";
+import { themedStyles } from "@theme/themeRuntime";
 
 interface VisibilityOption {
   value: QuestionVisibility;
@@ -129,7 +130,7 @@ export function VisibilityPicker({ visible, onSelect, onCancel }: VisibilityPick
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   backdrop: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(0,0,0,0.4)",
@@ -139,7 +140,7 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
   },
   sheet: {
-    backgroundColor: "white",
+    backgroundColor: colors.background,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     padding: 20,
@@ -149,7 +150,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 16,
     fontWeight: "700",
-    color: "black",
+    color: colors.textPrimary,
     marginBottom: 8,
     textAlign: "center",
   },
@@ -168,7 +169,7 @@ const styles = StyleSheet.create({
   optionText: {
     fontSize: 15,
     fontWeight: "600",
-    color: "black",
+    color: colors.textPrimary,
   },
   optionTextDisabled: {
     color: colors.textTertiary,
@@ -189,4 +190,4 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: colors.textSecondary,
   },
-});
+}));

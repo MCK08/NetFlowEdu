@@ -475,6 +475,12 @@ const styles = themedStyles(() => ({
     padding: spacing.md,
     paddingTop: spacing.xs,
     gap: spacing.md,
+    // Phase 51 — clears the floating camera button, which is absolutely
+    // positioned at bottom:32 and 68pt tall. Without this the FAB sits ON TOP
+    // of the last card's media and action, permanently occluding them: caught
+    // on the iOS simulator, where the button covered the second card's own
+    // placeholder text. 32 + 68 + a spacing.sm gap.
+    paddingBottom: 32 + 68 + spacing.sm,
   },
   skeletonList: {
     padding: spacing.md,

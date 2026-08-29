@@ -82,7 +82,7 @@ export function TeacherClassDetailScreen({ classId }: TeacherClassDetailScreenPr
               accessibilityRole="button"
               accessibilityLabel="Geri"
             >
-              <Ionicons name="chevron-back" size={24} color="black" />
+              <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
             </Pressable>
 
             <Text style={styles.title}>{classRoom.name}</Text>
@@ -110,7 +110,7 @@ export function TeacherClassDetailScreen({ classId }: TeacherClassDetailScreenPr
               accessibilityRole="button"
               accessibilityLabel="Sınıf sohbetini aç"
             >
-              <Ionicons name="chatbubble-outline" size={18} color="white" />
+              <Ionicons name="chatbubble-outline" size={18} color={colors.textInverse} />
               <Text style={styles.chatButtonText}>Sınıf Sohbeti</Text>
             </Pressable>
 
@@ -136,7 +136,7 @@ export function TeacherClassDetailScreen({ classId }: TeacherClassDetailScreenPr
                 <ActivityIndicator color={colors.textInverse} />
               ) : (
                 <>
-                  <Ionicons name="camera" size={18} color="white" />
+                  <Ionicons name="camera" size={18} color={colors.textInverse} />
                   <Text style={styles.uploadButtonText}>Sınıfa Soru Ekle</Text>
                 </>
               )}
@@ -173,13 +173,13 @@ export function TeacherClassDetailScreen({ classId }: TeacherClassDetailScreenPr
 const styles = themedStyles(() => ({
   flex: {
     flex: 1,
-    backgroundColor: "white",
+    backgroundColor: colors.background,
   },
   centered: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "white",
+    backgroundColor: colors.background,
   },
   listContent: {
     paddingBottom: 24,
@@ -197,7 +197,7 @@ const styles = themedStyles(() => ({
   title: {
     fontSize: 22,
     fontWeight: "700",
-    color: "black",
+    color: colors.textPrimary,
   },
   codeRow: {
     flexDirection: "row",
@@ -211,7 +211,7 @@ const styles = themedStyles(() => ({
   code: {
     fontSize: 16,
     fontWeight: "700",
-    color: "black",
+    color: colors.textPrimary,
     letterSpacing: 2,
     flex: 1,
   },
@@ -240,7 +240,7 @@ const styles = themedStyles(() => ({
     backgroundColor: colors.primary,
   },
   chatButtonText: {
-    color: "white",
+    color: colors.textInverse,
     fontSize: 15,
     fontWeight: "600",
   },
@@ -272,14 +272,14 @@ const styles = themedStyles(() => ({
     opacity: 0.6,
   },
   uploadButtonText: {
-    color: "white",
+    color: colors.textInverse,
     fontSize: 15,
     fontWeight: "600",
   },
   sectionTitle: {
     fontSize: 15,
     fontWeight: "700",
-    color: "black",
+    color: colors.textPrimary,
     marginTop: 12,
   },
   loadingMore: {

@@ -5,6 +5,7 @@ import { ActivityIndicator, View } from "react-native";
 import { useAuth } from "@features/authentication";
 import { PublicProfileScreen } from "@features/profile";
 import { useThemeSubscription } from "@theme/ThemeProvider";
+import { colors } from "@theme/colors";
 
 // Mirrors (student)/user/[userId].tsx exactly — same shared
 // PublicProfileScreen, own-profile redirect to the teacher's own Profil tab
@@ -25,7 +26,7 @@ export default function TeacherPublicProfile() {
   if (!userId || isOwnProfile) {
     return (
       <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
-        <ActivityIndicator size="large" color="black" />
+        <ActivityIndicator size="large" color={colors.textPrimary} />
       </View>
     );
   }

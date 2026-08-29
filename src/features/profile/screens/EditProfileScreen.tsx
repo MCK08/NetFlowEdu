@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, Text, View } from "react-native";
 
 import { KeyboardSafeScreen } from "@components/ui/KeyboardSafeScreen";
 import { PrimaryButton } from "@components/ui/PrimaryButton";
@@ -8,6 +8,7 @@ import { TextField } from "@components/ui/TextField";
 
 import { useEditProfileForm } from "../hooks/useEditProfileForm";
 import { colors } from "@theme/colors";
+import { themedStyles } from "@theme/themeRuntime";
 
 export function EditProfileScreen() {
   const {
@@ -64,7 +65,7 @@ export function EditProfileScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   title: {
     fontSize: 22,
     fontWeight: "700",
@@ -98,4 +99,4 @@ const styles = StyleSheet.create({
     color: colors.textTertiary,
     marginTop: -8,
   },
-});
+}));

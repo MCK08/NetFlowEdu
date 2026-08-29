@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { Modal, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Modal, Pressable, Text, TextInput, View } from "react-native";
 
 import { PrimaryButton } from "@components/ui/PrimaryButton";
 import { colors } from "@theme/colors";
+import { themedStyles } from "@theme/themeRuntime";
 
 interface JoinClassModalProps {
   visible: boolean;
@@ -58,7 +59,7 @@ export function JoinClassModal({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   backdrop: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.4)",
@@ -66,7 +67,7 @@ const styles = StyleSheet.create({
     padding: 24,
   },
   sheet: {
-    backgroundColor: "white",
+    backgroundColor: colors.background,
     borderRadius: 16,
     padding: 20,
     gap: 12,
@@ -74,7 +75,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 16,
     fontWeight: "700",
-    color: "black",
+    color: colors.textPrimary,
     textAlign: "center",
   },
   input: {
@@ -84,7 +85,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingHorizontal: 14,
     fontSize: 15,
-    color: "black",
+    color: colors.textPrimary,
     letterSpacing: 2,
     textAlign: "center",
   },
@@ -103,4 +104,4 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: colors.textSecondary,
   },
-});
+}));
