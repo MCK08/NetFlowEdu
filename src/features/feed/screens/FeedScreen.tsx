@@ -16,8 +16,12 @@ import { BrandLockup } from "@components/ui/BrandMark";
 import { EmptyState as SharedEmptyState } from "@components/ui/EmptyState";
 import { LoadingSkeleton } from "@components/ui/LoadingSkeleton";
 import { PrimaryButton } from "@components/ui/PrimaryButton";
+import { useStudentAssignments } from "@features/assignments/hooks/useStudentAssignments";
 import { useAuth } from "@features/authentication";
 import { useStudentClasses } from "@features/classes/hooks/useStudentClasses";
+import { DailyFlowSection } from "@features/dailyFlow/components/DailyFlowSection";
+import { buildStudentDailyFlow } from "@features/dailyFlow/services/buildStudentDailyFlow";
+import { DailyFlowItem } from "@features/dailyFlow/services/dailyFlowTypes";
 import { QuestionMetadataModal } from "@features/questions/components/QuestionMetadataModal";
 import { CameraButton } from "@features/upload/components/CameraButton";
 import { VisibilityPicker } from "@features/upload/components/VisibilityPicker";
@@ -116,7 +120,31 @@ export function FeedScreen() {
     submitMetadata,
   } = useUpload({ uid, organizationId, onUploaded: prepend });
 
-  const { signalsByQuestionId, refresh: refreshSignals } = useFeedPersonalizationSignals(uid);
+  const { signalsByQuestionId, snapshot, refresh: refreshSignals } =
+    useFeedPersonalizationSignals(uid);
+
+  // Phase 53 — Daily Flow.
+  //
+  // READ COST: the learning half (weak topics, due count, history) comes out
+  // of useFeedPersonalizationSignals' EXISTING single fetch — zero new
+  // reads. useStudentAssignments is the one genuinely new source, and it is
+  // required: an open assignment is the top of Phase 39's own priority
+  // ladder, and there is no other place on this screen that assignment
+  // state could be derived from. It is the same bounded read the Study Hub
+  // already performs (one query + one submission doc per assignment
+  // targeting this student), never per-class and never per-question.
+  const { cards: assignmentCards, refresh: refreshAssignments } = useStudentAssignments(uid);
+
+  const dailyFlowItems = useMemo(
+    () =>
+      buildStudentDailyFlow({
+        assignmentCards,
+        weakTopics: snapshot.weakTopics,
+        dueCount: snapshot.dueCount,
+        hasStudyHistory: snapshot.hasStudyHistory,
+      }),
+    [assignmentCards, snapshot],
+  );
 
   // Fetched only while a channel that actually needs class content is
   // selected — a channel the student never opens costs nothing.
@@ -136,10 +164,15 @@ export function FeedScreen() {
     refresh: refreshClasses,
   } = useClassScopedQuestions(classIds, needsClassQuestions);
 
+  // §15/§33 — Daily Flow refreshes on the SAME focus trigger the feed's
+  // personalization already used. No polling, no timer, no new lifecycle:
+  // completing an assignment or recording an outcome elsewhere and coming
+  // back re-derives both.
   useFocusEffect(
     useCallback(() => {
       refreshSignals();
-    }, [refreshSignals]),
+      refreshAssignments();
+    }, [refreshSignals, refreshAssignments]),
   );
 
   // The channel's own source list, before filters/ranking.
@@ -228,6 +261,34 @@ export function FeedScreen() {
 
   const contentWidthStyle = width > MAX_CONTENT_WIDTH ? { maxWidth: MAX_CONTENT_WIDTH } : null;
 
+  // Every target maps to a route this app already had before Phase 53.
+  const handleDailyFlowPress = useCallback((item: DailyFlowItem) => {
+    switch (item.target.kind) {
+      case "assignment":
+        router.push({
+          pathname: "/(student)/assignment/[assignmentId]",
+          params: { assignmentId: item.target.assignmentId },
+        });
+        return;
+      case "review_session":
+        router.push("/(student)/study/review");
+        return;
+      case "adaptive_session":
+        router.push("/(student)/study/adaptive");
+        return;
+      case "question":
+        router.push({
+          pathname: "/(student)/question/[questionId]",
+          params: { questionId: item.target.questionId },
+        });
+        return;
+      default:
+        // student_performance / assignment_composer are teacher-only targets
+        // and can never be produced by buildStudentDailyFlow.
+        return;
+    }
+  }, []);
+
   const header = (
     <View style={styles.header}>
       <View style={styles.headerRow}>
@@ -250,6 +311,23 @@ export function FeedScreen() {
           ) : null}
         </Pressable>
       </View>
+
+      {/* Phase 53 §31 — Daily Flow belongs to the launch shell, above the
+          channel bar, so it neither disappears nor duplicates as the
+          student moves between Sana Özel / Keşfet / Derslerim /
+          Zorlandıklarım. §32: it is also deliberately outside the feed
+          filter, since a subject filter on the CONTENT feed must not hide
+          a genuinely important assignment or due review. */}
+      <DailyFlowSection
+        title="Bugünkü Akışın"
+        items={dailyFlowItems}
+        emptyText={
+          snapshot.hasStudyHistory
+            ? "Şimdilik öncelikli bir adım yok. Keşfet'ten yeni sorularla devam edebilirsin."
+            : "Keşfet'ten bir soru çözerek başlayabilirsin."
+        }
+        onPressItem={handleDailyFlowPress}
+      />
 
       <FeedChannelBar
         channels={channels}

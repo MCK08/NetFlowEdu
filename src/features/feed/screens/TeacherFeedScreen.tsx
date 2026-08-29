@@ -18,6 +18,9 @@ import { LoadingSkeleton } from "@components/ui/LoadingSkeleton";
 import { PrimaryButton } from "@components/ui/PrimaryButton";
 import { useAuth } from "@features/authentication";
 import { useTeacherClasses } from "@features/classes/hooks/useTeacherClasses";
+import { DailyFlowSection } from "@features/dailyFlow/components/DailyFlowSection";
+import { buildTeacherDailyFlow } from "@features/dailyFlow/services/buildTeacherDailyFlow";
+import { DailyFlowItem } from "@features/dailyFlow/services/dailyFlowTypes";
 import { useClassPerformance } from "@features/teacher/hooks/useClassPerformance";
 import { colors } from "@theme/colors";
 import { spacing } from "@theme/spacing";
@@ -96,8 +99,31 @@ export function TeacherFeedScreen() {
   // fanning it out across every class would multiply its own per-student
   // reads by the class count — exactly the fan-out §24/§41 forbid. The full
   // multi-class picture stays one tap away in Class Performance.
-  const signalClassId = activeChannel === "student_signals" ? classIds[0] : undefined;
-  const { attentionCards, isLoading: isLoadingSignals } = useClassPerformance(signalClassId);
+  // Phase 53 — Daily Flow needs this class's aggregated signals on every
+  // teacher feed open, not only while the signals channel is selected, so
+  // the load is no longer gated on the channel.
+  //
+  // READ COST: this is the SAME single per-class aggregate the Class
+  // Performance screen and the signals channel already perform (one members
+  // query + one class-sourced studyItems read per student), now paid once on
+  // feed open instead of once on channel open. It is still scoped to ONE
+  // class — the teacher's first — exactly as Phase 50 established. No
+  // fan-out across classes was added, and no per-student intervention
+  // effectiveness read was added; see buildTeacherDailyFlow's own note on
+  // why Phase 47's verdicts stay in Student Performance.
+  const signalClassId = classIds[0];
+  const { attentionCards, topicHotspots, isLoading: isLoadingSignals } =
+    useClassPerformance(signalClassId);
+
+  const dailyFlowItems = useMemo(
+    () =>
+      buildTeacherDailyFlow({
+        attentionCards,
+        topicHotspots,
+        classId: signalClassId ?? null,
+      }),
+    [attentionCards, topicHotspots, signalClassId],
+  );
 
   // Only students there is actually something to DO about — the exact same
   // needs_attention/watch rule buildTeacherActionSummary already applies to
@@ -169,6 +195,29 @@ export function TeacherFeedScreen() {
     [classIds, signalClassId],
   );
 
+  // Every target maps to a route this app already had before Phase 53.
+  const handleDailyFlowPress = useCallback(
+    (item: DailyFlowItem) => {
+      if (item.target.kind === "student_performance") {
+        openStudent(item.target.studentUid);
+        return;
+      }
+      if (item.target.kind === "assignment_composer") {
+        const params: { classId: string } & Record<string, string> = {
+          classId: item.target.classId,
+          subject: item.target.subject,
+          topic: item.target.topic,
+        };
+        // Phase 43's rule, preserved: an unresolvable grade is omitted, not
+        // defaulted — a confidently-wrong grade silently changes which
+        // questions the composer selects.
+        if (item.target.gradeLevel) params.gradeLevel = item.target.gradeLevel;
+        router.push({ pathname: "/(teacher)/class/[classId]/assignment/create", params });
+      }
+    },
+    [openStudent],
+  );
+
   const canCompose = classIds.length > 0;
   const renderItem = useCallback(
     ({ item }: { item: Question }) => (
@@ -237,6 +286,19 @@ export function TeacherFeedScreen() {
           </Pressable>
         ) : null}
       </View>
+
+      {/* Phase 53 §31 — part of the launch shell, above the channel bar, so
+          it neither disappears nor duplicates across teacher channels. */}
+      <DailyFlowSection
+        title="Bugün Sınıfında"
+        items={dailyFlowItems}
+        emptyText={
+          canCompose
+            ? "Şu anda acil bir öğrenci sinyali görünmüyor."
+            : "Bir sınıf oluşturduğunda öğrenci sinyalleri burada görünecek."
+        }
+        onPressItem={handleDailyFlowPress}
+      />
 
       <FeedChannelBar channels={channels} activeChannel={activeChannel} onSelect={setChannel} />
 
