@@ -20,6 +20,7 @@ import { StudyOutcome } from "../domain/studyTypes";
 import { AssignedWorkSection } from "../components/AssignedWorkSection";
 import { DailyGoalEditor } from "../components/DailyGoalEditor";
 import { DailyPracticePlanSection } from "../components/DailyPracticePlanSection";
+import { LearningStoryEntryCard } from "@features/learningStory/components/LearningStoryEntryCard";
 import { NextActionSection } from "../components/NextActionSection";
 import { StudyProgressCard } from "../components/StudyProgressCard";
 import { StudyQueueCard } from "../components/StudyQueueCard";
@@ -301,6 +302,14 @@ export function StudyScreen() {
                 per-category sections it summarizes. Those sections stay as
                 the breakdown; this one names the one next step. */}
             <NextActionSection action={nextAction} onStart={handleStartNextAction} />
+            {/* Phase 56 — sits directly under the next action: that card says
+                what to do now, this one explains how learning is changing.
+                One restrained row, not an inline copy of the story. */}
+            <LearningStoryEntryCard
+              title="İlerleme Hikâyem"
+              description="Hangi konularda ilerlediğini gör"
+              onPress={() => router.push("/(student)/learning-story" as never)}
+            />
             <AssignedWorkSection cards={assignmentCards} onOpen={openAssignment} />
             <DailyPracticePlanSection plan={plan} onStart={handleStartPlan} />
             <StudyProgressCard summary={summary} dueCount={insights.dueCount} />

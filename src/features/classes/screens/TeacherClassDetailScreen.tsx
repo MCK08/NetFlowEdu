@@ -50,6 +50,15 @@ export function TeacherClassDetailScreen({ classId }: TeacherClassDetailScreenPr
     });
   }
 
+  function openLearningStory() {
+    guardedNavigate("learning-story", () => {
+      router.push({
+        pathname: "/(teacher)/class/[classId]/learning-story",
+        params: { classId },
+      });
+    });
+  }
+
   if (isLoading || !classRoom) {
     return (
       <SafeAreaView style={styles.centered}>
@@ -123,6 +132,18 @@ export function TeacherClassDetailScreen({ classId }: TeacherClassDetailScreenPr
             >
               <Ionicons name="stats-chart-outline" size={18} color={colors.primary} />
               <Text style={styles.performanceButtonText}>Sınıf Performansı</Text>
+            </Pressable>
+
+            {/* Phase 56 — the class story sits next to Class Performance:
+                performance is the detail, this is the narrative over it. */}
+            <Pressable
+              onPress={openLearningStory}
+              style={styles.performanceButton}
+              accessibilityRole="button"
+              accessibilityLabel="Sınıfın ilerleme hikâyesini görüntüle"
+            >
+              <Ionicons name="trail-sign-outline" size={18} color={colors.primary} />
+              <Text style={styles.performanceButtonText}>Sınıfın İlerleme Hikâyesi</Text>
             </Pressable>
 
             <Pressable
