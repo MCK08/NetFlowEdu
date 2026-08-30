@@ -23,6 +23,12 @@ const SIZES = {
 
 interface BrandMarkProps {
   size?: keyof typeof SIZES;
+  // Phase 55 — for callers that render the lockup over a surface which is
+  // dark in BOTH themes (the immersive student feed's floating chrome). The
+  // wordmark normally uses `textPrimary`, which is near-black in light mode
+  // and disappeared against that always-dark page. The mark's own artwork is
+  // legible on dark either way, so only the wordmark needs pinning.
+  onDark?: boolean;
 }
 
 export function BrandMark({ size = "medium" }: BrandMarkProps) {
@@ -43,11 +49,11 @@ export function BrandMark({ size = "medium" }: BrandMarkProps) {
 
 // Mark + wordmark as one unit, for the surfaces that introduce the product
 // (authentication, bootstrap) rather than the ones that merely carry it.
-export function BrandLockup({ size = "medium" }: BrandMarkProps) {
+export function BrandLockup({ size = "medium", onDark = false }: BrandMarkProps) {
   return (
     <View style={styles.lockup} accessibilityRole="header" accessibilityLabel="NetFlow Edu">
       <BrandMark size={size} />
-      <Text style={styles.wordmark}>NetFlow Edu</Text>
+      <Text style={onDark ? styles.wordmarkOnDark : styles.wordmark}>NetFlow Edu</Text>
     </View>
   );
 }
@@ -61,5 +67,10 @@ const styles = themedStyles(() => ({
   wordmark: {
     ...typography.title,
     color: colors.textPrimary,
+  },
+  wordmarkOnDark: {
+    ...typography.title,
+    // Constant, deliberately not a token — see `onDark` above.
+    color: "#FFFFFF",
   },
 }));

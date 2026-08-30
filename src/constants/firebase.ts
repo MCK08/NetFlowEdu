@@ -27,5 +27,18 @@ export function resolveEmulatorHost(): string {
     return "10.0.2.2";
   }
 
-  return "localhost";
+  // Phase 55 — the IPv4 literal, deliberately NOT the string "localhost".
+  //
+  // The Firebase Emulator Suite binds IPv4 only (127.0.0.1), but iOS resolves
+  // "localhost" to ::1 FIRST. Every emulator port is therefore refused over
+  // IPv6 on the simulator — verified directly: curl to 127.0.0.1:{9099,8080,
+  // 9199} answered while [::1] on the same ports was refused.
+  //
+  // Auth and Firestore hid this because their transports retry and fall back
+  // to IPv4; a Storage upload does not, so answering a question from the
+  // native app failed with "Görsel yüklenemedi" while the rest of the app
+  // looked healthy. This is emulator-only code (useEmulators is false in
+  // production, where there is no loopback host at all), so pinning the
+  // family here removes the flakiness without touching production behaviour.
+  return "127.0.0.1";
 }

@@ -51,7 +51,8 @@
         "expo-image-picker",
         {
           "cameraPermission": "Soru fotoğrafı çekebilmek için kamera erişimine izin verin.",
-          "photosPermission": "Fotoğraf seçebilmek için galeri erişimine izin verin."
+          "photosPermission": "Fotoğraf seçebilmek için galeri erişimine izin verin.",
+          "microphonePermission": false
         }
       ],
       "expo-asset",

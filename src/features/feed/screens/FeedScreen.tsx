@@ -121,6 +121,28 @@ const THIN_RESULT_THRESHOLD = 5;
 // wide monitor an educational image stretched across 2000px is not.
 const MAX_CONTENT_WIDTH = 680;
 
+// Phase 55 — chrome that sits ON the dark scrim must be a CONSTANT light
+// colour, not a theme token.
+//
+// `chromePill` already pins its own background to a literal dark scrim
+// because the immersive page is dark in both themes. Its contents were still
+// using `colors.textInverse`, which inverts WITH the theme: in dark mode that
+// resolves to #04070E, so the filter control rendered as a completely empty
+// pill and the Daily Flow icon vanished behind its own badge. Reproduced on
+// the iPhone 17 Pro simulator in dark mode before this fix.
+const CHROME_FOREGROUND = "#FFFFFF";
+
+// The immersive pager's own ground, constant in both themes.
+//
+// The content pages (FeedCard) are already full-bleed dark in light AND dark
+// mode, the same way ClassFeedScreen and ImageViewer are. The container,
+// loading and empty states were still painting colors.background, so in the
+// light theme the surface flipped white the moment a channel had nothing to
+// show — and the chrome above, which is pinned light for the dark pages,
+// became white-on-white. Caught on the iPhone SE with an empty "Sana Özel".
+// Pinning the surface keeps the pager one continuous colour in every state.
+const IMMERSIVE_SURFACE = "#0B0B0F";
+
 export function FeedScreen() {
   const { height: windowHeight, width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -341,7 +363,7 @@ export function FeedScreen() {
   const chrome = (
     <View style={[styles.chrome, { top: insets.top }]} pointerEvents="box-none">
       <View style={styles.chromeRow}>
-        <BrandLockup size="compact" />
+        <BrandLockup size="compact" onDark />
         <View style={styles.chromeActions}>
           <Pressable
             onPress={() => setIsDailyFlowOpen(true)}
@@ -349,7 +371,7 @@ export function FeedScreen() {
             accessibilityRole="button"
             accessibilityLabel="Bugünkü akışın"
           >
-            <Ionicons name="sparkles-outline" size={14} color={colors.textInverse} />
+            <Ionicons name="sparkles-outline" size={14} color={CHROME_FOREGROUND} />
             {dailyFlowItems.length > 0 ? (
               <View style={styles.chromeBadge}>
                 <Text style={styles.chromeBadgeText}>{dailyFlowItems.length}</Text>
@@ -362,7 +384,7 @@ export function FeedScreen() {
             accessibilityRole="button"
             accessibilityLabel="Filtrele"
           >
-            <Ionicons name="options-outline" size={14} color={colors.textInverse} />
+            <Ionicons name="options-outline" size={14} color={CHROME_FOREGROUND} />
             {activeFilterCount > 0 ? (
               <View style={styles.chromeBadge}>
                 <Text style={styles.chromeBadgeText}>{activeFilterCount}</Text>
@@ -455,13 +477,13 @@ export function FeedScreen() {
                   icon="filter-outline"
                   title="Bu filtreye uyan soru yok"
                   description="Farklı bir ders, sınıf veya konu deneyebilirsin."
-                  style={{ width: "100%", height: pageHeight, backgroundColor: colors.background }}
+                  style={{ width: "100%", height: pageHeight, backgroundColor: IMMERSIVE_SURFACE }}
                 />
               ) : descriptor ? (
                 <SharedEmptyState
                   icon="sparkles-outline"
                   title={descriptor.emptyTitle}
-                  style={{ width: "100%", height: pageHeight, backgroundColor: colors.background }}
+                  style={{ width: "100%", height: pageHeight, backgroundColor: IMMERSIVE_SURFACE }}
                 />
               ) : (
                 <EmptyState height={pageHeight} />
@@ -516,12 +538,12 @@ export function FeedScreen() {
 const styles = themedStyles(() => ({
   flex: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: IMMERSIVE_SURFACE,
   },
   centerColumn: {
     flex: 1,
     alignItems: "center",
-    backgroundColor: colors.background,
+    backgroundColor: IMMERSIVE_SURFACE,
   },
   column: {
     flex: 1,
@@ -534,7 +556,7 @@ const styles = themedStyles(() => ({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: colors.background,
+    backgroundColor: IMMERSIVE_SURFACE,
     gap: spacing.md,
     paddingHorizontal: spacing.xl,
   },
