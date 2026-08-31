@@ -24,7 +24,10 @@ import { LearningStoryEntryCard } from "@features/learningStory/components/Learn
 import { useLearningTrail } from "@features/learningStory/hooks/useLearningTrail";
 
 import { chronologyExplanationText } from "../services/chronologyExplanation";
+import { buildReviewReadyTopics, ReviewReadyTopic } from "../services/reviewReadiness";
+import { buildChronologyProfiles } from "../services/chronologyTieBreak";
 import { NextActionSection } from "../components/NextActionSection";
+import { ReviewReadySection } from "../components/ReviewReadySection";
 import { StudyProgressCard } from "../components/StudyProgressCard";
 import { StudyQueueCard } from "../components/StudyQueueCard";
 import { SubjectBreakdownSection } from "../components/SubjectBreakdownSection";
@@ -178,6 +181,26 @@ export function StudyScreen() {
         now: Date.now(),
       }),
     [items, plan, insights.weakTopics, assignmentCards],
+  );
+
+  // Phase 62 — WHICH topics the review scheduler has released, from the same
+  // in-memory items the Hub already holds. `nextReviewAt` is the authority;
+  // nothing here recomputes an interval.
+  const reviewReadyTopics = useMemo(() => {
+    const topics = buildReviewReadyTopics({
+      items,
+      chronologyByQuestionId: buildChronologyProfiles(chronologyEvents),
+      now: Date.now(),
+    });
+    // Deduplicated against the headline recommendation: if the next action is
+    // already a due review, this section would restate it directly underneath.
+    if (nextAction.kind === "due_review") return [];
+    return topics;
+  }, [items, chronologyEvents, nextAction.kind]);
+
+  const handleStartReview = useCallback(
+    (topic: ReviewReadyTopic) => handleOpen(topic.questionId),
+    [handleOpen],
   );
 
   // Same tap-time discipline handleStartPlan already uses, for the same
@@ -339,6 +362,11 @@ export function StudyScreen() {
             />
             <AssignedWorkSection cards={assignmentCards} onOpen={openAssignment} />
             <DailyPracticePlanSection plan={plan} onStart={handleStartPlan} />
+            {/* Phase 62 — names the topics the scheduler has released. Sits
+                BELOW the next action and the plan on purpose: those decide
+                what to do now, this only says what has become worth
+                revisiting. Renders nothing when nothing is due. */}
+            <ReviewReadySection topics={reviewReadyTopics} onStart={handleStartReview} />
             <StudyProgressCard summary={summary} dueCount={insights.dueCount} />
             <DailyGoalEditor currentGoal={summary.dailyGoal} onSaved={handleRefresh} />
             {error ? (
