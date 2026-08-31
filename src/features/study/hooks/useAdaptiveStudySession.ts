@@ -6,6 +6,8 @@ import { toAdaptiveSessionQuestions } from "../services/studySessionQuestions";
 import { shouldApplyStaleResponse } from "../services/staleResponseGuard";
 import { Question } from "@/types/question";
 
+import { useLearningTrail } from "@features/learningStory/hooks/useLearningTrail";
+
 import { useLearningInsights } from "./useLearningInsights";
 
 // Phase 28 — "Çalışmaya Devam Et": the FREE/adaptive round that follows a
@@ -18,7 +20,18 @@ import { useLearningInsights } from "./useLearningInsights";
 // question was very likely already fetched by useLearningInsights's own
 // join a moment earlier).
 export function useAdaptiveStudySession(uid: string | undefined, summary: StudySummary) {
-  const { plan, isLoading: isLoadingInsights, error, refresh: refreshInsights } = useLearningInsights(uid, summary);
+  // Phase 61 — the SAME bounded studyEvents query Phase 59 already defined
+  // (useLearningTrail), reused rather than duplicated. It resolves once per
+  // mount and is not refetched while a session runs, which is what keeps the
+  // question order stable: a new outcome influences the NEXT composition, not
+  // the session the student is currently in.
+  const { events: chronologyEvents } = useLearningTrail(uid);
+  const {
+    plan,
+    isLoading: isLoadingInsights,
+    error,
+    refresh: refreshInsights,
+  } = useLearningInsights(uid, summary, chronologyEvents);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [isResolving, setIsResolving] = useState(true);
   const requestIdRef = useRef(0);

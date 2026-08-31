@@ -21,6 +21,9 @@ import { AssignedWorkSection } from "../components/AssignedWorkSection";
 import { DailyGoalEditor } from "../components/DailyGoalEditor";
 import { DailyPracticePlanSection } from "../components/DailyPracticePlanSection";
 import { LearningStoryEntryCard } from "@features/learningStory/components/LearningStoryEntryCard";
+import { useLearningTrail } from "@features/learningStory/hooks/useLearningTrail";
+
+import { chronologyExplanationText } from "../services/chronologyExplanation";
 import { NextActionSection } from "../components/NextActionSection";
 import { StudyProgressCard } from "../components/StudyProgressCard";
 import { StudyQueueCard } from "../components/StudyQueueCard";
@@ -57,7 +60,23 @@ export function StudyScreen() {
   const { firebaseUser } = useAuth();
   const uid = firebaseUser?.uid;
   const { entries, summary, isLoading, isRefreshing, error, refresh, dismiss } = useStudyQueue(uid);
-  const { items, insights, plan, moment, refresh: refreshInsights } = useLearningInsights(uid, summary);
+  // Phase 61 — reuses Phase 59's existing bounded query so the Hub's plan can
+  // use verified chronology as its final tie-break. One read per mount; the
+  // plan falls back to Phase 60 ordering if it returns nothing.
+  const { events: chronologyEvents } = useLearningTrail(uid);
+  const {
+    items,
+    insights,
+    plan,
+    moment,
+    chronologyExplanation,
+    refresh: refreshInsights,
+  } = useLearningInsights(
+    uid,
+    summary,
+    chronologyEvents,
+  );
+  const chronologyReason = chronologyExplanationText(chronologyExplanation);
   const { cards: assignmentCards, refresh: refreshAssignments } = useStudentAssignments(uid);
   const guardedNavigate = useNavigationGuard();
 
@@ -302,6 +321,14 @@ export function StudyScreen() {
                 per-category sections it summarizes. Those sections stay as
                 the breakdown; this one names the one next step. */}
             <NextActionSection action={nextAction} onStart={handleStartNextAction} />
+            {/* Phase 61 — one line, and only when verified chronology actually
+                changed which question leads the plan (proved counterfactually
+                in chronologyExplanation.ts). If Phase 41's cumulative evidence
+                picked the question on its own, nothing is said rather than
+                crediting the timeline for a decision it did not make. */}
+            {chronologyReason ? (
+              <Text style={styles.chronologyReason}>{chronologyReason}</Text>
+            ) : null}
             {/* Phase 56 — sits directly under the next action: that card says
                 what to do now, this one explains how learning is changing.
                 One restrained row, not an inline copy of the story. */}
@@ -365,6 +392,10 @@ const styles = themedStyles(() => ({
   moment: {
     ...typography.body,
     color: colors.textSecondary,
+  },
+  chronologyReason: {
+    ...typography.caption,
+    color: colors.textTertiary,
   },
   separator: {
     height: spacing.md,

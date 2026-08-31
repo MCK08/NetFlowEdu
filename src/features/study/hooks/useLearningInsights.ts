@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { LearningEvent } from "@features/learningStory/services/learningTrail";
+import { buildChronologyProfiles } from "../services/chronologyTieBreak";
+import {
+  ChronologyExplanation,
+  resolveChronologyExplanation,
+} from "../services/chronologyExplanation";
 import { buildAdaptivePracticePlan } from "../services/dailyPracticePlan";
 import { buildLearningInsights, LearningInsightItem } from "../services/learningInsights";
 import { buildLearningMoment } from "../services/learningMoment";
@@ -29,7 +35,22 @@ import { resolveQuestionMetadata } from "../services/studyMetadataCache";
 // fetch. Everything else (mastery/recency/trend/adaptive plan/moment) is
 // derived via useMemo from data already in state — no new listeners, no
 // new fetch triggers beyond the ones this hook already had.
-export function useLearningInsights(uid: string | undefined, summary: StudySummary) {
+// Phase 61 — `chronologyEvents` is passed IN rather than fetched here.
+//
+// This hook has three mounts (Study Hub, the adaptive session, and Learning
+// Story), and Learning Story already loads exactly these events through
+// useLearningTrail. Fetching them here too would have read the same bounded
+// query twice on that screen. Passing them in also keeps the fetch off any
+// surface that only wants insights, so no new read reaches app launch or the
+// student feed.
+//
+// Omitting it is fully supported: the plan then receives no chronology map
+// and its ordering is byte-identical to Phase 60.
+export function useLearningInsights(
+  uid: string | undefined,
+  summary: StudySummary,
+  chronologyEvents: readonly LearningEvent[] = [],
+) {
   const [items, setItems] = useState<LearningInsightItem[]>([]);
   const [recentDays, setRecentDays] = useState<StudyDay[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -111,7 +132,40 @@ export function useLearningInsights(uid: string | undefined, summary: StudySumma
   // recorded). Phase 25: buildAdaptivePracticePlan (not the plain
   // buildDailyPracticePlan) — same 4 tiers, same claim/dedupe, mastery- and
   // recency-aware ordering WITHIN each tier only (see its own doc comment).
+  // Phase 61 — indexed ONCE per event set, not per comparison. The
+  // comparator runs O(n log n) times, so filtering the event list inside it
+  // would turn one bounded read into repeated work for no benefit.
+  const chronologyByQuestionId = useMemo(
+    () => buildChronologyProfiles(chronologyEvents),
+    [chronologyEvents],
+  );
+
   const plan = useMemo(
+    () =>
+      buildAdaptivePracticePlan({
+        items,
+        weakTopics: insights.weakTopics,
+        topicInsights: insights.allTopics,
+        now: Date.now(),
+        reviewedToday: summary.reviewedToday,
+        dailyGoal: summary.dailyGoal,
+        chronologyByQuestionId,
+      }),
+    [
+      items,
+      insights.weakTopics,
+      insights.allTopics,
+      summary.reviewedToday,
+      summary.dailyGoal,
+      chronologyByQuestionId,
+    ],
+  );
+
+  // Phase 61 — the counterfactual: the SAME plan with no chronology at all.
+  // Pure and bounded, and the only way to know whether the timeline actually
+  // changed the leading question or merely agreed with what Phase 41 had
+  // already decided. See chronologyExplanation.ts.
+  const baselinePlan = useMemo(
     () =>
       buildAdaptivePracticePlan({
         items,
@@ -122,6 +176,16 @@ export function useLearningInsights(uid: string | undefined, summary: StudySumma
         dailyGoal: summary.dailyGoal,
       }),
     [items, insights.weakTopics, insights.allTopics, summary.reviewedToday, summary.dailyGoal],
+  );
+
+  const chronologyExplanation: ChronologyExplanation | null = useMemo(
+    () =>
+      resolveChronologyExplanation({
+        planItems: plan.planItems,
+        baselinePlanItems: baselinePlan.planItems,
+        chronologyByQuestionId,
+      }),
+    [plan.planItems, baselinePlan.planItems, chronologyByQuestionId],
   );
 
   // Phase 25 — real per-day server counters in, an honest trend out (see
@@ -141,6 +205,7 @@ export function useLearningInsights(uid: string | undefined, summary: StudySumma
     items,
     insights,
     plan,
+    chronologyExplanation,
     trend,
     moment,
     isLoading,

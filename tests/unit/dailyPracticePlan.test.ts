@@ -8,6 +8,9 @@ import {
   LearningInsightItem,
   TopicInsight,
 } from "../../src/features/study/services/learningInsights";
+import { buildChronologyProfiles } from "../../src/features/study/services/chronologyTieBreak";
+import { LearningEvent } from "../../src/features/learningStory/services/learningTrail";
+import { StudyOutcome } from "../../src/features/study/domain/studyTypes";
 
 const NOW = 1_700_000_000_000;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -1026,5 +1029,180 @@ describe("buildAdaptivePracticePlan — Phase 45: cumulative struggle history ti
     const first = buildAdaptivePracticePlan(params).planItems.map((p) => p.questionId);
     const second = buildAdaptivePracticePlan(params).planItems.map((p) => p.questionId);
     expect(first).toEqual(second);
+  });
+});
+
+// Phase 61 — chronology as the LAST tie-break.
+//
+// These are safety tests before they are feature tests. The feature is one
+// line in the comparator; the risk is that it quietly outranks something
+// stronger, which nothing on screen would reveal.
+describe("buildAdaptivePracticePlan — Phase 61: chronology tie-break", () => {
+  function outcomeHistory(solvedCount: number, struggledCount: number, againCount = 0) {
+    return {
+      solvedCount,
+      struggledCount,
+      againCount,
+      knownOutcomeCount: solvedCount + struggledCount + againCount,
+    };
+  }
+
+  // Identical current-state signals, so mastery and recency both tie and the
+  // comparator reaches the keys under test.
+  const common = {
+    subject: "Matematik",
+    topic: "Denklemler",
+    lastOutcome: "struggled" as const,
+    status: "review" as const,
+    successfulReviews: 1,
+    lastReviewedAt: NOW - DAY_MS,
+    nextReviewAt: NOW + DAY_MS,
+  };
+
+  function chronologyEvent(id: string, outcome: StudyOutcome, occurredAt: number, questionId: string): LearningEvent {
+    return { id, questionId, outcome, occurredAt, subject: "Matematik", topic: "Denklemler" };
+  }
+
+  function repeatedStruggle(questionId: string): LearningEvent[] {
+    return [
+      chronologyEvent(`${questionId}-1`, "struggled", NOW - 3 * DAY_MS, questionId),
+      chronologyEvent(`${questionId}-2`, "struggled", NOW - 2 * DAY_MS, questionId),
+      chronologyEvent(`${questionId}-3`, "struggled", NOW - DAY_MS, questionId),
+    ];
+  }
+
+  function steadySolving(questionId: string): LearningEvent[] {
+    return [
+      chronologyEvent(`${questionId}-1`, "solved", NOW - 3 * DAY_MS, questionId),
+      chronologyEvent(`${questionId}-2`, "solved", NOW - 2 * DAY_MS, questionId),
+      chronologyEvent(`${questionId}-3`, "solved", NOW - DAY_MS, questionId),
+    ];
+  }
+
+  function rank(items: LearningInsightItem[], events: LearningEvent[]): string[] {
+    return buildAdaptivePracticePlan({
+      items,
+      weakTopics: [],
+      topicInsights: topicInsightsFor(items),
+      now: NOW,
+      reviewedToday: 0,
+      dailyGoal: 10,
+      chronologyByQuestionId: buildChronologyProfiles(events),
+    }).planItems.map((p) => p.questionId);
+  }
+
+  // §48 — the actual feature: a true tie, resolved by real recent evidence.
+  it("breaks a TRUE tie in favour of repeated recent struggle", () => {
+    // Equal cumulative history on both sides, so Phase 45 returns 0 and the
+    // comparator reaches chronology. Ids are chosen so the alphabetical
+    // fallback would pick the OTHER question, proving chronology decided it.
+    const a = item({ ...common, questionId: "zulu-recent-struggle", outcomeHistory: outcomeHistory(5, 5) });
+    const b = item({ ...common, questionId: "alpha-recent-steady", outcomeHistory: outcomeHistory(5, 5) });
+    const events = [...repeatedStruggle("zulu-recent-struggle"), ...steadySolving("alpha-recent-steady")];
+    expect(rank([b, a], events)[0]).toBe("zulu-recent-struggle");
+  });
+
+  // §47 — the non-negotiable one.
+  it("NEVER overrides stronger cumulative struggle evidence", () => {
+    // A has far more trustworthy lifetime struggle but a calm recent run;
+    // B has less lifetime struggle but a bad recent run. Phase 45 must win.
+    const a = item({ ...common, questionId: "alpha-heavy-lifetime", outcomeHistory: outcomeHistory(2, 8) });
+    const b = item({ ...common, questionId: "zulu-light-lifetime", outcomeHistory: outcomeHistory(8, 2) });
+    const events = [...steadySolving("alpha-heavy-lifetime"), ...repeatedStruggle("zulu-light-lifetime")];
+    expect(rank([b, a], events)[0]).toBe("alpha-heavy-lifetime");
+  });
+
+  // §51 — legacy items keep the existing path; chronology cannot repair
+  // unknown lifetime history.
+  it("does not let chronology promote an item whose lifetime history is unknown", () => {
+    const legacy = item({ ...common, questionId: "alpha-legacy", outcomeHistory: null });
+    const trustworthy = item({ ...common, questionId: "zulu-trustworthy", outcomeHistory: outcomeHistory(2, 8) });
+    // The legacy item has the worse-looking recent run, but its lifetime
+    // evidence is unknown — it must not leapfrog on chronology alone.
+    const events = [...repeatedStruggle("alpha-legacy"), ...steadySolving("zulu-trustworthy")];
+    const order = rank([trustworthy, legacy], events);
+    // Falls through to the existing stable fallback (equal nextReviewAt → id).
+    expect(order).toEqual(["alpha-legacy", "zulu-trustworthy"]);
+  });
+
+  // §50 — rollout fairness.
+  it("does not favour a question merely for having chronology at all", () => {
+    const withEvents = item({ ...common, questionId: "zulu-has-events", outcomeHistory: outcomeHistory(5, 5) });
+    const without = item({ ...common, questionId: "alpha-no-events", outcomeHistory: outcomeHistory(5, 5) });
+    const order = rank([without, withEvents], repeatedStruggle("zulu-has-events"));
+    // Stable fallback, unchanged — the event log simply started later for one.
+    expect(order).toEqual(["alpha-no-events", "zulu-has-events"]);
+  });
+
+  // §49 / §24 — absent chronology must be byte-for-byte the old behaviour.
+  it("is identical to the pre-Phase-61 ordering when no chronology exists", () => {
+    const a = item({ ...common, questionId: "alpha", outcomeHistory: outcomeHistory(5, 5) });
+    const b = item({ ...common, questionId: "zulu", outcomeHistory: outcomeHistory(5, 5) });
+    const withEmpty = rank([b, a], []);
+    const withoutParam = buildAdaptivePracticePlan({
+      items: [b, a],
+      weakTopics: [],
+      topicInsights: topicInsightsFor([b, a]),
+      now: NOW,
+      reviewedToday: 0,
+      dailyGoal: 10,
+    }).planItems.map((p) => p.questionId);
+    expect(withEmpty).toEqual(withoutParam);
+    expect(withEmpty).toEqual(["alpha", "zulu"]);
+  });
+
+  // §52 — no meaningless churn.
+  it("falls back to the stable order when both sides share a signal", () => {
+    const a = item({ ...common, questionId: "alpha", outcomeHistory: outcomeHistory(5, 5) });
+    const b = item({ ...common, questionId: "zulu", outcomeHistory: outcomeHistory(5, 5) });
+    const events = [...repeatedStruggle("alpha"), ...repeatedStruggle("zulu")];
+    expect(rank([b, a], events)).toEqual(["alpha", "zulu"]);
+  });
+
+  // §53 — the signature comparison.
+  it("prefers repeated struggle over a recovering sequence", () => {
+    const a = item({ ...common, questionId: "zulu-struggling", outcomeHistory: outcomeHistory(5, 5) });
+    const b = item({ ...common, questionId: "alpha-recovering", outcomeHistory: outcomeHistory(5, 5) });
+    const events = [
+      ...repeatedStruggle("zulu-struggling"),
+      chronologyEvent("r1", "struggled", NOW - 3 * DAY_MS, "alpha-recovering"),
+      chronologyEvent("r2", "struggled", NOW - 2 * DAY_MS, "alpha-recovering"),
+      chronologyEvent("r3", "solved", NOW - DAY_MS, "alpha-recovering"),
+    ];
+    expect(rank([b, a], events)[0]).toBe("zulu-struggling");
+  });
+
+  it("never moves a question across tiers", () => {
+    // The tier boundary inside planItems is struggled > weak_topic >
+    // goal_fill (due items are tracked separately as dueCount and never
+    // enter planItems at all). A goal_fill candidate with the worst possible
+    // recent run must still sit behind a struggled one with a calm run:
+    // buildTieredPlan claims each tier before the comparator ever runs, so
+    // chronology can only ever reorder WITHIN a tier.
+    const struggled = item({
+      ...common,
+      questionId: "zulu-struggled-tier",
+      lastOutcome: "struggled",
+      outcomeHistory: outcomeHistory(5, 5),
+    });
+    const filler = item({
+      ...common,
+      questionId: "alpha-goal-fill-tier",
+      lastOutcome: "solved",
+      outcomeHistory: outcomeHistory(5, 5),
+    });
+    const events = [
+      ...steadySolving("zulu-struggled-tier"),
+      ...repeatedStruggle("alpha-goal-fill-tier"),
+    ];
+    const order = rank([filler, struggled], events);
+    expect(order[0]).toBe("zulu-struggled-tier");
+  });
+
+  it("is deterministic across repeated runs", () => {
+    const a = item({ ...common, questionId: "zulu", outcomeHistory: outcomeHistory(5, 5) });
+    const b = item({ ...common, questionId: "alpha", outcomeHistory: outcomeHistory(5, 5) });
+    const events = [...repeatedStruggle("zulu"), ...steadySolving("alpha")];
+    expect(rank([a, b], events)).toEqual(rank([b, a], events));
   });
 });

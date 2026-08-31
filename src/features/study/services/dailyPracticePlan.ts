@@ -1,3 +1,4 @@
+import { ChronologyProfile, compareChronology } from "./chronologyTieBreak";
 import { buildDailyProgress, LearningInsightItem, TopicInsight } from "./learningInsights";
 import { masteryBandPriorityIndex } from "./topicMastery";
 import { buildRecencySignal, recencyPriorityIndex } from "./recencySignal";
@@ -232,6 +233,12 @@ export interface BuildAdaptivePracticePlanParams extends BuildDailyPracticePlanP
   // relative to its tier-mates. Already computed in-memory by the same
   // buildLearningInsights call; zero additional Firestore reads.
   topicInsights: readonly TopicInsight[];
+  // Phase 61 — verified recent chronology per questionId, or omitted.
+  //
+  // OPTIONAL on purpose: every existing caller and test that does not pass it
+  // gets byte-identical behaviour to before, because an absent map makes the
+  // chronology comparison below return 0 for every pair.
+  chronologyByQuestionId?: ReadonlyMap<string, ChronologyProfile>;
 }
 
 // Phase 25 §5 — SAME four tiers, SAME predicates, SAME claim/dedupe
@@ -290,6 +297,26 @@ export function buildAdaptivePracticePlan(params: BuildAdaptivePracticePlanParam
       const struggleDelta = struggleRankA - struggleRankB;
       if (struggleDelta !== 0) return struggleDelta;
     }
+
+    // Phase 61 — the LAST word before the stable fallback, and only ever
+    // between candidates every rule above has already declared equivalent.
+    //
+    // Its position in this list IS the safety property: mastery, recency and
+    // Phase 45's cumulative struggle evidence have all already had their say
+    // and returned 0, so a recent sequence can only ever choose between
+    // genuinely tied questions. It cannot cross a tier (buildTieredPlan
+    // decided that long before this comparator ran), and it cannot outrank a
+    // stronger cumulative history — a question struggled 8 times still sorts
+    // ahead of one struggled 3 times regardless of how either sequence ends.
+    //
+    // compareChronology returns 0 unless BOTH sides have a readable sequence,
+    // so a question is never promoted merely for having been studied since
+    // the event log began. See its own note on rollout fairness.
+    const chronologyDelta = compareChronology(
+      params.chronologyByQuestionId?.get(a.questionId),
+      params.chronologyByQuestionId?.get(b.questionId),
+    );
+    if (chronologyDelta !== 0) return chronologyDelta;
 
     return compareByReviewOrder(a, b);
   }
