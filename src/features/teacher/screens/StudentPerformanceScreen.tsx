@@ -9,6 +9,9 @@ import { Chip } from "@components/ui/Chip";
 import { EmptyState } from "@components/ui/EmptyState";
 import { LoadingSkeleton } from "@components/ui/LoadingSkeleton";
 import { PrimaryButton } from "@components/ui/PrimaryButton";
+import { TeacherLearningTimeline } from "@features/learningStory/components/TeacherLearningTimeline";
+import { useTeacherLearningTimeline } from "@features/learningStory/hooks/useTeacherLearningTimeline";
+import { buildTeacherLearningTimeline } from "@features/learningStory/services/teacherLearningTimeline";
 import { TopicInsight } from "@features/study/services/learningInsights";
 import { LearningTrend } from "@features/study/services/learningTrend";
 import { colors } from "@theme/colors";
@@ -81,6 +84,19 @@ function formatLastStudied(timestampMs: number | null): string {
 // create path the follow-up flow has always used.
 export function StudentPerformanceScreen({ classId, studentId, studentName }: StudentPerformanceScreenProps) {
   const { snapshot, items, isLoading, error, refresh } = useStudentPerformanceDetail(classId, studentId);
+
+  // Phase 60 — ONE bounded query, mounted only here. Keyed by BOTH ids so a
+  // slow response for the previous student can never paint over the one the
+  // teacher navigated to, and so the read stays provable under the rules.
+  const {
+    events: timelineEvents,
+    isLoading: isTimelineLoading,
+    hasError: hasTimelineError,
+  } = useTeacherLearningTimeline(studentId, classId);
+  const timeline = useMemo(
+    () => buildTeacherLearningTimeline(timelineEvents),
+    [timelineEvents],
+  );
   const attention = useMemo(
     () => (snapshot ? buildStudentAttentionInsight(snapshot, Date.now()) : null),
     [snapshot],
@@ -243,6 +259,21 @@ export function StudentPerformanceScreen({ classId, studentId, studentName }: St
               <Text style={styles.bodyTextMuted}>son 14 gün içinde</Text>
             </Card>
           </View>
+
+          {/* Phase 60 — chronological CONTEXT, placed between the aggregate
+              counts above and the intervention/action machinery below: a
+              teacher deciding what to do should see what actually happened,
+              in order, before they see the verdict and the button. It is
+              context only — Phase 42 remains the authority on the student's
+              state, and Phase 47 on the action. */}
+          <Card style={styles.card}>
+            <Text style={styles.sectionLabel}>Son öğrenme akışı</Text>
+            <TeacherLearningTimeline
+              timeline={timeline}
+              isLoading={isTimelineLoading}
+              hasError={hasTimelineError}
+            />
+          </Card>
 
           {/* Phase 44 — the result of the LAST intervention, placed directly
               above the diagnosis that offers to create the next one: a
