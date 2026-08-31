@@ -4,6 +4,7 @@ import type { DocumentReference, Firestore, Transaction } from "firebase-admin/f
 
 import { canReadQuestion } from "../social/questionAccess";
 import { advanceStreak, resolveTimeZone, toDayKey } from "./dayKey";
+import { buildLearningEventId, buildLearningEventRecord } from "./learningEvent";
 import { appendOperationId, hasProcessedOperation, isValidOperationId } from "./operationId";
 import { isStudyOutcome, scheduleNextReview, StudyOutcome } from "./reviewScheduler";
 import {
@@ -43,6 +44,11 @@ function studySummaryRef(db: Firestore, uid: string): DocumentReference {
 
 function studyDayRef(db: Firestore, uid: string, dayKey: string): DocumentReference {
   return db.collection("users").doc(uid).collection("studyDays").doc(dayKey);
+}
+
+// Phase 59 — the append-only chronological event for one confirmed outcome.
+function studyEventRef(db: Firestore, uid: string, eventId: string): DocumentReference {
+  return db.collection("users").doc(uid).collection("studyEvents").doc(eventId);
 }
 
 function num(value: unknown, fallback = 0): number {
@@ -268,6 +274,31 @@ export const recordStudyOutcome = onCall<RecordStudyOutcomeRequest>(
           updatedAt: now,
         },
         { merge: true },
+      );
+
+      // Phase 59 — the chronological counterpart of the counters written just
+      // above, created in the SAME transaction so the two can never disagree:
+      // there is no window in which a counter moved but the event is missing,
+      // or vice versa. It is also structurally replay-safe for free — the
+      // operationId branch above RETURNS before this line is reachable, the
+      // same single guard that already protects the scheduler, attemptCount
+      // and the daily stats.
+      //
+      // `sourceClassId` is the server's own value (from the question document
+      // read in this transaction's read phase), never a client claim — it is
+      // what firestore.rules keys the teacher's read grant on.
+      tx.set(
+        studyEventRef(
+          db,
+          caller.uid,
+          buildLearningEventId({ questionId, operationId, now }),
+        ),
+        buildLearningEventRecord({
+          questionId,
+          outcome,
+          now,
+          sourceClassId: typeof question.classId === "string" ? question.classId : null,
+        }),
       );
 
       tx.set(

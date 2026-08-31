@@ -3475,6 +3475,199 @@ describe("firestore.rules — study collections (Phase 16)", () => {
       ),
     );
   });
+
+  // ---- studyEvents: Phase 59 chronological learning history --------------
+  //
+  // Same contract as studyItems, for the same reasons: server-written only,
+  // owner-read, plus the teacher of the ONE class the event came from. These
+  // documents are the student's ordered outcome history, so an unauthorized
+  // read here would expose more than a counter ever could.
+
+  async function seedLearningEvent(
+    studentUid: string,
+    eventId: string,
+    classId: string | null,
+  ) {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "users", studentUid, "studyEvents", eventId), {
+        questionId: "q1",
+        outcome: "struggled",
+        occurredAt: 1760000000000,
+        sourceClassId: classId,
+        schemaVersion: 1,
+      });
+    });
+  }
+
+  it("lets the owner read their own learning event", async () => {
+    await seedLearningEvent("student-1", "op-1", null);
+    const owner = studentCtx("student-1");
+    await assertSucceeds(
+      getDoc(doc(owner.firestore(), "users", "student-1", "studyEvents", "op-1")),
+    );
+  });
+
+  it("lets the owner LIST their own recent learning events in chronological order", async () => {
+    await seedLearningEvent("student-1", "op-1", null);
+    await seedLearningEvent("student-1", "op-2", null);
+    const owner = studentCtx("student-1");
+    await assertSucceeds(
+      getDocs(
+        query(
+          collection(owner.firestore(), "users", "student-1", "studyEvents"),
+          orderBy("occurredAt", "desc"),
+          limit(40),
+        ),
+      ),
+    );
+  });
+
+  it("denies another student reading someone else's learning event", async () => {
+    await seedLearningEvent("student-1", "op-1", null);
+    const outsider = studentCtx("student-2");
+    await assertFails(
+      getDoc(doc(outsider.firestore(), "users", "student-1", "studyEvents", "op-1")),
+    );
+  });
+
+  it("denies another student LISTing someone else's learning history", async () => {
+    await seedLearningEvent("student-1", "op-1", null);
+    const outsider = studentCtx("student-2");
+    await assertFails(
+      getDocs(
+        query(
+          collection(outsider.firestore(), "users", "student-1", "studyEvents"),
+          orderBy("occurredAt", "desc"),
+          limit(40),
+        ),
+      ),
+    );
+  });
+
+  it("denies an unauthenticated caller reading a learning event", async () => {
+    await seedLearningEvent("student-1", "op-1", null);
+    const unauthed = testEnv.unauthenticatedContext();
+    await assertFails(
+      getDoc(doc(unauthed.firestore(), "users", "student-1", "studyEvents", "op-1")),
+    );
+  });
+
+  // Immutability: `allow write: if false` means the owner cannot forge,
+  // rewrite or erase their own recorded history either.
+  it("denies the owner CREATING a learning event", async () => {
+    const owner = studentCtx("student-1");
+    await assertFails(
+      setDoc(doc(owner.firestore(), "users", "student-1", "studyEvents", "forged"), {
+        questionId: "q1",
+        outcome: "solved",
+        occurredAt: 1760000000000,
+        sourceClassId: null,
+        schemaVersion: 1,
+      }),
+    );
+  });
+
+  it("denies the owner REWRITING a recorded outcome", async () => {
+    await seedLearningEvent("student-1", "op-1", null);
+    const owner = studentCtx("student-1");
+    await assertFails(
+      updateDoc(doc(owner.firestore(), "users", "student-1", "studyEvents", "op-1"), {
+        outcome: "solved",
+      }),
+    );
+  });
+
+  it("denies the owner backdating a recorded outcome", async () => {
+    await seedLearningEvent("student-1", "op-1", null);
+    const owner = studentCtx("student-1");
+    await assertFails(
+      updateDoc(doc(owner.firestore(), "users", "student-1", "studyEvents", "op-1"), {
+        occurredAt: 1,
+      }),
+    );
+  });
+
+  it("denies the owner deleting a learning event", async () => {
+    await seedLearningEvent("student-1", "op-1", null);
+    const owner = studentCtx("student-1");
+    await assertFails(
+      deleteDoc(doc(owner.firestore(), "users", "student-1", "studyEvents", "op-1")),
+    );
+  });
+
+  it("lets the class's own teacher read a class-sourced learning event of a real student member", async () => {
+    await seedTeacherClass("class-1", "teacher-1");
+    await seedClassMemberRow("class-1", "student-1", "student");
+    await seedLearningEvent("student-1", "op-1", "class-1");
+    const teacher = teacherCtx("teacher-1");
+    await assertSucceeds(
+      getDoc(doc(teacher.firestore(), "users", "student-1", "studyEvents", "op-1")),
+    );
+  });
+
+  it("lets the class's own teacher LIST that student's class-scoped learning events", async () => {
+    await seedTeacherClass("class-1", "teacher-1");
+    await seedClassMemberRow("class-1", "student-1", "student");
+    await seedLearningEvent("student-1", "op-1", "class-1");
+    await seedLearningEvent("student-1", "op-2", "class-1");
+    const teacher = teacherCtx("teacher-1");
+    await assertSucceeds(
+      getDocs(
+        query(
+          collection(teacher.firestore(), "users", "student-1", "studyEvents"),
+          where("sourceClassId", "==", "class-1"),
+          orderBy("occurredAt", "desc"),
+          limit(40),
+        ),
+      ),
+    );
+  });
+
+  // The teacher grant is scoped to the classroom, never to the student's
+  // whole learning life.
+  it("denies the teacher reading a NON-class-sourced learning event", async () => {
+    await seedTeacherClass("class-1", "teacher-1");
+    await seedClassMemberRow("class-1", "student-1", "student");
+    await seedLearningEvent("student-1", "op-private", null);
+    const teacher = teacherCtx("teacher-1");
+    await assertFails(
+      getDoc(doc(teacher.firestore(), "users", "student-1", "studyEvents", "op-private")),
+    );
+  });
+
+  it("denies a teacher who does not own that class", async () => {
+    await seedTeacherClass("class-1", "teacher-1");
+    await seedClassMemberRow("class-1", "student-1", "student");
+    await seedLearningEvent("student-1", "op-1", "class-1");
+    const otherTeacher = teacherCtx("teacher-2");
+    await assertFails(
+      getDoc(doc(otherTeacher.firestore(), "users", "student-1", "studyEvents", "op-1")),
+    );
+  });
+
+  it("denies the teacher when the subject is not a student member of that class", async () => {
+    await seedTeacherClass("class-1", "teacher-1");
+    await seedLearningEvent("student-9", "op-1", "class-1");
+    const teacher = teacherCtx("teacher-1");
+    await assertFails(
+      getDoc(doc(teacher.firestore(), "users", "student-9", "studyEvents", "op-1")),
+    );
+  });
+
+  it("denies the teacher WRITING a learning event", async () => {
+    await seedTeacherClass("class-1", "teacher-1");
+    await seedClassMemberRow("class-1", "student-1", "student");
+    const teacher = teacherCtx("teacher-1");
+    await assertFails(
+      setDoc(doc(teacher.firestore(), "users", "student-1", "studyEvents", "forged"), {
+        questionId: "q1",
+        outcome: "solved",
+        occurredAt: 1760000000000,
+        sourceClassId: "class-1",
+        schemaVersion: 1,
+      }),
+    );
+  });
 });
 
 // ---- Phase 17: content safety, moderation & abuse prevention -----------

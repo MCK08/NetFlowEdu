@@ -110,6 +110,14 @@
         { "fieldPath": "role", "order": "ASCENDING" },
         { "fieldPath": "username", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "studyEvents",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "sourceClassId", "order": "ASCENDING" },
+        { "fieldPath": "occurredAt", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": [

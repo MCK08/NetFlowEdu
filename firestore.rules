@@ -710,6 +710,44 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ---- users/{uid}/studyEvents/{eventId} ---------------------------------
+    // Phase 59 — the append-only chronological learning history. Written
+    // exclusively by the recordStudyOutcome callable (Admin SDK), inside the
+    // SAME transaction that updates the study item's cumulative counters, so
+    // a client can never forge an outcome, backdate an event to manufacture a
+    // recovery narrative, or attribute one to another student.
+    //
+    // `allow write: if false` is what makes these documents immutable AND
+    // undeletable from every client path: there is no create, no update and
+    // no delete a signed-in user can perform, so a recorded outcome cannot be
+    // rewritten after the fact.
+    //
+    // Read follows users/{uid}/studyItems EXACTLY — owner, plus the teacher of
+    // the class that ONE event came from. `sourceClassId` is server-written
+    // (see functions/src/study/recordStudyOutcome.ts) and is non-null only for
+    // an outcome recorded on a real class question, so a teacher can never see
+    // a student's private or public study history, only what happened inside
+    // their own classroom.
+    //
+    // Provability for the teacher's LIST query
+    // (`where('sourceClassId','==',classId).orderBy('occurredAt','desc')`):
+    // the query's own equality filter pins `sourceClassId`, so Firestore can
+    // resolve `resource.data.sourceClassId` for every candidate document
+    // without touching an unconstrained field — the same "pin the field the
+    // query already pins" reasoning studyItems' own rule documents.
+    //
+    // These documents carry NO question content (no image, no description, not
+    // even subject/topic — see functions/src/study/learningEvent.ts), so this
+    // never widens access to material beyond what the reader already has.
+    match /users/{uid}/studyEvents/{eventId} {
+      allow read: if isOwner(uid)
+                  || (isTeacher()
+                      && resource.data.sourceClassId is string
+                      && classData(resource.data.sourceClassId).teacherId == uid()
+                      && classMemberData(resource.data.sourceClassId, uid).role == 'student');
+      allow write: if false;
+    }
+
     // ---- users/{uid}/studyMeta/{docId} -------------------------------------
     // Server-owned progress summary (streak, mastered count, daily goal) —
     // exactly the same owner-only-read / never-client-writable contract as

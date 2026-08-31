@@ -388,6 +388,80 @@ async function seedStudyItems(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// 5b — LEARNING EVENTS (users/{uid}/studyEvents/{eventId}).  Phase 59.
+//
+// EMULATOR-ONLY QA FIXTURES. These are NOT a production backfill and must
+// never be treated as one: Phase 59 creates chronological history only from
+// real outcomes recorded from Phase 59 onward, and deliberately refuses to
+// synthesise events from Phase 41's cumulative counters (which carry no
+// order). These rows exist purely so the emulator can exercise the Learning
+// Trail without a human answering questions by hand first.
+//
+// Shape matches functions/src/study/learningEvent.ts exactly, and event ids
+// use the same operationId-derived form the real write path produces.
+//
+// Timestamps are deterministic offsets from NOW, never Date.now() per row, so
+// ordering assertions are reproducible across runs.
+//
+// Student D deliberately gets NOTHING — the legacy honesty gate. Their
+// cumulative item has no trustworthy counters and they must have no
+// chronological history either, so the UI has to fall back honestly rather
+// than inventing a journey.
+// ---------------------------------------------------------------------------
+
+interface LearningEventSeed {
+  studentUid: string;
+  questionId: string;
+  outcome: "again" | "struggled" | "solved";
+  // Days before NOW. Larger = older.
+  daysAgo: number;
+}
+
+async function seedLearningEvents(): Promise<void> {
+  const events: LearningEventSeed[] = [
+    // Student A — the signature trail: struggle → struggle → solve.
+    // Matches their cumulative story (8 struggles on Q-heavy) without
+    // pretending these three ARE those eight.
+    { studentUid: STUDENTS[0].uid, questionId: Q_HEAVY, outcome: "struggled", daysAgo: 5 },
+    { studentUid: STUDENTS[0].uid, questionId: Q_HEAVY, outcome: "struggled", daysAgo: 3 },
+    { studentUid: STUDENTS[0].uid, questionId: Q_LIGHT, outcome: "solved", daysAgo: 2 },
+
+    // Student B — recovering: struggle → solve → solve.
+    { studentUid: STUDENTS[1].uid, questionId: Q_HEAVY, outcome: "struggled", daysAgo: 6 },
+    { studentUid: STUDENTS[1].uid, questionId: Q_HEAVY, outcome: "solved", daysAgo: 4 },
+    { studentUid: STUDENTS[1].uid, questionId: Q_LIGHT, outcome: "solved", daysAgo: 1 },
+
+    // Student C — steady.
+    { studentUid: STUDENTS[2].uid, questionId: Q_HEAVY, outcome: "solved", daysAgo: 4 },
+    { studentUid: STUDENTS[2].uid, questionId: Q_HEAVY, outcome: "solved", daysAgo: 2 },
+
+    // Student D — intentionally absent. See the header note.
+  ];
+
+  const batch = db.batch();
+  for (const [index, event] of events.entries()) {
+    const occurredAt = NOW - event.daysAgo * DAY_MS;
+    // Same id shape the real path mints from a client operationId, and unique
+    // per seeded row so a reseed overwrites rather than duplicating.
+    const eventId = `demo-op-${event.studentUid}-${index}`;
+    batch.set(
+      db.collection("users").doc(event.studentUid).collection("studyEvents").doc(eventId),
+      {
+        questionId: event.questionId,
+        outcome: event.outcome,
+        occurredAt,
+        sourceClassId: CLASS_ID,
+        schemaVersion: 1,
+      },
+    );
+  }
+  await batch.commit();
+  console.log(
+    `[seedDemoFixtures] seeded ${events.length} learning events (A ×3, B ×3, C ×2, D ×0 — legacy gate).`,
+  );
+}
+
+// ---------------------------------------------------------------------------
 // 6 — ASSIGNMENTS + SUBMISSIONS.
 //
 // Shapes match src/features/assignments/domain/assignmentTypes.ts exactly.
@@ -680,6 +754,7 @@ async function main(): Promise<void> {
   await seedIdentities();
   await seedClass();
   await seedStudyItems();
+  await seedLearningEvents();
   await seedAssignmentsAndAttribution();
   await verify();
   printManifest();

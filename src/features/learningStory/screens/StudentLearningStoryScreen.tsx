@@ -17,7 +17,9 @@ import { themedStyles } from "@theme/themeRuntime";
 import { typography } from "@theme/typography";
 
 import { LearningStoryMomentCard } from "../components/LearningStoryMomentCard";
+import { useLearningTrail } from "../hooks/useLearningTrail";
 import { buildStudentLearningStory } from "../services/buildStudentLearningStory";
+import { LearningEvent, selectTopicTrail, trailInsightText } from "../services/learningTrail";
 import { LearningStoryMoment } from "../services/learningStoryTypes";
 
 // Phase 56 — "İlerleme Hikâyem".
@@ -40,7 +42,23 @@ export function StudentLearningStoryScreen() {
   const { summary, isLoading } = useStudyQueue(uid);
   const { items } = useLearningInsights(uid, summary);
 
+  // Phase 59 — ONE bounded query for the student's own recent chronological
+  // events (see useLearningTrail). Non-fatal by design: if it fails or the
+  // student has no Phase 59 history yet, `events` is empty and every card
+  // falls back to Phase 56's evidence bar, which remains fully valid.
+  const { events } = useLearningTrail(uid);
+
   const story = useMemo(() => buildStudentLearningStory(items), [items]);
+
+  // Each topic's own trail, resolved once per render rather than inside the
+  // card, so the card stays presentational and the selection stays testable.
+  const trailsByMomentId = useMemo(() => {
+    const map = new Map<string, LearningEvent[]>();
+    for (const moment of story.moments) {
+      map.set(moment.id, selectTopicTrail(events, moment.subject, moment.topic));
+    }
+    return map;
+  }, [story.moments, events]);
 
   const handleAction = useCallback((moment: LearningStoryMoment) => {
     // Deliberately routes into the EXISTING adaptive session — the same
@@ -89,6 +107,8 @@ export function StudentLearningStoryScreen() {
                   key={moment.id}
                   moment={moment}
                   onPressAction={handleAction}
+                  trail={trailsByMomentId.get(moment.id) ?? []}
+                  trailInsight={trailInsightText(trailsByMomentId.get(moment.id) ?? [])}
                 />
               ))}
 

@@ -11,11 +11,20 @@ import { themedStyles } from "@theme/themeRuntime";
 import { useThemeSubscription } from "@theme/ThemeProvider";
 import { typography } from "@theme/typography";
 
+import { LearningEvent, hasTrustworthyTrail } from "../services/learningTrail";
 import { LearningStoryMoment, LearningStoryMomentKind } from "../services/learningStoryTypes";
+
+import { LearningTrail } from "./LearningTrail";
 
 interface LearningStoryMomentCardProps {
   moment: LearningStoryMoment;
   onPressAction: (moment: LearningStoryMoment) => void;
+  // Phase 59 — this topic's real chronological events, oldest → newest, or an
+  // empty array when the student has no trustworthy ordered history for it
+  // yet (every pre-Phase-59 outcome, and every legacy account). Empty is the
+  // normal case at rollout and must stay graceful.
+  trail?: readonly LearningEvent[];
+  trailInsight?: string | null;
 }
 
 // Phase 56 — one topic's story beat.
@@ -73,9 +82,12 @@ function EvidenceBar({ moment }: { moment: LearningStoryMoment }) {
 export const LearningStoryMomentCard = memo(function LearningStoryMomentCard({
   moment,
   onPressAction,
+  trail = [],
+  trailInsight = null,
 }: LearningStoryMomentCardProps) {
   // Phase 49 — memo() blocks prop-driven re-renders but not context updates.
   useThemeSubscription();
+  const hasTrail = hasTrustworthyTrail(trail);
   const tone = TONE[moment.kind];
 
   return (
@@ -97,17 +109,32 @@ export const LearningStoryMomentCard = memo(function LearningStoryMomentCard({
       <Text style={styles.title}>{moment.title}</Text>
       <Text style={styles.description}>{moment.description}</Text>
 
-      <EvidenceBar moment={moment} />
+      {/* Phase 59 — a REAL chronological trail when trustworthy ordered
+          events exist for this topic, and Phase 56's evidence bar when they
+          do not. Never both: the bar exists precisely because a composition
+          cannot be misread as a sequence, so showing it beside an actual
+          sequence would be redundant at best and confusing at worst.
 
-      {/* The single ordered fact the counters can actually support, said in
-          words rather than drawn as a timeline. */}
-      <Text style={styles.lastOutcome}>
-        {moment.lastOutcome === "solved"
-          ? "Son denemende çözdün."
-          : moment.lastOutcome === "struggled"
-            ? "Son denemende zorlandın."
-            : "Son denemende tekrar etmek istedin."}
-      </Text>
+          The fallback is not a degraded state. Cumulative evidence remains
+          fully valid — and for a legacy account it may cover far more history
+          than the timeline, which only begins at Phase 59. */}
+      {hasTrail ? (
+        <LearningTrail trail={trail} insight={trailInsight ?? null} />
+      ) : (
+        <>
+          <EvidenceBar moment={moment} />
+
+          {/* The single ordered fact the counters can actually support, said
+              in words rather than drawn as a timeline. */}
+          <Text style={styles.lastOutcome}>
+            {moment.lastOutcome === "solved"
+              ? "Son denemende çözdün."
+              : moment.lastOutcome === "struggled"
+                ? "Son denemende zorlandın."
+                : "Son denemende tekrar etmek istedin."}
+          </Text>
+        </>
+      )}
 
       {moment.action ? (
         <View style={styles.actionRow}>
