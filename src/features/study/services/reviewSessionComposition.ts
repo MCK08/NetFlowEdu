@@ -30,21 +30,45 @@ import { ResolvedQueueEntry } from "./studyService";
 // evidence to make a session look varied, which is the one thing this phase
 // must not do. This module is only ever applied to the review queue.
 
-// A group key that cannot accidentally merge two different topics: subject and
-// topic are joined with a separator that neither field is expected to contain,
-// and both are trimmed so " Denklemler" and "Denklemler" are one group rather
-// than two.
-function topicKeyOf(entry: ResolvedQueueEntry, index: number): string {
+// The ONE topic identity used by this module — both for grouping a page and
+// for reading the previous page's trailing topic. A second key construction
+// would let the two disagree about what "same topic" means.
+//
+// Subject and topic are joined with a separator neither field is expected to
+// contain, and both are trimmed so " Denklemler" and "Denklemler" are one
+// group rather than two.
+//
+// Returns null when the question is unavailable (deleted, or access revoked),
+// because such an entry has no topic to reason about at all.
+export function resolveTopicKey(entry: ResolvedQueueEntry): string | null {
   const question = entry.question;
   const subject = question?.subject?.trim() ?? "";
   const topic = question?.topic?.trim() ?? "";
-  // An entry whose question was deleted, or whose access was revoked, has no
-  // topic to group by. It becomes its own group rather than joining a shared
-  // "unknown" bucket — lumping unrelated questions together would create
-  // exactly the false adjacency this module exists to avoid. The index keeps
-  // those singleton keys unique and deterministic.
-  if (!subject || !topic) return `__ungrouped__:${index}`;
+  if (!subject || !topic) return null;
   return `${subject}|${topic}`;
+}
+
+function topicKeyOf(entry: ResolvedQueueEntry, index: number): string {
+  // An entry with no resolvable topic becomes its own group rather than
+  // joining a shared "unknown" bucket — lumping unrelated questions together
+  // would create exactly the false adjacency this module exists to avoid. The
+  // index keeps those singleton keys unique and deterministic.
+  return resolveTopicKey(entry) ?? `__ungrouped__:${index}`;
+}
+
+/** The topic the session currently ENDS on, or null when there is none.
+ *
+ *  Phase 64 — derived from the already-merged session rather than stored
+ *  anywhere, which is what keeps it correct for free across account switches,
+ *  session restarts and re-renders: there is no cached "last topic" that can
+ *  outlive the session it describes.
+ *
+ *  Deriving it from merged state also means the context for page 3 is the tail
+ *  of the COMPOSED page 2, not of the raw query page — the composed order is
+ *  what the student will actually see. */
+export function trailingTopicKey(entries: readonly ResolvedQueueEntry[]): string | null {
+  const last = entries[entries.length - 1];
+  return last ? resolveTopicKey(last) : null;
 }
 
 /** Reorders one page so the same topic is not repeated back-to-back when
@@ -61,14 +85,12 @@ function topicKeyOf(entry: ResolvedQueueEntry, index: number): string {
  *  across pages instead. */
 export function interleaveReviewEntries(
   entries: readonly ResolvedQueueEntry[],
+  // Phase 64 — the topic the already-merged session ends on, when there is
+  // one. Absent for the first page, which is why first-page composition is
+  // unchanged from Phase 63.
+  previousTopicKey: string | null = null,
 ): ResolvedQueueEntry[] {
-  if (entries.length <= 2) {
-    // Nothing to balance: one item has no neighbour, and two items either
-    // already alternate or are the only members of their topic. Returning the
-    // canonical order untouched keeps the common short-session case provably
-    // identical to before this phase.
-    return dedupe(entries);
-  }
+  if (entries.length <= 1) return dedupe(entries);
 
   const groups = new Map<string, ResolvedQueueEntry[]>();
   const seen = new Set<string>();
@@ -89,7 +111,27 @@ export function interleaveReviewEntries(
   // Map preserves insertion order, so this is first-appearance order — which
   // keeps the page's canonical FIRST entry first. A student who saw "the most
   // overdue question" at the top before this phase still sees it there.
-  const queues = [...groups.values()];
+  const queueKeys = [...groups.keys()];
+
+  // Phase 64 — the page-boundary rule, and the ONLY thing this phase adds.
+  //
+  // If the session already ends on one of this page's topics, that topic's
+  // group is moved to the BACK of the round-robin order so the page does not
+  // open by repeating what the student just saw. Everything else — group
+  // membership, intra-group order, determinism — is untouched, and the group
+  // is delayed rather than dropped, so no question is starved.
+  //
+  // A no-op in exactly the cases where it should be: no previous topic (first
+  // page), a previous topic this page does not contain, or a page with only
+  // one group and therefore no alternative to offer.
+  if (previousTopicKey && queueKeys.length > 1) {
+    const clash = queueKeys.indexOf(previousTopicKey);
+    if (clash !== -1) {
+      queueKeys.push(...queueKeys.splice(clash, 1));
+    }
+  }
+
+  const queues = queueKeys.map((key) => groups.get(key) as ResolvedQueueEntry[]);
   const result: ResolvedQueueEntry[] = [];
 
   // Round-robin. A topic with many due items is not starved: once the other

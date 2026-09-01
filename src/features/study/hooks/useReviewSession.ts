@@ -13,7 +13,10 @@ import {
   resolveQueueEntries,
   ResolvedQueueEntry,
 } from "../services/studyService";
-import { interleaveReviewEntries } from "../services/reviewSessionComposition";
+import {
+  interleaveReviewEntries,
+  trailingTopicKey,
+} from "../services/reviewSessionComposition";
 import { mergeResolvedPages, removeStudyItemById } from "../services/studyQueueMerge";
 import { shouldApplyStaleResponse } from "../services/staleResponseGuard";
 
@@ -101,7 +104,18 @@ export function useReviewSession(uid: string | undefined) {
       const page = await getDueStudyItemsPage(uid, Date.now(), DEFAULT_QUEUE_PAGE_SIZE, null);
       const resolved = await resolveQueueEntries(page.items);
       if (!shouldApplyStaleResponse(generation, generationRef.current) || activeUidRef.current !== uid) return;
-      setEntries(resolved);
+      // Phase 64 — the FIRST page is composed too.
+      //
+      // Phase 63 wired interleaving into loadMore only, so the very page every
+      // student sees first was still rendered in raw query order: a session
+      // that opened with eight Algebra questions in a row stayed that way, and
+      // only page two onward was balanced. Found by instrumenting the hook
+      // rather than the pure function, which is why the Phase 63 unit tests
+      // passed over it.
+      //
+      // There is no previous topic here by definition, so this is exactly the
+      // page-only composition Phase 63 specified.
+      setEntries(interleaveReviewEntries(resolved, null));
       cursorRef.current = page.cursor;
       setHasMore(page.hasMore);
     } catch (error) {
@@ -156,10 +170,18 @@ export function useReviewSession(uid: string | undefined) {
       // sitting on right now) are never touched, so nothing can reshuffle
       // underneath them mid-session. It also changes only order — membership,
       // due-ness and the cursor are untouched.
-      const balanced = interleaveReviewEntries(resolved);
-      // Dedupe by questionId: a page boundary can legitimately overlap once
-      // an item's nextReviewAt has been rewritten by a review.
-      setEntries((prev) => mergeResolvedPages(prev, balanced));
+      //
+      // Phase 64 — the page is also composed against the topic the session
+      // currently ENDS on, so it does not open by repeating what the student
+      // just saw. That context is read inside the state updater from `prev`,
+      // which is the only place the true merged tail is available: reading it
+      // from a captured variable would race a concurrent update.
+      setEntries((prev) =>
+        mergeResolvedPages(prev, interleaveReviewEntries(resolved, trailingTopicKey(prev))),
+      );
+      // The cursor comes from the RAW server page, never the reordered array.
+      // Client display order and server pagination are separate concerns, and
+      // conflating them would skip or repeat documents.
       cursorRef.current = page.cursor;
       setHasMore(page.hasMore);
     } catch (error) {
