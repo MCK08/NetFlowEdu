@@ -13,6 +13,7 @@ import {
   resolveQueueEntries,
   ResolvedQueueEntry,
 } from "../services/studyService";
+import { interleaveReviewEntries } from "../services/reviewSessionComposition";
 import { mergeResolvedPages, removeStudyItemById } from "../services/studyQueueMerge";
 import { shouldApplyStaleResponse } from "../services/staleResponseGuard";
 
@@ -146,9 +147,19 @@ export function useReviewSession(uid: string | undefined) {
       );
       const resolved = await resolveQueueEntries(page.items);
       if (!shouldApplyStaleResponse(generation, generationRef.current) || activeUidRef.current !== uid) return;
+      // Phase 63 — the INCOMING page is balanced before it is appended, so a
+      // page that arrives as five Algebra questions in a row does not read as
+      // five Algebra questions in a row.
+      //
+      // Interleaving the incoming page rather than the merged list is the
+      // whole safety argument: entries the student has already seen (or is
+      // sitting on right now) are never touched, so nothing can reshuffle
+      // underneath them mid-session. It also changes only order — membership,
+      // due-ness and the cursor are untouched.
+      const balanced = interleaveReviewEntries(resolved);
       // Dedupe by questionId: a page boundary can legitimately overlap once
       // an item's nextReviewAt has been rewritten by a review.
-      setEntries((prev) => mergeResolvedPages(prev, resolved));
+      setEntries((prev) => mergeResolvedPages(prev, balanced));
       cursorRef.current = page.cursor;
       setHasMore(page.hasMore);
     } catch (error) {
