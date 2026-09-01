@@ -1,4 +1,5 @@
 import { ChronologyProfile, compareChronology } from "./chronologyTieBreak";
+import { paceEquivalentExposure } from "./exposurePacing";
 import { buildDailyProgress, LearningInsightItem, TopicInsight } from "./learningInsights";
 import { masteryBandPriorityIndex } from "./topicMastery";
 import { buildRecencySignal, recencyPriorityIndex } from "./recencySignal";
@@ -106,6 +107,25 @@ function isActive(item: LearningInsightItem): boolean {
   return item.status !== "mastered";
 }
 
+// Phase 65 — the concept identity exposure pacing spaces on.
+//
+// Deliberately TOPIC-level (subject+topic), not subject-level: a subject is
+// not one concept, and treating it as one would push a genuinely different
+// topic behind an unrelated one for the sake of variety. Mirrors
+// reviewSessionComposition.ts's resolveTopicKey exactly — same fields, same
+// trimming, same separator — so the review queue and the adaptive plan can
+// never disagree about what "the same topic" means.
+//
+// null when either half is missing, which the pacer treats as its own unique
+// concept rather than a shared unknown bucket. A legacy item with no
+// resolvable metadata is therefore never grouped with another one.
+function exposureKeyOf(item: LearningInsightItem): string | null {
+  const subject = item.subject?.trim() ?? "";
+  const topic = item.topic?.trim() ?? "";
+  if (!subject || !topic) return null;
+  return `${subject}|${topic}`;
+}
+
 // Filters `items` down to the next tier's matches (excluding anything a
 // higher-priority tier already claimed), sorts them, and marks them claimed
 // — so a later tier can never re-select a question an earlier tier already
@@ -120,16 +140,24 @@ function isActive(item: LearningInsightItem): boolean {
 // (the predicate) are completely untouched either way; only the ORDER
 // within a tier can differ, which only matters for which items survive
 // the MAX_PLAN_ITEMS cap.
+//
+// Phase 65 — `pace` is a second injection point with the same discipline as
+// `comparator` above: absent (buildDailyPracticePlan) the output is
+// byte-identical to before. When present it runs AFTER the canonical sort and
+// may only reorder candidates that sort itself declared equivalent, so tier
+// membership, the claim mechanism and every stronger key are untouched.
 function takeTier(
   items: readonly LearningInsightItem[],
   claimed: Set<string>,
   predicate: (item: LearningInsightItem) => boolean,
   comparator: (a: LearningInsightItem, b: LearningInsightItem) => number = compareByReviewOrder,
+  pace?: (sorted: LearningInsightItem[]) => LearningInsightItem[],
 ): LearningInsightItem[] {
   const matched = items.filter((item) => !claimed.has(item.questionId) && predicate(item));
   matched.sort(comparator);
-  for (const item of matched) claimed.add(item.questionId);
-  return matched;
+  const ordered = pace ? pace(matched) : matched;
+  for (const item of ordered) claimed.add(item.questionId);
+  return ordered;
 }
 
 interface BuildTieredPlanOptions {
@@ -139,6 +167,17 @@ interface BuildTieredPlanOptions {
   reviewedToday: number;
   dailyGoal: number;
   comparator: (a: LearningInsightItem, b: LearningInsightItem) => number;
+  // Phase 65 — opt-in, adaptive-only. See buildAdaptivePracticePlan.
+  //
+  // This is deliberately NOT `comparator(a, b) === 0`. The comparator is a
+  // TOTAL order: it ends in an alphabetical questionId tie-break so the sort
+  // is stable and reproducible, which means it never returns 0 for two
+  // distinct questions. Using it as the oracle would make every equivalence
+  // run a singleton and pacing a silent no-op. The caller therefore supplies
+  // the comparator's REAL-PRIORITY half, so "equivalent" means "every
+  // meaningful signal tied and only the alphabetical fallback separated
+  // them" — which is exactly the band pacing is licensed to act in.
+  isEquivalent?: (a: LearningInsightItem, b: LearningInsightItem) => boolean;
 }
 
 // The shared core both buildDailyPracticePlan and buildAdaptivePracticePlan
@@ -152,6 +191,34 @@ function buildTieredPlan(options: BuildTieredPlanOptions): DailyPracticePlan {
 
   const claimed = new Set<string>();
 
+  // Phase 65 — exposure pacing, carried ACROSS tier boundaries.
+  //
+  // `carriedKey` is the concept last placed by the previous tier, so tier 3
+  // does not open by repeating the topic tier 2 ended on — the same
+  // page-boundary idea Phase 64 introduced for review pages. It lives here,
+  // in one composition pass, rather than in module scope: nothing survives
+  // between calls, so it cannot leak across students or sessions.
+  //
+  // Absent for buildDailyPracticePlan, whose output stays byte-identical.
+  let carriedKey: string | null = null;
+  const isEquivalent = options.isEquivalent;
+  const pace = isEquivalent
+    ? (sorted: LearningInsightItem[]): LearningInsightItem[] => {
+        const paced = paceEquivalentExposure({
+          items: sorted,
+          keyOf: exposureKeyOf,
+          // The canonical ranking's own verdict on interchangeability — see
+          // exposurePacing.ts on why that makes the safety property
+          // structural rather than a promise.
+          isEquivalent,
+          previousKey: carriedKey,
+        });
+        const last = paced[paced.length - 1];
+        if (last) carriedKey = exposureKeyOf(last);
+        return paced;
+      }
+    : undefined;
+
   // Tier 1 — real due obligations. Never filtered by subject/topic (a
   // legacy question with no metadata is still due, §15), never capped by
   // remainingGoal (§7).
@@ -164,6 +231,7 @@ function buildTieredPlan(options: BuildTieredPlanOptions): DailyPracticePlan {
     claimed,
     (item) => isActive(item) && item.lastOutcome === "struggled",
     options.comparator,
+    pace,
   );
 
   // Tier 3 — the Hub's own top-ranked weak topic, not already claimed.
@@ -174,13 +242,14 @@ function buildTieredPlan(options: BuildTieredPlanOptions): DailyPracticePlan {
         claimed,
         (item) => isActive(item) && item.subject === topFocus.subject && item.topic === topFocus.topic,
         options.comparator,
+        pace,
       )
     : [];
 
   // Tier 4 — anything else still active, to round the plan out toward the
   // daily goal. Deliberately no subject/topic requirement — a legacy item
   // is exactly as eligible here as a fully-tagged one.
-  const fillerItems = takeTier(items, claimed, isActive, options.comparator);
+  const fillerItems = takeTier(items, claimed, isActive, options.comparator, pace);
 
   const reasonOf = new Map<string, PlanReason>();
   for (const item of struggledItems) reasonOf.set(item.questionId, "struggled");
@@ -259,7 +328,10 @@ export function buildAdaptivePracticePlan(params: BuildAdaptivePracticePlanParam
 
   const now = Number.isFinite(params.now) ? params.now : Date.now();
 
-  function adaptiveComparator(a: LearningInsightItem, b: LearningInsightItem): number {
+  // Phase 65 — the REAL priority half of the adaptive ordering. Returns 0
+  // only when every meaningful signal ties; the arbitrary questionId
+  // tie-break lives in adaptiveComparator below.
+  function adaptivePriorityDelta(a: LearningInsightItem, b: LearningInsightItem): number {
     const topicA = topicByKey.get(`${a.subject} ${a.topic}`) ?? null;
     const topicB = topicByKey.get(`${b.subject} ${b.topic}`) ?? null;
 
@@ -318,10 +390,32 @@ export function buildAdaptivePracticePlan(params: BuildAdaptivePracticePlanParam
     );
     if (chronologyDelta !== 0) return chronologyDelta;
 
-    return compareByReviewOrder(a, b);
+    // Phase 65 — everything above is REAL priority. `nextReviewAt` still is
+    // too (an earlier due date genuinely comes first), so it belongs here
+    // rather than in the arbitrary tail below.
+    if (a.nextReviewAt !== b.nextReviewAt) return a.nextReviewAt - b.nextReviewAt;
+
+    return 0;
   }
 
-  return buildTieredPlan({ ...params, comparator: adaptiveComparator });
+  // The canonical total order: real priority first, then the alphabetical
+  // questionId tie-break that only exists to make the sort stable and
+  // reproducible. Splitting the two is what lets exposure pacing act on the
+  // arbitrary half WITHOUT ever touching the meaningful half — the tail is
+  // the only thing it is allowed to override.
+  function adaptiveComparator(a: LearningInsightItem, b: LearningInsightItem): number {
+    const priorityDelta = adaptivePriorityDelta(a, b);
+    if (priorityDelta !== 0) return priorityDelta;
+    return a.questionId.localeCompare(b.questionId);
+  }
+
+  return buildTieredPlan({
+    ...params,
+    comparator: adaptiveComparator,
+    // Two candidates are interchangeable exactly when every real signal ties
+    // and only the alphabetical fallback separated them.
+    isEquivalent: (a, b) => adaptivePriorityDelta(a, b) === 0,
+  });
 }
 
 // Lower = more struggle events = sorts first, the same "lower is more

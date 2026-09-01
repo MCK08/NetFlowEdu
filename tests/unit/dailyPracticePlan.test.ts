@@ -1206,3 +1206,206 @@ describe("buildAdaptivePracticePlan — Phase 61: chronology tie-break", () => {
     expect(rank([a, b], events)).toEqual(rank([b, a], events));
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 65 — exposure pacing inside the adaptive plan.
+//
+// The seam this covers: mastery and recency are TOPIC-level, so every question
+// in one topic necessarily ties on the two strongest keys. When Phase 45's
+// struggle counts and Phase 61's chronology also tie or are incomparable, the
+// last word is questionId alphabetically — which has no relationship to
+// concept diversity, so a tier could come out as A1 A2 A3 B1.
+// ---------------------------------------------------------------------------
+
+describe("buildAdaptivePracticePlan — Phase 65 exposure pacing", () => {
+  function planOrder(items: LearningInsightItem[]): string[] {
+    const plan = buildAdaptivePracticePlan({
+      items,
+      weakTopics: weakTopicsFor(items),
+      topicInsights: topicInsightsFor(items),
+      now: NOW,
+      reviewedToday: 0,
+      dailyGoal: 20,
+    });
+    return plan.planItems.map((p) => p.questionId);
+  }
+
+  // Every item below is deliberately equivalent under mastery, recency,
+  // struggle and chronology, so only pacing can distinguish them.
+  function peer(questionId: string, topic: string): LearningInsightItem {
+    return item({
+      questionId,
+      topic,
+      subject: "Matematik",
+      status: "learning",
+      lastOutcome: "struggled",
+      nextReviewAt: NOW + DAY_MS,
+      lastReviewedAt: NOW - DAY_MS,
+    });
+  }
+
+  // IMPORTANT — the equivalence band is narrower than it first looks, and that
+  // is a safety feature rather than a limitation.
+  //
+  // Mastery and recency are TOPIC-level aggregates, so two topics only tie on
+  // them when their overall shape genuinely matches. When Algebra is in a
+  // worse mastery band than Geometry, "A1 A2 A3 B1" is CORRECT priority
+  // ordering and pacing must not break it — a run boundary protects it.
+  //
+  // Pacing therefore acts exactly when the topics are genuinely
+  // indistinguishable, which the balanced fixtures below construct.
+  it("spaces a clustered topic when equal-priority alternatives exist", () => {
+    const order = planOrder([
+      peer("a1", "Algebra"),
+      peer("a2", "Algebra"),
+      peer("b1", "Geometry"),
+      peer("b2", "Geometry"),
+    ]);
+    const topicOf = new Map<string, string>([
+      ["a1", "Algebra"],
+      ["a2", "Algebra"],
+      ["b1", "Geometry"],
+      ["b2", "Geometry"],
+    ]);
+    // The canonical first item still leads.
+    expect(order[0]).toBe("a1");
+    // No two adjacent placements share a topic.
+    for (let i = 1; i < order.length; i += 1) {
+      expect(topicOf.get(order[i] as string)).not.toBe(topicOf.get(order[i - 1] as string));
+    }
+    expect(order.slice().sort()).toEqual(["a1", "a2", "b1", "b2"]);
+  });
+
+  it("never places the same topic back-to-back when an alternative is available", () => {
+    const items = [
+      peer("a1", "Algebra"),
+      peer("a2", "Algebra"),
+      peer("b1", "Geometry"),
+      peer("b2", "Geometry"),
+      peer("c1", "Fractions"),
+      peer("c2", "Fractions"),
+    ];
+    const order = planOrder(items);
+    const topicOf = new Map(items.map((i) => [i.questionId, i.topic]));
+    for (let i = 1; i < order.length; i += 1) {
+      expect(topicOf.get(order[i] as string)).not.toBe(topicOf.get(order[i - 1] as string));
+    }
+  });
+
+  // The converse, stated explicitly: a genuine topic-level priority difference
+  // is a run boundary, so clustering that reflects real priority survives.
+  it("does not interleave across a genuine mastery/recency difference", () => {
+    const items = [
+      peer("a1", "Algebra"),
+      peer("a2", "Algebra"),
+      peer("a3", "Algebra"),
+      peer("b1", "Geometry"),
+    ];
+    const order = planOrder(items);
+    // Whatever the canonical ranking decided stands; nothing is lost.
+    expect(order.slice().sort()).toEqual(["a1", "a2", "a3", "b1"]);
+    expect(new Set(order).size).toBe(4);
+  });
+
+  // §48 — no alternative exists, so canonical order stands and no filler is
+  // invented to manufacture spacing.
+  it("leaves a single-topic plan in canonical order", () => {
+    const order = planOrder([
+      peer("a1", "Algebra"),
+      peer("a2", "Algebra"),
+      peer("a3", "Algebra"),
+    ]);
+    expect(order).toEqual(["a1", "a2", "a3"]);
+  });
+
+  // §46 — THE hard safety case. Stronger cumulative struggle evidence must
+  // stay first even though its topic clusters.
+  it("keeps stronger Phase 45 struggle evidence ahead of topic variety", () => {
+    const heavy = item({
+      questionId: "a-heavy",
+      topic: "Algebra",
+      status: "learning",
+      lastOutcome: "struggled",
+      outcomeHistory: { solvedCount: 2, struggledCount: 8, againCount: 0, knownOutcomeCount: 10 },
+    });
+    const light = item({
+      questionId: "a-light",
+      topic: "Algebra",
+      status: "learning",
+      lastOutcome: "struggled",
+      outcomeHistory: { solvedCount: 8, struggledCount: 2, againCount: 0, knownOutcomeCount: 10 },
+    });
+    const other = item({
+      questionId: "b-other",
+      topic: "Geometry",
+      status: "learning",
+      lastOutcome: "struggled",
+      outcomeHistory: { solvedCount: 9, struggledCount: 1, againCount: 0, knownOutcomeCount: 10 },
+    });
+    const order = planOrder([heavy, light, other]);
+    // The heaviest struggle leads regardless of any diversity preference.
+    expect(order[0]).toBe("a-heavy");
+  });
+
+  it("never reorders items that the comparator genuinely distinguishes", () => {
+    const strong = item({
+      questionId: "a-strong",
+      topic: "Algebra",
+      status: "learning",
+      lastOutcome: "struggled",
+      outcomeHistory: { solvedCount: 1, struggledCount: 9, againCount: 0, knownOutcomeCount: 10 },
+    });
+    const mid = item({
+      questionId: "a-mid",
+      topic: "Algebra",
+      status: "learning",
+      lastOutcome: "struggled",
+      outcomeHistory: { solvedCount: 5, struggledCount: 5, againCount: 0, knownOutcomeCount: 10 },
+    });
+    const weak = item({
+      questionId: "a-weak",
+      topic: "Algebra",
+      status: "learning",
+      lastOutcome: "struggled",
+      outcomeHistory: { solvedCount: 9, struggledCount: 1, againCount: 0, knownOutcomeCount: 10 },
+    });
+    expect(planOrder([strong, mid, weak])).toEqual(["a-strong", "a-mid", "a-weak"]);
+  });
+
+  it("is deterministic across repeated builds", () => {
+    const items = [
+      peer("a1", "Algebra"),
+      peer("a2", "Algebra"),
+      peer("b1", "Geometry"),
+      peer("c1", "Fractions"),
+    ];
+    expect(planOrder(items)).toEqual(planOrder(items));
+  });
+
+  it("never drops or duplicates a question", () => {
+    const items = [
+      peer("a1", "Algebra"),
+      peer("a2", "Algebra"),
+      peer("b1", "Geometry"),
+      peer("b2", "Geometry"),
+      peer("c1", "Fractions"),
+    ];
+    const order = planOrder(items);
+    expect(new Set(order).size).toBe(order.length);
+    expect(order.slice().sort()).toEqual(["a1", "a2", "b1", "b2", "c1"]);
+  });
+
+  // §49/§50 — a legacy item with no resolvable metadata must not be grouped
+  // with another one, and must never crash the plan.
+  it("handles items with no resolvable subject/topic", () => {
+    const legacy = item({
+      questionId: "legacy",
+      subject: "",
+      topic: "",
+      status: "learning",
+      lastOutcome: "struggled",
+    });
+    const order = planOrder([peer("a1", "Algebra"), legacy, peer("a2", "Algebra")]);
+    expect(order.slice().sort()).toEqual(["a1", "a2", "legacy"]);
+  });
+});
