@@ -57,7 +57,7 @@ function RatingCardComponent({ question, height, isStudent, onOutcomeRecorded }:
   }, []);
 
   async function handleSelect(outcome: StudyOutcome) {
-    const succeeded = await study.submit(outcome);
+    const succeeded = (await study.submit(outcome)) !== null;
     // A failed write already surfaces via study.mutationError under the
     // buttons — stay put so the student can see the error and retry,
     // rather than advancing past a review that was never actually saved.

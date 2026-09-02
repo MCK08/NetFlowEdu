@@ -34,13 +34,35 @@ import { appendSessionReceipt, SessionOutcomeReceipt } from "./sessionReflection
  *  Bump the suffix only if the stored SHAPE changes incompatibly. */
 export const ACTIVE_STUDY_SESSION_STORAGE_KEY = "netflowedu.study.active-session.v1";
 
-export const ACTIVE_STUDY_SESSION_VERSION = 1;
+// Phase 68 — WRITES are version 2. READS still accept version 1.
+//
+// Version 1 (Phase 67) held a mandatory session with receipts and nothing
+// else. Version 2 adds two fields, and the split matters in both directions:
+//
+//   · A v1 record is read as a v2 record with no frozen plan and no
+//     completion stamp, which is exactly what it was. A session already in
+//     progress when this build ships resumes normally.
+//   · A v2 record is REJECTED by a Phase 67 build, because its parser pins
+//     `version !== 1`. That is the property worth paying for: an older build
+//     must never read a COMPLETED snapshot as an active session and fold a
+//     finished session's receipts into the next one's "Bu çalışmada" summary.
+//     Failing closed there costs one resume; reinterpreting would cost the
+//     honesty the summary exists for.
+export const ACTIVE_STUDY_SESSION_VERSION = 2;
 
-// Only the mandatory review session has a receipt today. Adaptive and
-// assignment sessions are deliberately excluded (see the phase doc), and the
-// mode is persisted so a future addition cannot silently hydrate one kind of
-// session's evidence into another.
-export type ActiveStudySessionMode = "mandatory";
+const READABLE_VERSIONS: readonly number[] = [1, 2];
+
+// Phase 68 — adaptive sessions now have a real completion boundary (see
+// adaptiveSessionCompletion.ts) and so can carry a receipt too. Assignment
+// sessions remain excluded; see the phase doc.
+//
+// The mode is persisted, and matched exactly on hydration, so one kind of
+// session's evidence can never be adopted by another.
+export type ActiveStudySessionMode = "mandatory" | "adaptive";
+
+export function isActiveStudySessionMode(value: unknown): value is ActiveStudySessionMode {
+  return value === "mandatory" || value === "adaptive";
+}
 
 // The ONE time-based value in this module, and it is deliberately NOT session
 // truth: it never decides which outcomes belong together, only whether an
@@ -62,6 +84,19 @@ export interface ActiveStudySessionEnvelope {
   /** When this session instance began. Used ONLY for the staleness bound. */
   startedAt: number;
   receipts: SessionOutcomeReceipt[];
+  /** Phase 68 — the FROZEN completion contract for an adaptive session: the
+   *  question ids this session undertook to work through, fixed at the moment
+   *  it began. Always empty for a mandatory session, whose scope is the due
+   *  queue and is decided by the server, not by a local snapshot.
+   *
+   *  Ids only. No question text, no image, no answer choices — the questions
+   *  are re-resolved from the shared metadata cache after a restart. */
+  plannedQuestionIds: string[];
+  /** Phase 68 — non-null once the session genuinely completed. A completed
+   *  envelope is a SNAPSHOT, not an active session: it is never resumed as
+   *  one, it exists so the closure summary survives a refresh, and it is
+   *  cleared when acknowledged or when the next session begins. */
+  completedAt: number | null;
 }
 
 /** A fresh local lifecycle id.
@@ -80,6 +115,31 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 
 function asString(value: unknown): string | null {
   return typeof value === "string" ? value : null;
+}
+
+/** Frozen plan ids, validated and de-duplicated.
+ *
+ *  Duplicates are normalised away rather than rejected. A completion contract
+ *  built from a list containing the same id twice would demand two confirmed
+ *  outcomes for one entry, which no single answer can ever satisfy — the
+ *  session would be permanently unfinishable. De-duplicating is the only
+ *  reading that stays achievable, and it is also the truthful one: the
+ *  adaptive plan produces distinct questions by construction (buildTieredPlan
+ *  de-dupes, and every tier claims what it takes), so a duplicate here means
+ *  corrupted storage, not a real plan that wanted the question twice. */
+export function normalizePlannedQuestionIds(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const entry of value) {
+    const id = asString(entry);
+    // A malformed entry is dropped, never coerced. Coercing would invent a
+    // plan entry that can never be answered and so never completed.
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    result.push(id);
+  }
+  return result;
 }
 
 /** One persisted receipt, validated field by field.
@@ -115,15 +175,24 @@ export function parseActiveStudySession(raw: string | null): ActiveStudySessionE
   if (!isPlainObject(parsed)) return null;
 
   // Fail closed on an unknown version. A newer build's shape must never be
-  // reinterpreted by an older one as though it were understood.
-  if (parsed.version !== ACTIVE_STUDY_SESSION_VERSION) return null;
+  // reinterpreted by an older one as though it were understood. Version 1 is
+  // read because this build understands it completely — see the constant.
+  if (typeof parsed.version !== "number" || !READABLE_VERSIONS.includes(parsed.version)) return null;
 
   const sessionInstanceId = asString(parsed.sessionInstanceId);
   const userId = asString(parsed.userId);
   if (!sessionInstanceId || !userId) return null;
-  if (parsed.mode !== "mandatory") return null;
+  if (!isActiveStudySessionMode(parsed.mode)) return null;
   if (typeof parsed.startedAt !== "number" || !Number.isFinite(parsed.startedAt)) return null;
   if (!Array.isArray(parsed.receipts)) return null;
+
+  // A v1 record predates both fields, so both take their "was not there"
+  // value rather than anything inferred.
+  const plannedQuestionIds = normalizePlannedQuestionIds(parsed.plannedQuestionIds);
+  const completedAt =
+    typeof parsed.completedAt === "number" && Number.isFinite(parsed.completedAt)
+      ? parsed.completedAt
+      : null;
 
   // Folded through Phase 66's own append rule, so a duplicated operationId in
   // corrupted storage collapses exactly the way a replayed callback does —
@@ -140,6 +209,8 @@ export function parseActiveStudySession(raw: string | null): ActiveStudySessionE
     mode: parsed.mode,
     startedAt: parsed.startedAt,
     receipts,
+    plannedQuestionIds,
+    completedAt,
   };
 }
 
@@ -151,6 +222,10 @@ export interface SessionStart {
   receipts: SessionOutcomeReceipt[];
   /** True when a compatible active session was adopted rather than created. */
   resumed: boolean;
+  /** Phase 68 — the frozen plan a resumed adaptive session must keep working
+   *  through. Empty for a new session (the caller freezes the live plan) and
+   *  for every mandatory session. */
+  plannedQuestionIds: string[];
 }
 
 /** Decides whether this mount resumes the active session or begins a new one.
@@ -178,6 +253,11 @@ export function resolveSessionStart(params: {
     existing !== null &&
     existing.userId === params.userId &&
     existing.mode === params.mode &&
+    // Phase 68 — a COMPLETED session is not an active one. Resuming it would
+    // reopen a finished sitting and carry its receipts into the next one,
+    // which is the precise dishonesty Phase 66 exists to prevent. The
+    // completed snapshot is read separately, by resolveCompletedSession.
+    existing.completedAt === null &&
     // Technical staleness only — see ACTIVE_SESSION_MAX_AGE_MS.
     params.now - existing.startedAt < ACTIVE_SESSION_MAX_AGE_MS &&
     params.now >= existing.startedAt;
@@ -188,6 +268,7 @@ export function resolveSessionStart(params: {
       startedAt: existing.startedAt,
       receipts: existing.receipts,
       resumed: true,
+      plannedQuestionIds: existing.plannedQuestionIds,
     };
   }
 
@@ -196,7 +277,36 @@ export function resolveSessionStart(params: {
     startedAt: params.now,
     receipts: [],
     resumed: false,
+    plannedQuestionIds: [],
   };
+}
+
+/** The just-completed session's snapshot, when one is stored for this exact
+ *  user and mode.
+ *
+ *  Phase 67 kept its completion summary in React state only, so refreshing on
+ *  the completion screen lost it — the session was already cleared from
+ *  storage by then, and rebuilding it was impossible without inventing
+ *  membership. This is the smallest thing that fixes that: the SAME envelope,
+ *  stamped completed, read back deliberately rather than resumed.
+ *
+ *  Scoped exactly as strictly as an active session — same user, same mode,
+ *  same readable version, same staleness bound — because a summary is
+ *  evidence, and evidence that crosses accounts or modes is worse than no
+ *  summary at all. Returns null for an ACTIVE record: a session still running
+ *  has not earned a closure screen. */
+export function resolveCompletedSession(params: {
+  raw: string | null;
+  userId: string;
+  mode: ActiveStudySessionMode;
+  now: number;
+}): ActiveStudySessionEnvelope | null {
+  const existing = parseActiveStudySession(params.raw);
+  if (!existing || existing.completedAt === null) return null;
+  if (existing.userId !== params.userId || existing.mode !== params.mode) return null;
+  if (params.now < existing.startedAt) return null;
+  if (params.now - existing.startedAt >= ACTIVE_SESSION_MAX_AGE_MS) return null;
+  return existing;
 }
 
 export function buildActiveStudySession(params: {
@@ -205,6 +315,10 @@ export function buildActiveStudySession(params: {
   mode: ActiveStudySessionMode;
   startedAt: number;
   receipts: readonly SessionOutcomeReceipt[];
+  /** Frozen adaptive plan; omitted for a mandatory session. */
+  plannedQuestionIds?: readonly string[];
+  /** Stamped only by a genuine completion — see resolveCompletedSession. */
+  completedAt?: number | null;
 }): ActiveStudySessionEnvelope {
   return {
     version: ACTIVE_STUDY_SESSION_VERSION,
@@ -213,6 +327,8 @@ export function buildActiveStudySession(params: {
     mode: params.mode,
     startedAt: params.startedAt,
     receipts: [...params.receipts],
+    plannedQuestionIds: normalizePlannedQuestionIds(params.plannedQuestionIds ?? []),
+    completedAt: params.completedAt ?? null,
   };
 }
 
@@ -238,5 +354,7 @@ export function serializeActiveStudySession(envelope: ActiveStudySessionEnvelope
       topic: receipt.topic,
       outcome: receipt.outcome,
     })),
+    plannedQuestionIds: [...envelope.plannedQuestionIds],
+    completedAt: envelope.completedAt,
   });
 }

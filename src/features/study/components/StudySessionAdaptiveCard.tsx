@@ -24,7 +24,11 @@ import { useThemeSubscription } from "@theme/ThemeProvider";
 interface StudySessionAdaptiveCardProps {
   question: Question;
   height: number;
-  onOutcomeRecorded: (outcome: StudyOutcome, question: Question) => void;
+  // Phase 68 — the confirmed operationId is passed through because the
+  // adaptive session's completion contract and its receipt are both keyed on
+  // it. It exists only because the write already succeeded, so the screen
+  // cannot mistake an attempt for an outcome.
+  onOutcomeRecorded: (outcome: StudyOutcome, question: Question, operationId: string) => void;
   // Mirrors PhotoAnswerForm's onUploadingChange (Phase 24): this card's
   // useStudyQuestionState is entirely self-contained, so the screen has no
   // other way to know a submission is in flight for the visible card —
@@ -70,12 +74,12 @@ function StudySessionAdaptiveCardComponent({
   }, [study.pendingOutcome, onSubmittingChange]);
 
   async function handleSelect(outcome: StudyOutcome) {
-    const succeeded = await study.submit(outcome);
-    if (!succeeded) return;
+    const operationId = await study.submit(outcome);
+    if (!operationId) return;
     setShowFlourish(true);
     dismissTimeoutRef.current = setTimeout(() => {
       dismissTimeoutRef.current = null;
-      onOutcomeRecorded(outcome, question);
+      onOutcomeRecorded(outcome, question, operationId);
     }, REVIEW_ADVANCE_DELAY_MS);
   }
 

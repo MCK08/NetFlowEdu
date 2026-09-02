@@ -112,8 +112,18 @@ describe("active session — untrusted input", () => {
   });
 
   it("rejects an unknown mode", () => {
+    // Phase 68 made "adaptive" a real mode; "assignment" is still excluded,
+    // and anything unrecognised must still fail closed rather than being
+    // adopted as some other kind of session.
+    for (const mode of ["assignment", "practice", "", 7, null]) {
+      const raw = JSON.stringify({ ...envelope(), mode });
+      expect(parseActiveStudySession(raw)).toBeNull();
+    }
+  });
+
+  it("accepts the adaptive mode Phase 68 added", () => {
     const raw = JSON.stringify({ ...envelope(), mode: "adaptive" });
-    expect(parseActiveStudySession(raw)).toBeNull();
+    expect(parseActiveStudySession(raw)?.mode).toBe("adaptive");
   });
 
   it("rejects a non-numeric startedAt", () => {
@@ -429,7 +439,11 @@ describe("persisted payload privacy", () => {
     const raw = serializeActiveStudySession(envelope());
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     expect(Object.keys(parsed).sort()).toEqual([
+      // Phase 68 added exactly two: the frozen plan (ids only) and the
+      // completion stamp. Neither is question content.
+      "completedAt",
       "mode",
+      "plannedQuestionIds",
       "receipts",
       "sessionInstanceId",
       "startedAt",

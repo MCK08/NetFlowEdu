@@ -29,3 +29,30 @@ export function toAdaptiveSessionQuestions(
   }
   return result;
 }
+
+// Phase 68 — the same resolution, driven by a FROZEN id list instead of a live
+// plan.
+//
+// An adaptive session commits to its question ids when it starts and must keep
+// working through exactly those, so after a refresh the questions are rebuilt
+// from the frozen ids rather than from whatever the plan says now (the plan
+// shrinks as the daily goal is consumed — see adaptiveSessionCompletion.ts).
+//
+// Same skip rule as above: an id that no longer resolves is left out rather
+// than rendered blank, and the completion contract counts it as unavailable
+// rather than done.
+export function toFrozenSessionQuestions(
+  questionIds: readonly string[],
+  questionsById: ReadonlyMap<string, Question | null>,
+): Question[] {
+  const seen = new Set<string>();
+  const result: Question[] = [];
+  for (const questionId of questionIds) {
+    if (seen.has(questionId)) continue;
+    const question = questionsById.get(questionId);
+    if (!question) continue;
+    seen.add(questionId);
+    result.push(question);
+  }
+  return result;
+}

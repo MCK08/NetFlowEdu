@@ -24,6 +24,7 @@ import { StudySessionAdaptiveCard } from "../components/StudySessionAdaptiveCard
 import { StudySessionMandatoryCard } from "../components/StudySessionMandatoryCard";
 import { SessionReflectionCard } from "../components/SessionReflectionCard";
 import { buildSessionReflection } from "../services/sessionReflection";
+import { resolveAdaptiveResumeIndex } from "../services/adaptiveSessionCompletion";
 import { useAdaptiveStudySession } from "../hooks/useAdaptiveStudySession";
 import { useReviewSession } from "../hooks/useReviewSession";
 import { useStudyQueue } from "../hooks/useStudyQueue";
@@ -222,8 +223,60 @@ export function StudySessionScreen({ mode, assignmentId }: StudySessionScreenPro
   );
 
   const isMandatoryComplete = mode === "mandatory" && mandatory.isComplete;
-  const isAdaptiveDone =
-    mode === "adaptive" && !adaptive.isLoading && adaptive.questions.length === 0;
+
+  // Phase 68 — a real completion boundary, replacing `questions.length === 0`.
+  //
+  // That old test read as "the session ran out of cards", but the adaptive
+  // list is a live plan capped by `dailyGoal - reviewedToday`, and
+  // `reviewedToday` arrives on a listener — so it actually fired when the
+  // DAILY GOAL was reached, and never fired at all when the plan was shorter
+  // than the goal was far away (three items, a goal of ten: the student swiped
+  // past the last card into nothing). Completion now means every planned entry
+  // this session froze at its start has one confirmed outcome. See
+  // adaptiveSessionCompletion.ts.
+  const isAdaptiveComplete = mode === "adaptive" && adaptive.isComplete;
+  // Genuinely nothing to practise — distinct from completion, which would
+  // otherwise congratulate the student for finishing nothing.
+  const isAdaptiveEmpty =
+    mode === "adaptive" &&
+    !adaptive.isLoading &&
+    !isAdaptiveComplete &&
+    adaptive.completion.answerableCount === 0;
+
+  // Phase 68 — the adaptive session's own summary, built by Phase 66's
+  // builder from the receipts this session confirmed. Withheld until the
+  // persisted session has been consulted, so a resumed session never renders
+  // a provisionally empty count and then corrects itself upward.
+  const adaptiveReflection = useMemo(
+    () => buildSessionReflection(adaptive.isSessionHydrated ? adaptive.receipts : []),
+    [adaptive.isSessionHydrated, adaptive.receipts],
+  );
+
+  // Phase 68 — a RESUMED adaptive session opens on the first card that still
+  // needs an answer, rather than back at the top on work already confirmed.
+  //
+  // Expressed as initialScrollIndex rather than an imperative scroll: the list
+  // is not mounted until the session has hydrated and its questions resolved
+  // (swipeIsLoading covers both), so the right starting card is already known
+  // at first render, and letting FlatList place it avoids scrolling against a
+  // list that has not been laid out yet. React ignores the prop after mount,
+  // which is exactly right — from then on the card's own auto-advance owns
+  // the position.
+  const adaptiveInitialIndex = useMemo(
+    () =>
+      mode === "adaptive"
+        ? resolveAdaptiveResumeIndex({
+            resolvableQuestionIds: adaptive.questions.map((question) => question.id),
+            receipts: adaptive.receipts,
+          })
+        : 0,
+    [mode, adaptive.questions, adaptive.receipts],
+  );
+
+  function leaveAdaptiveCompletion() {
+    adaptive.acknowledgeCompletion();
+    goBack();
+  }
 
   // Assignment "done" is progress-based (completedCount >= targetCount via
   // the shared, tested computeAssignmentProgress), NOT list-exhaustion —
@@ -274,8 +327,13 @@ export function StudySessionScreen({ mode, assignmentId }: StudySessionScreenPro
         <Text style={styles.headerProgress}>
           {formatFeedPosition(mandatory.index, mandatory.total)}
         </Text>
-      ) : mode === "adaptive" && !isAdaptiveDone ? (
-        <Text style={styles.headerProgress}>{adaptive.questions.length} soru</Text>
+      ) : mode === "adaptive" && !isAdaptiveComplete && !isAdaptiveEmpty ? (
+        // Phase 68 — a real fraction, now that the denominator is fixed for
+        // the life of the session. Before the plan was frozen this could only
+        // ever be a shrinking count of cards left, which is why it was one.
+        <Text style={styles.headerProgress}>
+          {adaptive.completion.confirmedCount} / {adaptive.completion.answerableCount}
+        </Text>
       ) : isAssignmentMode && assignmentProgress && !isAssignmentComplete && !isAssignmentEmpty ? (
         <Text style={styles.headerProgress}>
           {assignmentProgress.completedCount} / {assignmentProgress.targetCount}
@@ -314,8 +372,14 @@ export function StudySessionScreen({ mode, assignmentId }: StudySessionScreenPro
           {header}
           <View style={styles.centered}>
             <Ionicons name="checkmark-done-circle-outline" size={56} color={colors.success} />
+            {/* Phase 68 — keyed on whether a session actually COMPLETED, not
+                on whether the queue is currently empty. Those came apart the
+                moment the completion screen became refreshable: after a
+                reload the finished session's queue is legitimately empty, and
+                the old test then told a student who had just finished their
+                reviews that none were due. */}
             <Text style={styles.completionTitle}>
-              {mandatory.total === 0 ? "Şu an tekrar bekleyen soru yok" : "Bugünkü tekrarların tamamlandı 🎉"}
+              {mandatory.isComplete ? "Bugünkü tekrarların tamamlandı 🎉" : "Şu an tekrar bekleyen soru yok"}
             </Text>
             {/* Phase 66 — what actually happened, in the order it happened.
                 Replaces a flat "N reviewed · M correct" line, which could not
@@ -325,11 +389,25 @@ export function StudySessionScreen({ mode, assignmentId }: StudySessionScreenPro
             <Text style={styles.completionHint}>
               İstersen şimdi eksik olduğun konular üzerinde çalışabilirsin.
             </Text>
+            {/* Phase 68 — leaving acknowledges the completed session, so its
+                stored snapshot is dropped and the next visit starts fresh
+                instead of reopening this summary. The snapshot exists only so
+                a refresh ON this screen keeps it. */}
             <PrimaryButton
               label="Çalışmaya Devam Et"
-              onPress={() => router.replace(ROUTES.studentAdaptiveSession as never)}
+              onPress={() => {
+                mandatory.acknowledgeCompletion();
+                router.replace(ROUTES.studentAdaptiveSession as never);
+              }}
             />
-            <PrimaryButton label="Öğrenme Merkezine Dön" variant="secondary" onPress={goBack} />
+            <PrimaryButton
+              label="Öğrenme Merkezine Dön"
+              variant="secondary"
+              onPress={() => {
+                mandatory.acknowledgeCompletion();
+                goBack();
+              }}
+            />
           </View>
         </View>
       );
@@ -398,19 +476,41 @@ export function StudySessionScreen({ mode, assignmentId }: StudySessionScreenPro
     );
   }
 
-  if (isAdaptiveDone) {
+  if (isAdaptiveEmpty) {
+    return (
+      <View style={styles.flex}>
+        {header}
+        <View style={styles.centered}>
+          <EmptyState icon="sparkles-outline" title="Şu an çalışılacak soru yok" />
+          <PrimaryButton label="Öğrenme Merkezine Dön" onPress={goBack} />
+        </View>
+      </View>
+    );
+  }
+
+  if (isAdaptiveComplete) {
     return (
       <View style={styles.flex}>
         {header}
         <View style={styles.centered}>
           <Ionicons name="sparkles-outline" size={56} color={colors.primary} />
           <Text style={styles.completionTitle}>Çalışma tamamlandı 🎉</Text>
-          <Text style={styles.completionSubtitle}>
-            {summary.reviewedToday > 0
-              ? `Bugün ${summary.reviewedToday} soru çözdün.`
-              : "—"}
-          </Text>
-          <PrimaryButton label="Öğrenme Merkezine Dön" onPress={goBack} />
+          {/* Phase 68 — the SAME Phase 66 reflection the review session shows,
+              built by the same builder from the same kind of receipt. It
+              replaces a "Bugün N soru çözdün" line that came from the daily
+              summary rather than from this session, and so described the day
+              rather than the work just finished. */}
+          <SessionReflectionCard reflection={adaptiveReflection} />
+          {/* Stated plainly rather than quietly rounded away, exactly as the
+              assignment session does: the student finished everything they
+              could open. */}
+          {adaptive.completion.unavailableCount > 0 ? (
+            <Text style={styles.completionHint}>
+              {adaptive.completion.unavailableCount} soru artık görüntülenemiyor, bu yüzden bu
+              çalışma bu kadar.
+            </Text>
+          ) : null}
+          <PrimaryButton label="Öğrenme Merkezine Dön" onPress={leaveAdaptiveCompletion} />
         </View>
       </View>
     );
@@ -463,7 +563,7 @@ export function StudySessionScreen({ mode, assignmentId }: StudySessionScreenPro
           <StudySessionAdaptiveCard
             question={item}
             height={cardHeight}
-            onOutcomeRecorded={(outcome, question) => {
+            onOutcomeRecorded={(outcome, question, operationId) => {
               // recordStudyOutcome has ALREADY succeeded by the time this
               // fires (see StudySessionAdaptiveCard's own doc comment) —
               // recording assignment progress here never changes, delays,
@@ -473,6 +573,10 @@ export function StudySessionScreen({ mode, assignmentId }: StudySessionScreenPro
               // submission (Phase 31 — see questionOutcomes doc comment in
               // assignmentTypes.ts); it never feeds back into scheduling.
               if (isAssignmentMode) assignmentSession.recordProgress(question.id, outcome);
+              // Phase 68 — the adaptive session's own confirmed receipt. The
+              // operationId only exists because recordStudyOutcome already
+              // resolved, so this can never record work the server refused.
+              else adaptive.confirmOutcome(question, outcome, operationId);
               listRef.current?.scrollToOffset({
                 offset: computeSessionScrollOffset(index + 1, cardHeight),
                 animated: animateSessionScroll,
@@ -492,6 +596,7 @@ export function StudySessionScreen({ mode, assignmentId }: StudySessionScreenPro
         disableIntervalMomentum
         showsVerticalScrollIndicator={false}
         initialNumToRender={resolveSessionInitialNumToRender(Platform.OS, swipeQuestions.length)}
+        initialScrollIndex={isAssignmentMode ? undefined : adaptiveInitialIndex}
         maxToRenderPerBatch={2}
         windowSize={3}
         removeClippedSubviews
