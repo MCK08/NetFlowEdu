@@ -211,9 +211,14 @@ export function StudySessionScreen({ mode, assignmentId }: StudySessionScreenPro
   // confirmed. Memoized on the receipt array, which stops changing once the
   // session completes, so the visible summary describes THAT session and
   // cannot be rewritten by anything that loads afterwards.
+  //
+  // Phase 67 — withheld until the persisted session has been consulted, so a
+  // resumed session can never render its count from a provisionally empty
+  // list and then correct itself upward. Completion itself does not depend on
+  // receipts (it is decided by the queue), so nothing else waits on this.
   const sessionReflection = useMemo(
-    () => buildSessionReflection(mandatory.receipts),
-    [mandatory.receipts],
+    () => buildSessionReflection(mandatory.isSessionHydrated ? mandatory.receipts : []),
+    [mandatory.isSessionHydrated, mandatory.receipts],
   );
 
   const isMandatoryComplete = mode === "mandatory" && mandatory.isComplete;

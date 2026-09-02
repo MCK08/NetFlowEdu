@@ -21,6 +21,16 @@ import {
   appendSessionReceipt,
   SessionOutcomeReceipt,
 } from "../services/sessionReflection";
+import {
+  ActiveStudySessionMode,
+  buildActiveStudySession,
+  resolveSessionStart,
+} from "../services/activeStudySession";
+import {
+  clearActiveStudySession,
+  loadActiveStudySessionRaw,
+  saveActiveStudySession,
+} from "../services/activeStudySessionStorage";
 import { mergeResolvedPages, removeStudyItemById } from "../services/studyQueueMerge";
 import { shouldApplyStaleResponse } from "../services/staleResponseGuard";
 
@@ -32,6 +42,11 @@ export interface SessionTotals {
 }
 
 const EMPTY_TOTALS: SessionTotals = { reviewed: 0, solved: 0, struggled: 0, again: 0 };
+
+// This hook only ever runs the mandatory review session (StudySessionScreen
+// passes uid only in that mode), so the persisted scope is fixed here rather
+// than threaded through as a parameter nothing could vary.
+const ACTIVE_SESSION_MODE: ActiveStudySessionMode = "mandatory";
 
 // Owns one review session end to end: cursor-paginated loading, the current
 // card, auto-advance, per-gesture idempotency, and the running totals the
@@ -53,6 +68,18 @@ export function useReviewSession(uid: string | undefined) {
   // the same pattern this hook already uses for uid, cursor and generation.
   const entriesRef = useRef<ResolvedQueueEntry[]>([]);
   entriesRef.current = entries;
+  const receiptsRef = useRef<SessionOutcomeReceipt[]>([]);
+  receiptsRef.current = receipts;
+  // Phase 67 — the LOCAL lifecycle identity of the session now running.
+  //
+  // Created once when a session genuinely begins and carried unchanged across
+  // rerenders, refreshes and route remounts. Nothing on the server knows it
+  // exists: it exists only so a session can identify itself instead of being
+  // guessed at from timestamps.
+  const sessionRef = useRef<{ id: string; startedAt: number } | null>(null);
+  // False until the persisted session has been consulted, so nothing reads the
+  // receipt list while it is still provisionally empty.
+  const [isSessionHydrated, setIsSessionHydrated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -116,10 +143,16 @@ export function useReviewSession(uid: string | undefined) {
     setIsComplete(false);
     setIndex(0);
     setTotals(EMPTY_TOTALS);
-    // A new session starts with no history of its own. Resetting here — the
-    // same place totals reset — is what keeps a previous sitting, or a
-    // previous account, from bleeding into this one's summary.
-    setReceipts([]);
+    // Phase 67 — receipts are deliberately NOT reset here any more.
+    //
+    // This runs on every mount, so clearing here is exactly what made a
+    // refresh destroy the session's evidence: the remount that was supposed to
+    // RESUME the session wiped it instead. It is also the retry path, and a
+    // failed page load is not a new session either.
+    //
+    // Whether this is a new session or a resumed one is now decided explicitly
+    // by resolveSessionStart below, which is the only place that judgement
+    // belongs.
 
     try {
       const page = await getDueStudyItemsPage(uid, Date.now(), DEFAULT_QUEUE_PAGE_SIZE, null);
@@ -154,6 +187,56 @@ export function useReviewSession(uid: string | undefined) {
   useEffect(() => {
     loadFirstPage();
   }, [loadFirstPage]);
+
+  // Phase 67 — adopt the active session, or begin a new one.
+  //
+  // Runs once per user. A compatible persisted session (same user, same mode,
+  // same schema, not technically stale) is RESUMED with its identity and its
+  // receipts intact; anything else starts a genuinely new session with no
+  // evidence carried across.
+  useEffect(() => {
+    if (!uid) {
+      setIsSessionHydrated(false);
+      return;
+    }
+    let cancelled = false;
+    setIsSessionHydrated(false);
+
+    (async () => {
+      const raw = await loadActiveStudySessionRaw();
+      if (cancelled || activeUidRef.current !== uid) return;
+      const start = resolveSessionStart({
+        raw,
+        userId: uid,
+        mode: ACTIVE_SESSION_MODE,
+        now: Date.now(),
+      });
+      sessionRef.current = { id: start.sessionInstanceId, startedAt: start.startedAt };
+      // Merged, never assigned. Storage is fast and this normally lands long
+      // before the first answer, but if an outcome were confirmed while the
+      // read was still in flight, overwriting would drop it. Folding through
+      // appendSessionReceipt keeps confirmed order and lets operationId settle
+      // any overlap, so the result is correct whichever finishes first.
+      setReceipts((prev) => start.receipts.reduce(appendSessionReceipt, prev));
+      setIsSessionHydrated(true);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [uid]);
+
+  // Phase 67 — a completed session stops being resumable.
+  //
+  // Only the STORED record is removed; the in-memory receipts stay, so the
+  // completion screen still renders the summary it just earned. Clearing at
+  // this exact point is what stops a finished session reopening as active, and
+  // what stops its reflection reappearing at the start of the next one.
+  useEffect(() => {
+    if (!isComplete) return;
+    sessionRef.current = null;
+    clearActiveStudySession();
+  }, [isComplete]);
 
   // Belt-and-suspenders alongside the retry-time clear above: if the
   // screen unmounts (student navigates away) while the flourish's timeout
@@ -255,6 +338,7 @@ export function useReviewSession(uid: string | undefined) {
       setActionError(null);
       const operation = resolveGestureOperation(operationRef.current, questionId, outcome);
       operationRef.current = operation;
+      const uidAtSubmit = activeUidRef.current;
 
       try {
         await recordStudyOutcome(questionId, outcome, operation.operationId);
@@ -274,15 +358,31 @@ export function useReviewSession(uid: string | undefined) {
         const answered = entriesRef.current.find(
           (candidate) => candidate.item.questionId === questionId,
         );
-        setReceipts((prev) =>
-          appendSessionReceipt(prev, {
-            operationId: operation.operationId,
-            questionId,
-            subject: answered?.question?.subject ?? "",
-            topic: answered?.question?.topic ?? "",
-            outcome,
-          }),
-        );
+        const nextReceipts = appendSessionReceipt(receiptsRef.current, {
+          operationId: operation.operationId,
+          questionId,
+          subject: answered?.question?.subject ?? "",
+          topic: answered?.question?.topic ?? "",
+          outcome,
+        });
+        setReceipts(nextReceipts);
+        // Phase 67 — persisted only after the server accepted the outcome, and
+        // only through the same append rule, so a replayed callback cannot
+        // write a second copy. Deliberately not awaited: the card advance must
+        // not wait on a local write, and a failed write is not a failed study
+        // outcome — the session simply keeps its in-memory receipt.
+        const session = sessionRef.current;
+        if (session && uidAtSubmit) {
+          saveActiveStudySession(
+            buildActiveStudySession({
+              sessionInstanceId: session.id,
+              userId: uidAtSubmit,
+              mode: ACTIVE_SESSION_MODE,
+              startedAt: session.startedAt,
+              receipts: nextReceipts,
+            }),
+          );
+        }
         // The mutation and the Study Engine scheduling it triggers are
         // already complete at this point — recordStudyOutcome has
         // resolved. Everything below is purely presentational: hold this
@@ -360,6 +460,7 @@ export function useReviewSession(uid: string | undefined) {
     total: entries.length,
     totals,
     receipts,
+    isSessionHydrated,
     isLoading,
     isLoadingMore,
     loadError,
