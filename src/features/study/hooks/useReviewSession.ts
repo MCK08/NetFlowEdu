@@ -17,6 +17,10 @@ import {
   interleaveReviewEntries,
   trailingTopicKey,
 } from "../services/reviewSessionComposition";
+import {
+  appendSessionReceipt,
+  SessionOutcomeReceipt,
+} from "../services/sessionReflection";
 import { mergeResolvedPages, removeStudyItemById } from "../services/studyQueueMerge";
 import { shouldApplyStaleResponse } from "../services/staleResponseGuard";
 
@@ -36,6 +40,19 @@ export function useReviewSession(uid: string | undefined) {
   const [entries, setEntries] = useState<ResolvedQueueEntry[]>([]);
   const [index, setIndex] = useState(0);
   const [totals, setTotals] = useState<SessionTotals>(EMPTY_TOTALS);
+  // Phase 66 — the ordered receipt behind the closure summary.
+  //
+  // `totals` already counted confirmed outcomes, but counts alone cannot say
+  // "zorlanmanın ardından çözüm görüldü": that needs the ORDER and the topic,
+  // which only exist here, in the session that produced them. Kept in session
+  // state rather than persisted — it describes one sitting and should not
+  // outlive it.
+  const [receipts, setReceipts] = useState<SessionOutcomeReceipt[]>([]);
+  // Read inside submitOutcome to resolve the answered question's topic. A ref
+  // rather than a dependency so the submit callback keeps a stable identity —
+  // the same pattern this hook already uses for uid, cursor and generation.
+  const entriesRef = useRef<ResolvedQueueEntry[]>([]);
+  entriesRef.current = entries;
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -99,6 +116,10 @@ export function useReviewSession(uid: string | undefined) {
     setIsComplete(false);
     setIndex(0);
     setTotals(EMPTY_TOTALS);
+    // A new session starts with no history of its own. Resetting here — the
+    // same place totals reset — is what keeps a previous sitting, or a
+    // previous account, from bleeding into this one's summary.
+    setReceipts([]);
 
     try {
       const page = await getDueStudyItemsPage(uid, Date.now(), DEFAULT_QUEUE_PAGE_SIZE, null);
@@ -244,6 +265,24 @@ export function useReviewSession(uid: string | undefined) {
           struggled: prev.struggled + (outcome === "struggled" ? 1 : 0),
           again: prev.again + (outcome === "again" ? 1 : 0),
         }));
+        // Phase 66 — recorded ONLY here, after recordStudyOutcome resolved.
+        // A failed write throws before this line, so an outcome the server
+        // never accepted can never appear in the summary. Keyed on the same
+        // operationId the write itself uses for idempotency, so a replayed
+        // success or a retry that had actually succeeded collapses to one
+        // entry rather than inflating the session count.
+        const answered = entriesRef.current.find(
+          (candidate) => candidate.item.questionId === questionId,
+        );
+        setReceipts((prev) =>
+          appendSessionReceipt(prev, {
+            operationId: operation.operationId,
+            questionId,
+            subject: answered?.question?.subject ?? "",
+            topic: answered?.question?.topic ?? "",
+            outcome,
+          }),
+        );
         // The mutation and the Study Engine scheduling it triggers are
         // already complete at this point — recordStudyOutcome has
         // resolved. Everything below is purely presentational: hold this
@@ -320,6 +359,7 @@ export function useReviewSession(uid: string | undefined) {
     index,
     total: entries.length,
     totals,
+    receipts,
     isLoading,
     isLoadingMore,
     loadError,

@@ -22,6 +22,8 @@ import { resolveAssignmentSessionCompletion } from "@features/assignments/servic
 
 import { StudySessionAdaptiveCard } from "../components/StudySessionAdaptiveCard";
 import { StudySessionMandatoryCard } from "../components/StudySessionMandatoryCard";
+import { SessionReflectionCard } from "../components/SessionReflectionCard";
+import { buildSessionReflection } from "../services/sessionReflection";
 import { useAdaptiveStudySession } from "../hooks/useAdaptiveStudySession";
 import { useReviewSession } from "../hooks/useReviewSession";
 import { useStudyQueue } from "../hooks/useStudyQueue";
@@ -205,6 +207,15 @@ export function StudySessionScreen({ mode, assignmentId }: StudySessionScreenPro
     if (mandatory.hasMore) mandatory.retryPagination();
   }, [mandatory]);
 
+  // Phase 66 — the session's own summary, derived from the receipts it
+  // confirmed. Memoized on the receipt array, which stops changing once the
+  // session completes, so the visible summary describes THAT session and
+  // cannot be rewritten by anything that loads afterwards.
+  const sessionReflection = useMemo(
+    () => buildSessionReflection(mandatory.receipts),
+    [mandatory.receipts],
+  );
+
   const isMandatoryComplete = mode === "mandatory" && mandatory.isComplete;
   const isAdaptiveDone =
     mode === "adaptive" && !adaptive.isLoading && adaptive.questions.length === 0;
@@ -301,12 +312,11 @@ export function StudySessionScreen({ mode, assignmentId }: StudySessionScreenPro
             <Text style={styles.completionTitle}>
               {mandatory.total === 0 ? "Şu an tekrar bekleyen soru yok" : "Bugünkü tekrarların tamamlandı 🎉"}
             </Text>
-            {mandatory.totals.reviewed > 0 ? (
-              <Text style={styles.completionSubtitle}>
-                {mandatory.totals.reviewed} soru tekrar edildi · {mandatory.totals.solved} doğru
-                {mandatory.totals.struggled > 0 ? ` · ${mandatory.totals.struggled} zorlanılan` : ""}
-              </Text>
-            ) : null}
+            {/* Phase 66 — what actually happened, in the order it happened.
+                Replaces a flat "N reviewed · M correct" line, which could not
+                say anything about topics or sequence and silently dropped
+                "Tekrar Çalıştım" outcomes from the count entirely. */}
+            <SessionReflectionCard reflection={sessionReflection} />
             <Text style={styles.completionHint}>
               İstersen şimdi eksik olduğun konular üzerinde çalışabilirsin.
             </Text>
