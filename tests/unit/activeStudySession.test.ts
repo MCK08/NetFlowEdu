@@ -15,8 +15,15 @@ import {
   createSessionInstanceId,
   parseActiveStudySession,
   resolveSessionStart,
-  serializeActiveStudySession,
 } from "../../src/features/study/services/activeStudySession";
+import {
+  EMPTY_STUDY_SESSION_STORE,
+  parseStudySessionStore,
+  putStudySessionSlot,
+  readStudySessionSlot,
+  serializeStudySessionStore,
+  STUDY_SESSION_STORE_VERSION,
+} from "../../src/features/study/services/studySessionStore";
 import {
   appendSessionReceipt,
   buildSessionReflection,
@@ -51,8 +58,43 @@ function envelope(
   });
 }
 
+// Phase 69 no longer WRITES this shape — the store does (studySessionStore.ts).
+// It is still exactly what a device may hold from a Phase 67/68 session that is
+// genuinely in progress, so these tests keep exercising it as untrusted input
+// and as the migration source. Written out explicitly rather than through a
+// production writer, so they cannot quietly follow a format change.
+function serializeLegacy(input: ActiveStudySessionEnvelope): string {
+  return JSON.stringify({
+    version: input.version,
+    sessionInstanceId: input.sessionInstanceId,
+    userId: input.userId,
+    mode: input.mode,
+    startedAt: input.startedAt,
+    receipts: input.receipts.map((r) => ({
+      operationId: r.operationId,
+      questionId: r.questionId,
+      subject: r.subject,
+      topic: r.topic,
+      outcome: r.outcome,
+    })),
+    plannedQuestionIds: [...input.plannedQuestionIds],
+    completedAt: input.completedAt,
+  });
+}
+
 function stored(overrides: Partial<ActiveStudySessionEnvelope> = {}): string {
-  return serializeActiveStudySession(envelope(overrides));
+  return serializeLegacy(envelope(overrides));
+}
+
+// The REAL write path since Phase 69: one slot inside the bounded store.
+function storedByProduction(overrides: Partial<ActiveStudySessionEnvelope> = {}): string {
+  return serializeStudySessionStore(
+    putStudySessionSlot(EMPTY_STUDY_SESSION_STORE, envelope(overrides)),
+  );
+}
+
+function hydratedReceipts(raw: string): SessionOutcomeReceipt[] {
+  return readStudySessionSlot(parseStudySessionStore(raw), "mandatory")!.receipts;
 }
 
 describe("active session — storage contract", () => {
@@ -64,11 +106,11 @@ describe("active session — storage contract", () => {
     const original = envelope({
       receipts: [receipt("op1", "struggled"), receipt("op2", "solved")],
     });
-    expect(parseActiveStudySession(serializeActiveStudySession(original))).toEqual(original);
+    expect(parseActiveStudySession(serializeLegacy(original))).toEqual(original);
   });
 
   it("serialises stable output for the same envelope", () => {
-    expect(serializeActiveStudySession(envelope())).toBe(serializeActiveStudySession(envelope()));
+    expect(serializeLegacy(envelope())).toBe(serializeLegacy(envelope()));
   });
 });
 
@@ -252,14 +294,17 @@ describe("active session — resume decision", () => {
     const first = start(stored(), USER, NOW + 60_000);
     expect(first.startedAt).toBe(NOW);
     const second = resolveSessionStart({
-      raw: serializeActiveStudySession(
-        buildActiveStudySession({
-          sessionInstanceId: first.sessionInstanceId,
-          userId: USER,
-          mode: "mandatory",
-          startedAt: first.startedAt,
-          receipts: first.receipts,
-        }),
+      raw: serializeStudySessionStore(
+        putStudySessionSlot(
+          EMPTY_STUDY_SESSION_STORE,
+          buildActiveStudySession({
+            sessionInstanceId: first.sessionInstanceId,
+            userId: USER,
+            mode: "mandatory",
+            startedAt: first.startedAt,
+            receipts: first.receipts,
+          }),
+        ),
       ),
       userId: USER,
       mode: "mandatory",
@@ -291,14 +336,17 @@ describe("session instance id", () => {
 // The sequence useReviewSession actually performs, step by step.
 describe("session lifecycle — modelled in hook order", () => {
   function persist(sessionInstanceId: string, startedAt: number, receipts: SessionOutcomeReceipt[]) {
-    return serializeActiveStudySession(
-      buildActiveStudySession({
-        sessionInstanceId,
-        userId: USER,
-        mode: "mandatory",
-        startedAt,
-        receipts,
-      }),
+    return serializeStudySessionStore(
+      putStudySessionSlot(
+        EMPTY_STUDY_SESSION_STORE,
+        buildActiveStudySession({
+          sessionInstanceId,
+          userId: USER,
+          mode: "mandatory",
+          startedAt,
+          receipts,
+        }),
+      ),
     );
   }
 
@@ -418,8 +466,8 @@ describe("reflection equivalence", () => {
   ];
 
   it("produces an identical reflection after a storage round trip", () => {
-    const raw = serializeActiveStudySession(envelope({ receipts: inMemory }));
-    const hydrated = parseActiveStudySession(raw)!.receipts;
+    const raw = storedByProduction({ receipts: inMemory });
+    const hydrated = hydratedReceipts(raw);
     expect(buildSessionReflection(hydrated)).toEqual(buildSessionReflection(inMemory));
     expect(sessionHeadline(buildSessionReflection(hydrated))).toBe(
       sessionHeadline(buildSessionReflection(inMemory)),
@@ -427,8 +475,8 @@ describe("reflection equivalence", () => {
   });
 
   it("keeps the topic moment a round trip earned", () => {
-    const raw = serializeActiveStudySession(envelope({ receipts: inMemory }));
-    const reflection = buildSessionReflection(parseActiveStudySession(raw)!.receipts);
+    const raw = storedByProduction({ receipts: inMemory });
+    const reflection = buildSessionReflection(hydratedReceipts(raw));
     expect(reflection.moments[0]!.topic).toBe("Denklemler");
     expect(reflection.moments[0]!.kind).toBe("recovery");
   });
@@ -436,11 +484,12 @@ describe("reflection equivalence", () => {
 
 describe("persisted payload privacy", () => {
   it("writes only the declared fields", () => {
-    const raw = serializeActiveStudySession(envelope());
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    expect(Object.keys(parsed).sort()).toEqual([
-      // Phase 68 added exactly two: the frozen plan (ids only) and the
-      // completion stamp. Neither is question content.
+    const parsed = JSON.parse(storedByProduction()) as Record<string, unknown>;
+    expect(Object.keys(parsed).sort()).toEqual(["slots", "version"]);
+    const slot = (parsed.slots as Record<string, Record<string, unknown>>).mandatory!;
+    expect(Object.keys(slot).sort()).toEqual([
+      // Phase 68 added the frozen plan (ids only) and the completion stamp.
+      // Phase 69 moved `version` up to the store. Nothing here is content.
       "completedAt",
       "mode",
       "plannedQuestionIds",
@@ -448,9 +497,8 @@ describe("persisted payload privacy", () => {
       "sessionInstanceId",
       "startedAt",
       "userId",
-      "version",
     ]);
-    const entry = (parsed.receipts as Record<string, unknown>[])[0]!;
+    const entry = (slot.receipts as Record<string, unknown>[])[0]!;
     expect(Object.keys(entry).sort()).toEqual([
       "operationId",
       "outcome",
@@ -461,9 +509,7 @@ describe("persisted payload privacy", () => {
   });
 
   it("carries no question content, credential or profile field", () => {
-    const raw = serializeActiveStudySession(
-      envelope({ receipts: [receipt("op1", "solved", "q1")] }),
-    );
+    const raw = storedByProduction({ receipts: [receipt("op1", "solved", "q1")] });
     for (const forbidden of [
       "questionText",
       "imageUrl",
@@ -480,8 +526,8 @@ describe("persisted payload privacy", () => {
   });
 
   it("stamps the declared schema version", () => {
-    expect(JSON.parse(serializeActiveStudySession(envelope())).version).toBe(
-      ACTIVE_STUDY_SESSION_VERSION,
-    );
+    expect(JSON.parse(storedByProduction()).version).toBe(STUDY_SESSION_STORE_VERSION);
+    // The legacy constant still names the newest format this build can READ.
+    expect(ACTIVE_STUDY_SESSION_VERSION).toBe(2);
   });
 });

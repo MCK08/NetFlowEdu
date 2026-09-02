@@ -7,8 +7,13 @@ import {
   parseActiveStudySession,
   resolveCompletedSession,
   resolveSessionStart,
-  serializeActiveStudySession,
 } from "../../src/features/study/services/activeStudySession";
+import {
+  parseStudySessionStore,
+  putStudySessionSlot,
+  removeStudySessionSlot,
+  serializeStudySessionStore,
+} from "../../src/features/study/services/studySessionStore";
 import { resolveAdaptiveSessionCompletion } from "../../src/features/study/services/adaptiveSessionCompletion";
 import {
   appendSessionReceipt,
@@ -85,16 +90,7 @@ class AdaptiveSessionModel {
     );
     if (next.length === this.receipts.length) return this;
     this.receipts = next;
-    this.raw = serializeActiveStudySession(
-      buildActiveStudySession({
-        sessionInstanceId: this.sessionInstanceId,
-        userId: this.userId,
-        mode: this.mode,
-        startedAt: this.startedAt,
-        receipts: next,
-        plannedQuestionIds: this.plannedQuestionIds ?? [],
-      }),
-    );
+    this.write({ receipts: next });
     return this;
   }
 
@@ -111,24 +107,35 @@ class AdaptiveSessionModel {
     return this.restoredCompletion || this.completion(resolvable).isComplete;
   }
 
+  /** Phase 69 — the production write path: replace THIS mode's slot inside the
+   *  store, carrying every other mode's slot through untouched. */
+  private write(overrides: { receipts?: SessionOutcomeReceipt[]; completedAt?: number | null }): void {
+    this.raw = serializeStudySessionStore(
+      putStudySessionSlot(
+        parseStudySessionStore(this.raw),
+        buildActiveStudySession({
+          sessionInstanceId: this.sessionInstanceId,
+          userId: this.userId,
+          mode: this.mode,
+          startedAt: this.startedAt,
+          receipts: overrides.receipts ?? this.receipts,
+          plannedQuestionIds: this.plannedQuestionIds ?? [],
+          completedAt: overrides.completedAt ?? null,
+        }),
+      ),
+    );
+  }
+
   /** What the hook writes when completion is reached. */
   persistCompletion(now = NOW + 1000): this {
-    this.raw = serializeActiveStudySession(
-      buildActiveStudySession({
-        sessionInstanceId: this.sessionInstanceId,
-        userId: this.userId,
-        mode: this.mode,
-        startedAt: this.startedAt,
-        receipts: this.receipts,
-        plannedQuestionIds: this.plannedQuestionIds ?? [],
-        completedAt: now,
-      }),
-    );
+    this.write({ completedAt: now });
     return this;
   }
 
   acknowledge(): this {
-    this.raw = null;
+    this.raw = serializeStudySessionStore(
+      removeStudySessionSlot(parseStudySessionStore(this.raw), this.mode),
+    );
     return this;
   }
 }
@@ -400,6 +407,6 @@ describe("adaptive lifecycle — schema migration", () => {
   it("writes the current version", () => {
     const model = new AdaptiveSessionModel(USER).mount(["a"]);
     model.confirm("a");
-    expect(JSON.parse(model.raw as string).version).toBe(2);
+    expect(JSON.parse(model.raw as string).version).toBe(3);
   });
 });

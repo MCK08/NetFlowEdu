@@ -21,9 +21,9 @@ import {
   resolveSessionStart,
 } from "../services/activeStudySession";
 import {
-  clearActiveStudySession,
+  clearStudySessionSlot,
   loadActiveStudySessionRaw,
-  saveActiveStudySession,
+  saveStudySessionSlot,
 } from "../services/activeStudySessionStorage";
 import { resolveAdaptiveSessionCompletion } from "../services/adaptiveSessionCompletion";
 
@@ -213,7 +213,7 @@ export function useAdaptiveStudySession(uid: string | undefined, summary: StudyS
     if (!session || !userId) return;
     if (persistedCompletionRef.current === session.id) return;
     persistedCompletionRef.current = session.id;
-    saveActiveStudySession(
+    saveStudySessionSlot(
       buildActiveStudySession({
         sessionInstanceId: session.id,
         userId,
@@ -255,7 +255,7 @@ export function useAdaptiveStudySession(uid: string | undefined, summary: StudyS
       // Deliberately not awaited: the card advance must not wait on a local
       // write, and a failed local write is not a failed study outcome — the
       // session simply keeps its in-memory receipt.
-      saveActiveStudySession(
+      saveStudySessionSlot(
         buildActiveStudySession({
           sessionInstanceId: session.id,
           userId,
@@ -276,7 +276,7 @@ export function useAdaptiveStudySession(uid: string | undefined, summary: StudyS
    *  completion itself on purpose: the snapshot has to outlive a refresh, and
    *  only an explicit departure says the student is done reading it. */
   const acknowledgeCompletion = useCallback(() => {
-    clearActiveStudySession();
+    clearStudySessionSlot(ACTIVE_SESSION_MODE);
   }, []);
 
   return {

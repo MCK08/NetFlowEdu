@@ -28,9 +28,9 @@ import {
   resolveSessionStart,
 } from "../services/activeStudySession";
 import {
-  clearActiveStudySession,
+  clearStudySessionSlot,
   loadActiveStudySessionRaw,
-  saveActiveStudySession,
+  saveStudySessionSlot,
 } from "../services/activeStudySessionStorage";
 import { mergeResolvedPages, removeStudyItemById } from "../services/studyQueueMerge";
 import { shouldApplyStaleResponse } from "../services/staleResponseGuard";
@@ -269,7 +269,7 @@ export function useReviewSession(uid: string | undefined) {
     if (!session || !userId) return;
     if (persistedCompletionRef.current === session.id) return;
     persistedCompletionRef.current = session.id;
-    saveActiveStudySession(
+    saveStudySessionSlot(
       buildActiveStudySession({
         sessionInstanceId: session.id,
         userId,
@@ -285,7 +285,7 @@ export function useReviewSession(uid: string | undefined) {
    *  so the next visit starts a genuinely new session instead of reopening the
    *  last one's summary. */
   const acknowledgeCompletion = useCallback(() => {
-    clearActiveStudySession();
+    clearStudySessionSlot(ACTIVE_SESSION_MODE);
   }, []);
 
   // Belt-and-suspenders alongside the retry-time clear above: if the
@@ -423,7 +423,7 @@ export function useReviewSession(uid: string | undefined) {
         // outcome — the session simply keeps its in-memory receipt.
         const session = sessionRef.current;
         if (session && uidAtSubmit) {
-          saveActiveStudySession(
+          saveStudySessionSlot(
             buildActiveStudySession({
               sessionInstanceId: session.id,
               userId: uidAtSubmit,

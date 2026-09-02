@@ -2,6 +2,7 @@ import { isStudyOutcome } from "../domain/studyTypes";
 
 import { createOperationId } from "./gestureOperationId";
 import { appendSessionReceipt, SessionOutcomeReceipt } from "./sessionReflection";
+import { parseStudySessionStore, readStudySessionSlot } from "./studySessionStore";
 
 // Phase 67 — durable local identity for ONE active study session.
 //
@@ -31,7 +32,11 @@ import { appendSessionReceipt, SessionOutcomeReceipt } from "./sessionReflection
 // Local storage is untrusted input. Everything below treats it that way.
 
 /** Namespaced and versioned, following themeStorage's Phase 49 convention.
- *  Bump the suffix only if the stored SHAPE changes incompatibly. */
+ *
+ *  Phase 69 kept the KEY and versioned the payload instead (see
+ *  studySessionStore.ts). A new key would have orphaned every session already
+ *  in progress on a device; the payload's own version carries the migration,
+ *  and orphaning real work to avoid a schema branch is the wrong trade. */
 export const ACTIVE_STUDY_SESSION_STORAGE_KEY = "netflowedu.study.active-session.v1";
 
 // Phase 68 — WRITES are version 2. READS still accept version 1.
@@ -48,6 +53,11 @@ export const ACTIVE_STUDY_SESSION_STORAGE_KEY = "netflowedu.study.active-session
 //     finished session's receipts into the next one's "Bu çalışmada" summary.
 //     Failing closed there costs one resume; reinterpreting would cost the
 //     honesty the summary exists for.
+//
+// Phase 69 — this is now the newest LEGACY version. Writes go through
+// studySessionStore.ts (version 3); these two remain because a device may
+// still hold a v1/v2 record from a session that is genuinely in progress, and
+// that session is migrated rather than discarded.
 export const ACTIVE_STUDY_SESSION_VERSION = 2;
 
 const READABLE_VERSIONS: readonly number[] = [1, 2];
@@ -59,6 +69,13 @@ const READABLE_VERSIONS: readonly number[] = [1, 2];
 // The mode is persisted, and matched exactly on hydration, so one kind of
 // session's evidence can never be adopted by another.
 export type ActiveStudySessionMode = "mandatory" | "adaptive";
+
+/** The complete, closed set. Phase 69's store iterates THIS rather than the
+ *  stored object's own keys, so a malformed record cannot invent a slot. */
+export const ACTIVE_STUDY_SESSION_MODES: readonly ActiveStudySessionMode[] = [
+  "mandatory",
+  "adaptive",
+];
 
 export function isActiveStudySessionMode(value: unknown): value is ActiveStudySessionMode {
   return value === "mandatory" || value === "adaptive";
@@ -160,18 +177,28 @@ function parseReceipt(value: unknown): SessionOutcomeReceipt | null {
   return { operationId, questionId, subject, topic, outcome: value.outcome };
 }
 
-/** Parses the stored envelope. Total: returns null for anything it cannot
+/** Validates a stored receipt array.
+ *
+ *  Folded through Phase 66's own append rule, so a duplicated operationId in
+ *  corrupted storage collapses exactly the way a replayed callback does — one
+ *  dedupe rule, not a second look-alike implementation. Shared with Phase 69's
+ *  store so both formats agree on what a receipt is. */
+export function parseSessionReceipts(value: readonly unknown[]): SessionOutcomeReceipt[] {
+  return value.reduce<SessionOutcomeReceipt[]>((acc, entry) => {
+    const receipt = parseReceipt(entry);
+    return receipt ? appendSessionReceipt(acc, receipt) : acc;
+  }, []);
+}
+
+/** Parses one LEGACY (Phase 67 v1 / Phase 68 v2) single-session record.
+ *
+ *  Phase 69 no longer writes this shape; this is the migration input parser
+ *  (studySessionStore.ts calls it), kept rather than re-implemented so the two
+ *  formats cannot drift apart. Total: returns null for anything it cannot
  *  fully vouch for, and never throws. */
-export function parseActiveStudySession(raw: string | null): ActiveStudySessionEnvelope | null {
-  if (!raw) return null;
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return null;
-  }
-
+export function parseLegacyActiveStudySession(
+  parsed: unknown,
+): ActiveStudySessionEnvelope | null {
   if (!isPlainObject(parsed)) return null;
 
   // Fail closed on an unknown version. A newer build's shape must never be
@@ -194,13 +221,7 @@ export function parseActiveStudySession(raw: string | null): ActiveStudySessionE
       ? parsed.completedAt
       : null;
 
-  // Folded through Phase 66's own append rule, so a duplicated operationId in
-  // corrupted storage collapses exactly the way a replayed callback does —
-  // one dedupe rule, not a second look-alike implementation.
-  const receipts = parsed.receipts.reduce<SessionOutcomeReceipt[]>((acc, entry) => {
-    const receipt = parseReceipt(entry);
-    return receipt ? appendSessionReceipt(acc, receipt) : acc;
-  }, []);
+  const receipts = parseSessionReceipts(parsed.receipts);
 
   return {
     version: ACTIVE_STUDY_SESSION_VERSION,
@@ -212,6 +233,18 @@ export function parseActiveStudySession(raw: string | null): ActiveStudySessionE
     plannedQuestionIds,
     completedAt,
   };
+}
+
+/** The string-level entry point for the legacy format, retained because the
+ *  Phase 67/68 tests exercise it directly and the migration path depends on
+ *  exactly this behaviour. */
+export function parseActiveStudySession(raw: string | null): ActiveStudySessionEnvelope | null {
+  if (!raw) return null;
+  try {
+    return parseLegacyActiveStudySession(JSON.parse(raw));
+  } catch {
+    return null;
+  }
 }
 
 export interface SessionStart {
@@ -247,7 +280,10 @@ export function resolveSessionStart(params: {
   mode: ActiveStudySessionMode;
   now: number;
 }): SessionStart {
-  const existing = parseActiveStudySession(params.raw);
+  // Phase 69 — reads THIS MODE'S slot. The sibling mode's session is not
+  // consulted, not compared against, and not touched: entering one mode is
+  // not a statement about the other, which is the whole point of the phase.
+  const existing = readStudySessionSlot(parseStudySessionStore(params.raw), params.mode);
 
   const compatible =
     existing !== null &&
@@ -301,7 +337,7 @@ export function resolveCompletedSession(params: {
   mode: ActiveStudySessionMode;
   now: number;
 }): ActiveStudySessionEnvelope | null {
-  const existing = parseActiveStudySession(params.raw);
+  const existing = readStudySessionSlot(parseStudySessionStore(params.raw), params.mode);
   if (!existing || existing.completedAt === null) return null;
   if (existing.userId !== params.userId || existing.mode !== params.mode) return null;
   if (params.now < existing.startedAt) return null;
@@ -330,31 +366,4 @@ export function buildActiveStudySession(params: {
     plannedQuestionIds: normalizePlannedQuestionIds(params.plannedQuestionIds ?? []),
     completedAt: params.completedAt ?? null,
   };
-}
-
-/** Serialises the envelope, writing ONLY the fields above.
- *
- *  Nothing question-shaped is persisted: no question text, no images, no
- *  answer choices, no teacher content, no student name, no queue snapshot and
- *  no Firestore cursor. subject/topic are carried because the reflection needs
- *  them after a restart and the answered item has by then left the due query —
- *  they are short learning metadata the session already held in memory, not
- *  content. */
-export function serializeActiveStudySession(envelope: ActiveStudySessionEnvelope): string {
-  return JSON.stringify({
-    version: envelope.version,
-    sessionInstanceId: envelope.sessionInstanceId,
-    userId: envelope.userId,
-    mode: envelope.mode,
-    startedAt: envelope.startedAt,
-    receipts: envelope.receipts.map((receipt) => ({
-      operationId: receipt.operationId,
-      questionId: receipt.questionId,
-      subject: receipt.subject,
-      topic: receipt.topic,
-      outcome: receipt.outcome,
-    })),
-    plannedQuestionIds: [...envelope.plannedQuestionIds],
-    completedAt: envelope.completedAt,
-  });
 }
