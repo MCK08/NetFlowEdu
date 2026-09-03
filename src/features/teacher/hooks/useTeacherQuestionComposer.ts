@@ -97,6 +97,7 @@ export function useTeacherQuestionComposer({
         topic: details.topic,
         choices: details.choices,
         correctChoice: details.correctChoice,
+        hints: details.hints,
       });
       onUploaded(question);
       setPickedImageUri(null);

@@ -13,6 +13,7 @@ import { ChoiceLabel, QuestionChoices } from "@/types/question";
 
 import { GRADE_LEVELS, getTopicsForSubject, QUESTION_SUBJECTS } from "../data/questionTaxonomy";
 import { buildChoicesPayload, CHOICE_LABELS } from "../services/multipleChoice";
+import { MAX_HINT_LENGTH, MAX_QUESTION_HINTS, sanitizeHints } from "../services/questionHints";
 
 const MAX_DESCRIPTION_LENGTH = 300;
 
@@ -23,6 +24,8 @@ export interface QuestionMetadataDetails {
   description: string | null;
   choices: QuestionChoices | null;
   correctChoice: ChoiceLabel | null;
+  // Phase 72 — author-written, gentlest first. Empty when none were added.
+  hints: string[];
 }
 
 interface QuestionMetadataModalProps {
@@ -69,6 +72,12 @@ export function QuestionMetadataModal({
   const [mcEnabled, setMcEnabled] = useState(false);
   const [choiceDrafts, setChoiceDrafts] = useState<Partial<Record<ChoiceLabel, string>>>({});
   const [correctChoice, setCorrectChoice] = useState<ChoiceLabel | null>(null);
+  const [hintsEnabled, setHintsEnabled] = useState(false);
+  // One draft per rung. Blank boxes are dropped on save, so an author who
+  // fills 1 and 3 still publishes a contiguous two-step ladder.
+  const [hintDrafts, setHintDrafts] = useState<string[]>(
+    Array.from({ length: MAX_QUESTION_HINTS }, () => ""),
+  );
   const [validationError, setValidationError] = useState<string | null>(null);
 
   // Resets the whole form each time a fresh image is picked, not on every
@@ -113,6 +122,10 @@ export function QuestionMetadataModal({
     if (!nextTopics.includes(topic)) setTopic(nextTopics[0] ?? "");
   }
 
+  function handleHintTextChange(index: number, value: string) {
+    setHintDrafts((current) => current.map((entry, i) => (i === index ? value : entry)));
+  }
+
   function handleChoiceTextChange(label: ChoiceLabel, value: string) {
     setChoiceDrafts((prev) => ({ ...prev, [label]: value }));
   }
@@ -148,6 +161,8 @@ export function QuestionMetadataModal({
     }
 
     setValidationError(null);
+    const hints = hintsEnabled ? sanitizeHints(hintDrafts) : [];
+
     onSubmit({
       subject,
       gradeLevel,
@@ -155,6 +170,7 @@ export function QuestionMetadataModal({
       description: description.trim().length > 0 ? description.trim() : null,
       choices,
       correctChoice: finalCorrectChoice,
+      hints,
     });
   }
 
@@ -235,6 +251,37 @@ export function QuestionMetadataModal({
                       );
                     })}
                   </View>
+                </View>
+              ) : null}
+            </View>
+
+            <View style={styles.mcSection}>
+              <Checkbox
+                label="İpucu ekle (isteğe bağlı)"
+                checked={hintsEnabled}
+                onToggle={setHintsEnabled}
+              />
+
+              {hintsEnabled ? (
+                <View style={styles.mcFields}>
+                  <Text style={styles.hintHelp}>
+                    Öğrenci takıldığında sırayla gösterilir. İpuçlarını doğrudan cevabı vermeden
+                    adım adım yaz.
+                  </Text>
+                  {hintDrafts.map((value, index) => (
+                    <View key={index} style={styles.choiceRow}>
+                      <Text style={styles.choiceLetter}>{index + 1}</Text>
+                      <TextInput
+                        style={styles.choiceInput}
+                        placeholder={`${index + 1}. ipucu`}
+                        placeholderTextColor={colors.textTertiary}
+                        value={value}
+                        onChangeText={(next) => handleHintTextChange(index, next)}
+                        maxLength={MAX_HINT_LENGTH}
+                        multiline
+                      />
+                    </View>
+                  ))}
                 </View>
               ) : null}
             </View>
@@ -358,6 +405,10 @@ const styles = themedStyles(() => ({
   },
   mcFields: {
     gap: spacing.xs,
+  },
+  hintHelp: {
+    ...typography.caption,
+    color: colors.textSecondary,
   },
   choiceRow: {
     flexDirection: "row",

@@ -244,6 +244,7 @@ describe("buildClassTopicHotspots — evidence-derived gradeLevel", () => {
       answerCount: 0,
       choices: null,
       correctChoice: null,
+      hints: [],
       ...overrides,
     };
   }

@@ -752,6 +752,66 @@ describe("firestore.rules — questions/{questionId} visibility model", () => {
     expect(snapshot.data()?.correctChoice).toBe("A");
   });
 
+  // Phase 72 — an optional authored hint ladder. Rules bound the LIST size
+  // (they cannot iterate it to measure each entry); per-entry trimming and
+  // truncation is questionHints.ts's job on both write and read.
+  it("allows creating a question with an authored hint ladder", async () => {
+    const student = studentContext("student-1");
+    const ref = await assertSucceeds(
+      addDoc(collection(student.firestore(), "questions"), {
+        ...publicQuestionDoc({ ownerId: "student-1" }),
+        hints: ["Önce birimlere bak.", "Denklemi sadeleştir."],
+        createdAt: serverTimestamp(),
+      }),
+    );
+    const snapshot = await getDoc(doc(student.firestore(), "questions", ref.id));
+    expect(snapshot.data()?.hints).toEqual(["Önce birimlere bak.", "Denklemi sadeleştir."]);
+  });
+
+  it("allows creating a question with no hints field at all", async () => {
+    // Every pre-Phase-72 writer must keep working untouched.
+    const student = studentContext("student-1");
+    await assertSucceeds(
+      addDoc(collection(student.firestore(), "questions"), {
+        ...publicQuestionDoc({ ownerId: "student-1" }),
+        createdAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it("allows an explicitly null hints field", async () => {
+    const student = studentContext("student-1");
+    await assertSucceeds(
+      addDoc(collection(student.firestore(), "questions"), {
+        ...publicQuestionDoc({ ownerId: "student-1" }),
+        hints: null,
+        createdAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it("denies a hint ladder longer than the allowed maximum", async () => {
+    const student = studentContext("student-1");
+    await assertFails(
+      addDoc(collection(student.firestore(), "questions"), {
+        ...publicQuestionDoc({ ownerId: "student-1" }),
+        hints: ["bir", "iki", "üç", "dört"],
+        createdAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it("denies a hints field that is not a list", async () => {
+    const student = studentContext("student-1");
+    await assertFails(
+      addDoc(collection(student.firestore(), "questions"), {
+        ...publicQuestionDoc({ ownerId: "student-1" }),
+        hints: "tek bir ipucu",
+        createdAt: serverTimestamp(),
+      }),
+    );
+  });
+
   // A student (not a teacher, and no real class behind classId: null) can
   // never create a 'class'-visibility question — full teacher+class-owner
   // coverage lives in the dedicated "classes" describe block below.

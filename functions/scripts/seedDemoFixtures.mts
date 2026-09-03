@@ -152,6 +152,24 @@ const Q_INT_3 = "demo-q-int-3";
 
 const QUESTION_IDS = [Q_HEAVY, Q_LIGHT, Q_INT_1, Q_INT_2, Q_INT_3];
 
+// Phase 72 — author-written progressive hints, gentlest first. Deliberately
+// varied rather than the same placeholder on every question: one full
+// three-step ladder, one single hint, and questions with none at all, so the
+// three student-facing states are all reachable from canonical fixtures.
+//
+// Written as a teacher would write them for "Denklemler": each step gives more
+// structure without handing over the result.
+const QUESTION_HINTS: Readonly<Record<string, string[]>> = {
+  [Q_HEAVY]: [
+    "Bilinmeyeni bir tarafta toplamayı dene.",
+    "İki tarafa da aynı işlemi uygularsan eşitlik bozulmaz.",
+    "Bilinmeyeni yalnız bıraktıktan sonra katsayıya bölmen yeterli.",
+  ],
+  [Q_LIGHT]: ["Önce parantezleri açmayı dene."],
+  // Q_INT_1, Q_INT_2, Q_INT_3 deliberately have none — a question without
+  // authored hints must behave exactly as it always did.
+};
+
 async function seedQuestions(): Promise<void> {
   const batch = db.batch();
   for (const id of QUESTION_IDS) {
@@ -173,10 +191,14 @@ async function seedQuestions(): Promise<void> {
       answerCount: 0,
       choices: null,
       correctChoice: null,
+      hints: QUESTION_HINTS[id] ?? [],
     });
   }
   await batch.commit();
-  console.log(`[seedDemoFixtures] seeded ${QUESTION_IDS.length} questions.`);
+  const hinted = QUESTION_IDS.filter((id) => (QUESTION_HINTS[id] ?? []).length > 0).length;
+  console.log(
+    `[seedDemoFixtures] seeded ${QUESTION_IDS.length} questions (${hinted} with authored hints).`,
+  );
 }
 
 // ---------------------------------------------------------------------------

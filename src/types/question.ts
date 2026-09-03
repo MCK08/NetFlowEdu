@@ -69,4 +69,10 @@ export interface Question {
   // either field is ever written.
   choices: QuestionChoices | null;
   correctChoice: ChoiceLabel | null;
+  // Phase 72 — optional AUTHOR-WRITTEN progressive hints, gentlest first.
+  // `[]` for every question created before this phase and for every question
+  // whose author added none — the same "empty rather than optional" convention
+  // `subject`/`topic` already use, so no consumer needs a null check that did
+  // not already exist. Never generated: see questionHints.ts.
+  hints: string[];
 }

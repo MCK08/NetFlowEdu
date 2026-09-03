@@ -17,6 +17,7 @@ import {
 } from "firebase/firestore";
 
 import { parseChoicesFromUnknown, parseCorrectChoiceFromUnknown } from "@features/questions/services/multipleChoice";
+import { parseHintsFromUnknown } from "@features/questions/services/questionHints";
 import { db } from "@services/firebase/config";
 import { Question } from "@/types/question";
 
@@ -84,6 +85,7 @@ function toQuestion(id: string, data: DocumentData): Question {
           : 0,
     choices,
     correctChoice: parseCorrectChoiceFromUnknown(data.correctChoice, choices),
+    hints: parseHintsFromUnknown(data.hints),
   };
 }
 

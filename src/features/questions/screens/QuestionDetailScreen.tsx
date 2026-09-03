@@ -20,6 +20,7 @@ import { themedStyles } from "@theme/themeRuntime";
 import { QuestionDetailCard } from "../components/QuestionDetailCard";
 import { QuestionHeader } from "../components/QuestionHeader";
 import { MultipleChoiceAnswer } from "../components/MultipleChoiceAnswer";
+import { QuestionHintLadder } from "../components/QuestionHintLadder";
 import { useQuestionDetail } from "../hooks/useQuestionDetail";
 import { hasMultipleChoice } from "../services/multipleChoice";
 
@@ -102,6 +103,10 @@ export function QuestionDetailScreen({ questionId }: QuestionDetailScreenProps) 
                 a valid multiple-choice answer; every question without one
                 (which is every question before this phase, and most after
                 it) renders exactly as it always has. */}
+            {/* Phase 72 — support BEFORE answering, inside the existing
+                scroll view. Renders nothing when the author wrote no hints. */}
+            <QuestionHintLadder hints={question.hints} />
+
             {hasMultipleChoice(question.choices) ? (
               <MultipleChoiceAnswer
                 choices={question.choices}

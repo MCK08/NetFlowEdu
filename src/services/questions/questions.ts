@@ -17,6 +17,7 @@ import {
 } from "firebase/firestore";
 
 import { parseChoicesFromUnknown, parseCorrectChoiceFromUnknown } from "@features/questions/services/multipleChoice";
+import { parseHintsFromUnknown, sanitizeHints } from "@features/questions/services/questionHints";
 import { db } from "@services/firebase/config";
 import { ChoiceLabel, Question, QuestionChoices, QuestionPosterRole, QuestionVisibility } from "@/types/question";
 
@@ -49,6 +50,9 @@ export interface CreateQuestionInput {
   // re-validate subject's length here either (that's the composer's job).
   choices?: QuestionChoices | null;
   correctChoice?: ChoiceLabel | null;
+  // Phase 72 — optional author-written hints, gentlest first. Omitted by every
+  // existing caller, which keeps writing exactly the shape it always did.
+  hints?: readonly string[] | null;
 }
 
 // Matches firestore.rules `allow create` exactly: ownerId must be the
@@ -73,6 +77,9 @@ export async function createQuestion(input: CreateQuestionInput): Promise<string
     gradeLevel: input.gradeLevel ?? "",
     choices: input.choices ?? null,
     correctChoice: input.correctChoice ?? null,
+    // Sanitized on the way in as well as on the way out: a blank or
+    // over-long hint must never reach the document in the first place.
+    hints: sanitizeHints(input.hints),
     likeCount: 0,
     commentCount: 0,
     answerCount: 0,
@@ -103,6 +110,7 @@ function toQuestion(id: string, data: DocumentData): Question {
     createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toMillis() : 0,
     choices,
     correctChoice: parseCorrectChoiceFromUnknown(data.correctChoice, choices),
+    hints: parseHintsFromUnknown(data.hints),
   };
 }
 

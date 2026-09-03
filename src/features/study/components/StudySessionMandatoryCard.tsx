@@ -13,6 +13,8 @@ import { ResolvedQueueEntry } from "../services/studyService";
 import { toHydratedStudyItem } from "../services/studyItemParser";
 import { SESSION_IMAGE_MAX_HEIGHT_RATIO } from "../services/studySessionLayout";
 import { StudyAnswerButton } from "./StudyAnswerButton";
+import { QuestionHintLadder } from "@features/questions/components/QuestionHintLadder";
+
 import { StudyOutcomeCard } from "./StudyOutcomeCard";
 import { StudyOutcomeControls } from "./StudyOutcomeControls";
 import { StudyOutcomeSuccessFlourish } from "./StudyOutcomeSuccessFlourish";
@@ -89,6 +91,9 @@ function StudySessionMandatoryCardComponent({
           </View>
           <StudyAnswerButton questionId={question.id} visibility={question.visibility} />
           {question.description ? <Text style={styles.description}>{question.description}</Text> : null}
+          {/* Phase 72 — sits between the question and the rating controls, so
+              support arrives before the student judges how it went. */}
+          <QuestionHintLadder hints={question.hints} />
           <StudyOutcomeControls
             item={toHydratedStudyItem(item)}
             isHydrating={false}

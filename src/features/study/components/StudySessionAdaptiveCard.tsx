@@ -17,6 +17,8 @@ import { SESSION_IMAGE_MAX_HEIGHT_RATIO } from "../services/studySessionLayout";
 import { useStudyQuestionState } from "../hooks/useStudyQuestionState";
 import { StudyAnswerButton } from "./StudyAnswerButton";
 import { StudyOutcomeCard } from "./StudyOutcomeCard";
+import { QuestionHintLadder } from "@features/questions/components/QuestionHintLadder";
+
 import { StudyOutcomeControls } from "./StudyOutcomeControls";
 import { StudyOutcomeSuccessFlourish } from "./StudyOutcomeSuccessFlourish";
 import { useThemeSubscription } from "@theme/ThemeProvider";
@@ -129,6 +131,9 @@ function StudySessionAdaptiveCardComponent({
           </View>
           <StudyAnswerButton questionId={question.id} visibility={question.visibility} />
           {question.description ? <Text style={styles.description}>{question.description}</Text> : null}
+          {/* Phase 72 — same seam as the mandatory card, so both session modes
+              offer support in the same place. */}
+          <QuestionHintLadder hints={question.hints} />
           <StudyOutcomeControls
             item={study.item}
             isHydrating={study.isHydrating}

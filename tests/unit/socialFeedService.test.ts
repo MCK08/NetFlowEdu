@@ -34,6 +34,7 @@ function makeQuestion(id: string, overrides: Partial<Question> = {}): Question {
     createdAt: 1,
     choices: null,
     correctChoice: null,
+    hints: [],
     ...overrides,
   };
 }

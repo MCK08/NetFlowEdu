@@ -1,6 +1,7 @@
 import * as ImagePicker from "expo-image-picker";
 
 import { createQuestion } from "@services/questions/questions";
+import { sanitizeHints } from "@features/questions/services/questionHints";
 import { uploadQuestionImage } from "@services/storage/questionImages";
 import { ChoiceLabel, Question, QuestionChoices, QuestionPosterRole, QuestionVisibility } from "@/types/question";
 
@@ -88,6 +89,8 @@ export interface QuestionMetadataInput {
   description?: string | null;
   choices?: QuestionChoices | null;
   correctChoice?: ChoiceLabel | null;
+  // Phase 72 — optional author-written hints, gentlest first.
+  hints?: readonly string[] | null;
 }
 
 interface UploadQuestionInput extends QuestionMetadataInput {
@@ -124,6 +127,7 @@ export async function uploadQuestionWithMetadata(input: UploadQuestionInput): Pr
     description: input.description ?? null,
     choices: input.choices ?? null,
     correctChoice: input.correctChoice ?? null,
+    hints: input.hints ?? null,
   });
 
   return {
@@ -144,6 +148,8 @@ export async function uploadQuestionWithMetadata(input: UploadQuestionInput): Pr
     createdAt: Date.now(),
     choices: input.choices ?? null,
     correctChoice: input.correctChoice ?? null,
+    // Mirrors what createQuestion just persisted, sanitized the same way.
+    hints: sanitizeHints(input.hints),
   };
 }
 
@@ -180,6 +186,8 @@ interface UploadClassQuestionInput {
   gradeLevel?: string;
   choices?: QuestionChoices | null;
   correctChoice?: ChoiceLabel | null;
+  // Phase 72 — optional author-written hints, gentlest first.
+  hints?: readonly string[] | null;
 }
 
 // The upload+create half of captureAndUploadClassQuestion, split out so a
@@ -231,6 +239,8 @@ export async function uploadClassQuestionImage(
     createdAt: Date.now(),
     choices: input.choices ?? null,
     correctChoice: input.correctChoice ?? null,
+    // Mirrors what createQuestion just persisted, sanitized the same way.
+    hints: sanitizeHints(input.hints),
   };
 }
 

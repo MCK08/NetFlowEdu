@@ -25,6 +25,7 @@ function q(id: string, createdAt = 0): Question {
     answerCount: 0,
     choices: null,
     correctChoice: null,
+    hints: [],
   };
 }
 

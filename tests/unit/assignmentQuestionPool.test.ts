@@ -32,6 +32,7 @@ function q(id: string, overrides: Partial<Question> = {}): Question {
     answerCount: 0,
     choices: null,
     correctChoice: null,
+    hints: [],
     ...overrides,
   };
 }

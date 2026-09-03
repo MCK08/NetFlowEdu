@@ -188,6 +188,15 @@ service cloud.firestore {
     // ---- questions/{questionId} ----------------------------------------
     // visibility: "private" | "public" | "class"
 
+    // Phase 72 — an optional authored hint ladder is a short, bounded list.
+    // Absent/null is always legal (legacy questions and every question whose
+    // author added none).
+    function hintsWithinBounds(data) {
+      return !('hints' in data)
+             || data.hints == null
+             || (data.hints is list && data.hints.size() <= 3);
+    }
+
     match /questions/{questionId} {
       // isOwner(...) is listed first, and separately from
       // canReadQuestionData, on purpose: Firestore's query-provability
@@ -229,8 +238,17 @@ service cloud.firestore {
       // For the teacher branch this is equivalent to the caller's own claim
       // anyway (a class's organizationId is its owning teacher's), so
       // nothing changes for teachers.
+      // Phase 72 — optional authored hints. Rules can bound the LIST but
+      // cannot iterate it to check each entry's length, so the count is
+      // enforced here (where a client cannot bypass it) and per-entry
+      // trimming/truncation is enforced by questionHints.ts on both the write
+      // and the read. Same reasoning as description's own size cap above:
+      // this is content every classmate can read, so its size is not left
+      // entirely to the client. Absent or null passes, which is what keeps
+      // every pre-Phase-72 writer working unchanged.
       allow create: if isSignedIn()
                     && request.resource.data.ownerId == uid()
+                    && hintsWithinBounds(request.resource.data)
                     && request.resource.data.likeCount == 0
                     && request.resource.data.commentCount == 0
                     && request.resource.data.answerCount == 0
@@ -268,6 +286,7 @@ service cloud.firestore {
       // owner's own edit (e.g. correcting subject/description) can never
       // also smuggle in a posterRole change.
       allow update: if isOwner(resource.data.ownerId)
+                    && hintsWithinBounds(request.resource.data)
                     && request.resource.data.ownerId == resource.data.ownerId
                     && request.resource.data.visibility == resource.data.visibility
                     && request.resource.data.classId == resource.data.classId
