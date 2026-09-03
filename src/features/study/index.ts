@@ -1,6 +1,7 @@
 export { StudyScreen } from "./screens/StudyScreen";
 export { StudySessionScreen } from "./screens/StudySessionScreen";
 export { ConceptMasteryMapScreen } from "./screens/ConceptMasteryMapScreen";
+export { StrugglePatternsScreen } from "./screens/StrugglePatternsScreen";
 export { StudyOutcomeButtons } from "./components/StudyOutcomeButtons";
 export { StudyOutcomeControls } from "./components/StudyOutcomeControls";
 export { StudyProgressCard } from "./components/StudyProgressCard";

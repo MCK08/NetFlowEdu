@@ -17,6 +17,10 @@ export const ROUTES = {
   // does my learning evidence stand", and cramming the second into the first
   // would bury the next-action card the Hub exists to surface.
   studentConceptMasteryMap: "/(student)/study/mastery-map",
+  // Phase 71 — Zorlanma Örüntülerim. Reached from the Concept Map rather than
+  // Study Hub: the map says where evidence stands, this says how difficulty is
+  // repeating, and the Hub already carries four competing entry points.
+  studentStrugglePatterns: "/(student)/study/patterns",
   editProfile: "/(student)/edit-profile",
   studentNotifications: "/(student)/notifications",
   teacher: "/(teacher)/(tabs)",

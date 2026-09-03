@@ -9,6 +9,7 @@ import { spacing } from "@theme/spacing";
 import { themedStyles } from "@theme/themeRuntime";
 import { useThemeSubscription } from "@theme/ThemeProvider";
 import { typography } from "@theme/typography";
+import { joinSpokenLabel } from "@utils/spokenLabel";
 
 import {
   ConceptMasteryMap,
@@ -49,15 +50,6 @@ const STATE_ICON: Readonly<Record<ConceptPresentation, keyof typeof Ionicons.gly
   steady: "checkmark-circle-outline",
   needs_evidence: "ellipse-outline",
 };
-
-/** Joins label fragments into one spoken sentence, adding a full stop only
- *  where the fragment does not already end in punctuation. */
-function joinSpoken(parts: readonly (string | null)[]): string {
-  return parts
-    .filter((part): part is string => Boolean(part && part.trim()))
-    .map((part) => (/[.!?]$/.test(part.trim()) ? part.trim() : `${part.trim()}.`))
-    .join(" ");
-}
 
 function accentFor(presentation: ConceptPresentation): string {
   switch (presentation) {
@@ -131,7 +123,7 @@ const ConceptRow = memo(function ConceptRow({
         // Spoken in the order the row is read: topic, state, fact, then the
         // review note. Joined without doubling the sentence-final stops the
         // copy already carries.
-        accessibilityLabel={joinSpoken([concept.topic, label, fact, note])}
+        accessibilityLabel={joinSpokenLabel([concept.topic, label, fact, note])}
       >
         <Text style={styles.topic}>{concept.topic}</Text>
 
