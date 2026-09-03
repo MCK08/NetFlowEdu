@@ -24,7 +24,14 @@ import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
 import { themedStyles } from "@theme/themeRuntime";
 
+import { ClassConceptHeatmapSection } from "../components/ClassConceptHeatmapSection";
 import { StudentPerformanceCard } from "../components/StudentPerformanceCard";
+import { TeacherActionCenterSection } from "../components/TeacherActionCenterSection";
+import { useClassInterventionOutcomes } from "../hooks/useClassInterventionOutcomes";
+import {
+  buildTeacherActionCenter,
+  TeacherActionCenterItem,
+} from "../services/teacherActionCenter";
 import { useClassPerformance } from "../hooks/useClassPerformance";
 import { useTeacherQuestionComposer } from "../hooks/useTeacherQuestionComposer";
 import { ClassTopicHotspot } from "../services/classTopicInsights";
@@ -33,7 +40,7 @@ import {
   StudentAttentionCard,
 } from "../services/studentAttention";
 import { buildClassPerformanceSummary, StudentPerformanceCard as StudentPerformanceCardData } from "../services/studentPerformance";
-import { buildTeacherActionSummary, TeacherAction } from "../services/teacherActionSummary";
+import { buildTeacherActionSummary } from "../services/teacherActionSummary";
 import {
   hasRecentTopicIntervention,
   resolveTopicInterventionTargets,
@@ -113,8 +120,17 @@ function topicKey(subject: string, topic: string): string {
 // existing `cards` fetch — zero new Firestore reads.
 export function ClassPerformanceScreen({ classId }: ClassPerformanceScreenProps) {
   const { firebaseUser } = useAuth();
-  const { cards, attentionCards, topicHotspots, trend, isLoading, error, refresh } =
-    useClassPerformance(classId);
+  const {
+    cards,
+    attentionCards,
+    topicHotspots,
+    trend,
+    conceptHeatmap,
+    studentEvidence,
+    isLoading,
+    error,
+    refresh,
+  } = useClassPerformance(classId);
   const summary = buildClassPerformanceSummary(cards);
   const [filter, setFilter] = useState<FilterValue>("all");
   const [expandedHotspot, setExpandedHotspot] = useState<string | null>(null);
@@ -218,15 +234,33 @@ export function ClassPerformanceScreen({ classId }: ClassPerformanceScreenProps)
     [topicHotspots, attentionCards],
   );
 
-  function handleActionPress(action: TeacherAction) {
-    if (action.kind === "create_question" && action.topicContext) {
+  // Phase 73 — Phase 47's class-wide verdicts. Assignments are already loaded
+  // by this screen, so this adds at most MAX_INSPECTED_ASSIGNMENTS bounded
+  // submission queries and nothing per student.
+  const { outcomes: interventionOutcomes } = useClassInterventionOutcomes(
+    classId,
+    assignments,
+    studentEvidence,
+  );
+
+  // Phase 73 — one list: post-intervention follow-ups and escalations first,
+  // then the hotspot/student actions buildTeacherActionSummary already ranked.
+  const actionCenterItems = useMemo(
+    () =>
+      buildTeacherActionCenter({
+        outcomes: interventionOutcomes,
+        summaryActions: teacherActions,
+      }),
+    [interventionOutcomes, teacherActions],
+  );
+
+  function handleActionCenterPress(item: TeacherActionCenterItem) {
+    if (item.topicContext) {
       openComposerForTopic(
-        action.topicContext.subject,
-        action.topicContext.topic,
-        action.topicContext.gradeLevel,
+        item.topicContext.subject,
+        item.topicContext.topic,
+        item.topicContext.gradeLevel,
       );
-    } else if (action.kind === "open_student" && action.studentUid) {
-      openStudent(action.studentUid);
     }
   }
 
@@ -374,35 +408,25 @@ export function ClassPerformanceScreen({ classId }: ClassPerformanceScreenProps)
           }
           ListHeaderComponent={
             <View style={styles.headerSections}>
-              {/* ACTION SUMMARY (§12) — a short, capped "what can I do now"
-                  list, not a second dashboard. Every item links straight to
-                  a real action (create_question opens the composer
-                  pre-filled; open_student opens the existing student
-                  detail route). */}
-              {teacherActions.length > 0 ? (
-                <View style={styles.section}>
-                  <SectionHeader title="Şimdi Yapılabilecekler" />
-                  <View style={styles.actionList}>
-                    {teacherActions.map((action, index) => (
-                      <Pressable
-                        key={`${action.kind}-${action.studentUid ?? ""}-${action.title}-${index}`}
-                        onPress={() => handleActionPress(action)}
-                        style={styles.actionRow}
-                        accessibilityRole="button"
-                        accessibilityLabel={`${action.title}. ${action.reason}. ${action.kind === "create_question" ? "Soru oluştur" : "Öğrenciyi aç"}`}
-                      >
-                        <View style={styles.actionText}>
-                          <Text style={styles.actionTitle}>{action.title}</Text>
-                          <Text style={styles.actionReason}>{action.reason}</Text>
-                        </View>
-                        <Text style={styles.actionCta}>
-                          {action.kind === "create_question" ? "Soru Oluştur" : "Öğrenciyi Aç"}
-                        </Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                </View>
-              ) : null}
+              {/* Phase 73 — the Action Center supersedes the Phase 27 action
+                  summary block that stood here: it renders those SAME hotspot
+                  and student actions plus Phase 47's post-intervention
+                  follow-ups and escalations, which previously only existed on
+                  each student's own screen. Rendering both would have shown
+                  the same hotspot twice. */}
+              <TeacherActionCenterSection
+                items={actionCenterItems}
+                onOpenStudent={openStudent}
+                onPrepareIntervention={handleActionCenterPress}
+              />
+
+              {/* Phase 73 — where the class's signals concentrate, by topic.
+                  Derived from evidence useClassPerformance already loaded;
+                  detail opens on tap so the scan surface stays scannable. */}
+              <ClassConceptHeatmapSection
+                heatmap={conceptHeatmap}
+                onOpenStudent={openStudent}
+              />
 
               {/* CLASS HEALTH */}
               <View style={styles.summaryCard}>
@@ -737,36 +761,6 @@ const styles = themedStyles(() => ({
   },
   section: {
     gap: spacing.xs,
-  },
-  actionList: {
-    gap: spacing.sm,
-  },
-  actionRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    padding: spacing.sm,
-    gap: spacing.sm,
-  },
-  actionText: {
-    flex: 1,
-    minWidth: 0,
-    gap: 2,
-  },
-  actionTitle: {
-    ...typography.bodyStrong,
-    color: colors.textPrimary,
-  },
-  actionReason: {
-    ...typography.caption,
-    color: colors.textSecondary,
-  },
-  actionCta: {
-    ...typography.caption,
-    fontWeight: "700",
-    color: colors.primary,
   },
   hotspotActionRow: {
     flexDirection: "row",

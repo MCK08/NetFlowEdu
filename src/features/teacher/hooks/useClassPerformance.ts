@@ -23,6 +23,11 @@ import {
   StudentAttentionCard,
 } from "../services/studentAttention";
 import { LearningTrend } from "@features/study/services/learningTrend";
+import {
+  buildClassConceptHeatmap,
+  ClassConceptHeatmap,
+  ClassStudentEvidence,
+} from "../services/classConceptHeatmap";
 
 // Caps how many per-student studyItems queries are ever simultaneously in
 // flight — see boundedConcurrency.ts's own doc comment. Chosen as a small,
@@ -50,6 +55,12 @@ export function useClassPerformance(classId: string | undefined) {
   // below, kept so the topic-hotspot memo can read each topic's real grade.
   // Not a second fetch: it is the exact map the snapshots were built from.
   const [questionsById, setQuestionsById] = useState<ReadonlyMap<string, Question | null>>(new Map());
+  // Phase 73 — the per-student class-sourced items this hook ALREADY fetched,
+  // retained instead of discarded. The concept heatmap needs Phase 42 verdicts
+  // per question, which the aggregated snapshots no longer carry; keeping the
+  // rows it was built from costs zero additional reads and is the only way to
+  // avoid a second query per student.
+  const [studentEvidence, setStudentEvidence] = useState<ClassStudentEvidence[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -58,6 +69,7 @@ export function useClassPerformance(classId: string | undefined) {
   const load = useCallback(async () => {
     if (!classId) {
       setCards([]);
+      setStudentEvidence([]);
       setIsLoading(false);
       return;
     }
@@ -84,6 +96,14 @@ export function useClassPerformance(classId: string | undefined) {
       setQuestionsById(resolvedQuestions);
 
       const now = Date.now();
+      setStudentEvidence(
+        students.map((student, index) => ({
+          studentUid: student.uid,
+          displayName: student.displayName,
+          items: itemsByStudent[index] ?? [],
+        })),
+      );
+
       const nextCards: StudentPerformanceCard[] = students.map((student, index) => {
         const snapshot = buildStudentPerformanceSnapshot(itemsByStudent[index] ?? [], resolvedQuestions, now);
         return {
@@ -147,7 +167,25 @@ export function useClassPerformance(classId: string | undefined) {
     [cards],
   );
 
-  return { cards, attentionCards, topicHotspots, trend, isLoading, error, refresh: load };
+  // Phase 73 — derived entirely from evidence already in state. Zero reads.
+  const conceptHeatmap: ClassConceptHeatmap = useMemo(
+    () => buildClassConceptHeatmap({ students: studentEvidence, questionsById }),
+    [studentEvidence, questionsById],
+  );
+
+  return {
+    cards,
+    attentionCards,
+    topicHotspots,
+    trend,
+    conceptHeatmap,
+    // Exposed so the intervention-outcome hook can reuse the SAME rows rather
+    // than re-reading each student's items.
+    studentEvidence,
+    isLoading,
+    error,
+    refresh: load,
+  };
 }
 
 function dedupeMembersByUid(members: readonly ClassMember[]): ClassMember[] {
