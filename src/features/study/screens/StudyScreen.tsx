@@ -24,8 +24,10 @@ import { LearningStoryEntryCard } from "@features/learningStory/components/Learn
 import { useLearningTrail } from "@features/learningStory/hooks/useLearningTrail";
 
 import { chronologyExplanationText } from "../services/chronologyExplanation";
+import { buildConceptMasteryMap } from "../services/conceptMasteryMap";
 import { buildReviewReadyTopics, ReviewReadyTopic } from "../services/reviewReadiness";
 import { buildChronologyProfiles } from "../services/chronologyTieBreak";
+import { ConceptMapEntryCard } from "../components/ConceptMapEntryCard";
 import { NextActionSection } from "../components/NextActionSection";
 import { ReviewReadySection } from "../components/ReviewReadySection";
 import { StudyProgressCard } from "../components/StudyProgressCard";
@@ -198,6 +200,14 @@ export function StudyScreen() {
     return topics;
   }, [items, chronologyEvents, nextAction.kind]);
 
+  // Phase 70 — derived from the SAME in-memory items above, purely so the Hub
+  // entry can show a real reason to tap. Zero additional Firestore reads: the
+  // map itself is built again on its own screen from the same source.
+  const conceptMap = useMemo(
+    () => buildConceptMasteryMap({ items, now: Date.now() }),
+    [items],
+  );
+
   const handleStartReview = useCallback(
     (topic: ReviewReadyTopic) => handleOpen(topic.questionId),
     [handleOpen],
@@ -359,6 +369,16 @@ export function StudyScreen() {
               title="İlerleme Hikâyem"
               description="Hangi konularda ilerlediğini gör"
               onPress={() => router.push("/(student)/learning-story" as never)}
+            />
+            {/* Phase 70 — beside İlerleme Hikâyem, because the two answer the
+                same kind of question: the story says how learning has changed,
+                the map says where the evidence currently stands. Both sit
+                above the work sections so neither competes with the next
+                action for the student's first decision. */}
+            <ConceptMapEntryCard
+              conceptCount={conceptMap.totalConcepts}
+              attentionCount={conceptMap.conceptsNeedingAttention}
+              onPress={() => router.push(ROUTES.studentConceptMasteryMap as never)}
             />
             <AssignedWorkSection cards={assignmentCards} onOpen={openAssignment} />
             <DailyPracticePlanSection plan={plan} onStart={handleStartPlan} />
