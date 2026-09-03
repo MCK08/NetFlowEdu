@@ -11,6 +11,7 @@ import { PrimaryButton } from "@components/ui/PrimaryButton";
 import { ROUTES } from "@constants/routes";
 import { useAuth } from "@features/authentication";
 import { colors } from "@theme/colors";
+import { contentWidth } from "@theme/layout";
 import { radius } from "@theme/radius";
 import { iconSize, minTouchTarget } from "@theme/sizes";
 import { spacing } from "@theme/spacing";
@@ -22,8 +23,6 @@ import { ConceptMasteryMapView } from "../components/ConceptMasteryMapView";
 import { useLearningInsights } from "../hooks/useLearningInsights";
 import { useStudyQueue } from "../hooks/useStudyQueue";
 import { buildConceptMasteryMap, conceptMapSummaryFacts } from "../services/conceptMasteryMap";
-
-const MAX_CONTENT_WIDTH = 680;
 
 // Phase 70 — "Öğrenme Haritam".
 //
@@ -161,7 +160,7 @@ const styles = themedStyles(() => ({
   },
   column: {
     width: "100%",
-    maxWidth: MAX_CONTENT_WIDTH,
+    maxWidth: contentWidth.readable,
     gap: spacing.lg,
   },
   header: {

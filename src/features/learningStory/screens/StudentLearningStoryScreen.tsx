@@ -12,6 +12,7 @@ import { useAuth } from "@features/authentication";
 import { useLearningInsights } from "@features/study/hooks/useLearningInsights";
 import { useStudyQueue } from "@features/study/hooks/useStudyQueue";
 import { colors } from "@theme/colors";
+import { contentWidth } from "@theme/layout";
 import { spacing } from "@theme/spacing";
 import { themedStyles } from "@theme/themeRuntime";
 import { typography } from "@theme/typography";
@@ -33,7 +34,6 @@ import { LearningStoryMoment } from "../services/learningStoryTypes";
 //
 // The bounded content column matches the rest of the app: on a wide screen
 // this stays a personal narrative rather than stretching into a dashboard.
-const MAX_CONTENT_WIDTH = 680;
 
 export function StudentLearningStoryScreen() {
   const { firebaseUser } = useAuth();
@@ -144,7 +144,7 @@ const styles = themedStyles(() => ({
   },
   column: {
     width: "100%",
-    maxWidth: MAX_CONTENT_WIDTH,
+    maxWidth: contentWidth.readable,
     gap: spacing.md,
   },
   hero: {

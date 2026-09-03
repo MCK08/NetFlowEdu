@@ -10,6 +10,7 @@ import { ROUTES } from "@constants/routes";
 import { useAuth } from "@features/authentication";
 import { useLearningTrail } from "@features/learningStory/hooks/useLearningTrail";
 import { colors } from "@theme/colors";
+import { contentWidth } from "@theme/layout";
 import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
 import { themedStyles } from "@theme/themeRuntime";
@@ -23,8 +24,6 @@ import {
   buildStrugglePatternMemory,
   patternAbsenceCopy,
 } from "../services/strugglePatternMemory";
-
-const MAX_CONTENT_WIDTH = 680;
 
 // Phase 71 — "Zorlanma Örüntülerim".
 //
@@ -135,7 +134,7 @@ const styles = themedStyles(() => ({
   },
   column: {
     width: "100%",
-    maxWidth: MAX_CONTENT_WIDTH,
+    maxWidth: contentWidth.readable,
     gap: spacing.lg,
   },
   header: {

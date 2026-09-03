@@ -4,6 +4,7 @@ import { lazy, Suspense } from "react";
 
 import { OfflineBanner } from "@components/ui/OfflineBanner";
 import { AuthProvider, useAuth } from "@features/authentication";
+import { GuidedTourHost, GuidedTourProvider, useGuidedTourState } from "@features/onboarding";
 import { ThemeProvider, useTheme } from "@theme/ThemeProvider";
 import { RouteGuard } from "@/features/authentication/components/RouteGuard";
 
@@ -35,11 +36,19 @@ function AccountSwitcherHost() {
 // tree would keep rendering the previous palette until something else
 // happened to re-render it. Consuming the context here is what actually
 // propagates a theme change down through the navigator to every screen.
+//
+// Phase 74 — the guided tour's state, hoisted to the root so that both the
+// overlay below and the "Tanıtımı Tekrar Gör" row inside Profile read one
+// source. It reads auth state, so it must sit under AuthProvider; it renders
+// over the navigator, so its host sits beside AccountSwitcherHost rather than
+// inside any screen. Notably it does NOT wrap or alter <Stack> — routing,
+// and the student feed's pager in particular, are untouched.
 function ThemedApp() {
   const { resolvedTheme, colors } = useTheme();
+  const guidedTour = useGuidedTourState();
 
   return (
-    <>
+    <GuidedTourProvider value={guidedTour}>
       {/* Explicitly derived from the RESOLVED theme rather than style="auto":
           "auto" follows the OS, which is wrong the moment someone overrides
           the OS with an explicit Açık/Koyu choice. */}
@@ -56,8 +65,12 @@ function ThemedApp() {
         />
       </RouteGuard>
       <AccountSwitcherHost />
+      {/* Above the navigator and the account switcher, below the offline
+          banner: a connectivity problem is the one thing worth interrupting
+          the introduction to say. */}
+      <GuidedTourHost />
       <OfflineBanner />
-    </>
+    </GuidedTourProvider>
   );
 }
 

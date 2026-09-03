@@ -5,12 +5,15 @@ import {
   ActivityIndicator,
   FlatList,
   ListRenderItemInfo,
+  Pressable,
   StyleSheet,
   Text,
   View,
   useWindowDimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+
+import { Ionicons } from "@expo/vector-icons";
 
 import { ActionTile } from "@components/ui/ActionTile";
 import { Card } from "@components/ui/Card";
@@ -22,6 +25,7 @@ import { useAuth } from "@features/authentication";
 import { GoogleSignInButton } from "@features/authentication/components/GoogleSignInButton";
 import { useSignOut } from "@features/authentication/hooks/useSignOut";
 import { useSocialMeta } from "@features/friends";
+import { useGuidedTour } from "@features/onboarding";
 import { useNavigationGuard } from "@hooks/useNavigationGuard";
 import { AppearanceSelector } from "@theme/AppearanceSelector";
 import { ROUTES } from "@constants/routes";
@@ -72,6 +76,9 @@ export function ProfileScreen() {
     mode,
   );
   const socialMeta = useSocialMeta(firebaseUser?.uid);
+  // Null only if Profile is ever rendered outside the root provider —
+  // the row below simply does not appear in that case.
+  const guidedTour = useGuidedTour();
   // expo-router's push() does not deduplicate; the profile's four
   // destinations previously used raw pushes, so a double-tap stacked the
   // same screen twice.
@@ -185,6 +192,45 @@ export function ProfileScreen() {
             <View style={styles.sectionWrapper}>
               <AppearanceSelector />
             </View>
+
+            {/* Phase 74 — the guided tour's only re-entry point. Deliberately
+                a row inside the settings column that already exists, not a new
+                Help/Settings area built to house it: the tour is three cards,
+                and giving it its own destination would cost more navigation
+                than it is worth. Hidden entirely for roles with no authored
+                tour rather than shown disabled. */}
+            {guidedTour?.replayAudience ? (
+              <View style={styles.sectionWrapper}>
+                <Card>
+                  <Pressable
+                    onPress={guidedTour.replay}
+                    style={styles.tourRow}
+                    accessibilityRole="button"
+                    accessibilityLabel="Tanıtımı tekrar gör"
+                    accessibilityHint="NetFlowEdu tanıtımını yeniden açar"
+                  >
+                    <Ionicons
+                      name="information-circle-outline"
+                      size={22}
+                      color={colors.primary}
+                      accessibilityElementsHidden
+                    />
+                    <View style={styles.tourCopy}>
+                      <Text style={styles.tourTitle}>Tanıtımı Tekrar Gör</Text>
+                      <Text style={styles.tourDetail}>
+                        NetFlowEdu&apos;nun nasıl çalıştığını anlatan kısa tanıtım.
+                      </Text>
+                    </View>
+                    <Ionicons
+                      name="chevron-forward"
+                      size={18}
+                      color={colors.textTertiary}
+                      accessibilityElementsHidden
+                    />
+                  </Pressable>
+                </Card>
+              </View>
+            ) : null}
 
             <View style={styles.sectionWrapper}>
               <Card>
@@ -308,6 +354,27 @@ const styles = themedStyles(() => ({
   quickActionTile: {
     flex: 1,
     minWidth: 0,
+  },
+  tourRow: {
+    flexDirection: "row",
+    // Top-aligned, not centred: the detail line wraps to two lines at 375px
+    // with a large OS font scale, and centring would orphan the icon.
+    alignItems: "flex-start",
+    gap: spacing.sm,
+    minHeight: 44,
+  },
+  tourCopy: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  tourTitle: {
+    ...typography.bodyStrong,
+    color: colors.textPrimary,
+  },
+  tourDetail: {
+    ...typography.caption,
+    color: colors.textTertiary,
   },
   sectionWrapper: {
     paddingHorizontal: spacing.lg,

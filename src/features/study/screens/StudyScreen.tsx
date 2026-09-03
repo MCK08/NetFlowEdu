@@ -9,6 +9,7 @@ import { ROUTES } from "@constants/routes";
 import { useAuth } from "@features/authentication";
 import { useNavigationGuard } from "@hooks/useNavigationGuard";
 import { colors } from "@theme/colors";
+import { contentWidth } from "@theme/layout";
 import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
@@ -338,6 +339,7 @@ export function StudyScreen() {
         data={entries}
         keyExtractor={keyExtractor}
         renderItem={renderItem}
+        style={styles.scroller}
         contentContainerStyle={styles.list}
         ItemSeparatorComponent={Separator}
         showsVerticalScrollIndicator={false}
@@ -423,6 +425,17 @@ const styles = themedStyles(() => ({
     flex: 1,
     backgroundColor: colors.background,
   },
+  // Phase 74 — the reading measure the rest of the product already uses.
+  // Without it the Hub ran edge to edge on a desktop window while the Concept
+  // Map and Learning Story it opens stayed capped, so the column width changed
+  // on every navigation out of the student's own home. On the element rather
+  // than the content container, so the scrollbar sits at the column's edge.
+  scroller: {
+    flex: 1,
+    width: "100%",
+    maxWidth: contentWidth.readable,
+    alignSelf: "center",
+  },
   list: {
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.xxl,
@@ -433,8 +446,10 @@ const styles = themedStyles(() => ({
     paddingBottom: spacing.lg,
   },
   title: {
-    ...typography.displayLg,
-    fontSize: 26,
+    // Phase 74 — was displayLg overridden to 26. The Hub is the student's
+    // home, and it was rendering its own title one step smaller than the
+    // Concept Map and Learning Story it opens.
+    ...typography.screenTitle,
     color: colors.textPrimary,
   },
   moment: {

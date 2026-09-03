@@ -4,6 +4,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { BrandLockup } from "@components/ui/BrandMark";
 import { colors } from "@theme/colors";
+import { contentWidth } from "@theme/layout";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
 import { themedStyles } from "@theme/themeRuntime";
@@ -77,7 +78,7 @@ const styles = themedStyles(() => ({
   },
   inner: {
     width: "100%",
-    maxWidth: 440,
+    maxWidth: contentWidth.form,
     alignSelf: "center",
     gap: spacing.lg,
   },

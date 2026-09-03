@@ -9,6 +9,7 @@ import { EmptyState } from "@components/ui/EmptyState";
 import { LoadingSkeleton } from "@components/ui/LoadingSkeleton";
 import { useClassPerformance } from "@features/teacher/hooks/useClassPerformance";
 import { colors } from "@theme/colors";
+import { contentWidth } from "@theme/layout";
 import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
 import { themedStyles } from "@theme/themeRuntime";
@@ -144,7 +145,11 @@ const styles = themedStyles(() => ({
   },
   column: {
     width: "100%",
-    maxWidth: 760,
+    // Phase 74 — was 760, the only screen in the app with its own
+    // measure. Nothing here needs more room than the student story it
+    // mirrors, and the mismatch was visible when a teacher moved between
+    // the two.
+    maxWidth: contentWidth.readable,
     gap: spacing.md,
   },
   hero: {

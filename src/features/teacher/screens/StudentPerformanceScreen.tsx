@@ -15,6 +15,7 @@ import { buildTeacherLearningTimeline } from "@features/learningStory/services/t
 import { TopicInsight } from "@features/study/services/learningInsights";
 import { LearningTrend } from "@features/study/services/learningTrend";
 import { colors } from "@theme/colors";
+import { contentWidth } from "@theme/layout";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
 import { themedStyles } from "@theme/themeRuntime";
@@ -196,7 +197,11 @@ export function StudentPerformanceScreen({ classId, studentId, studentName }: St
           />
         </View>
       ) : (
-        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          style={styles.scroller}
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+        >
           <Card style={styles.summaryCard}>
             <Text style={styles.sectionLabel}>Genel başarı</Text>
             <Text style={styles.bigValue}>
@@ -397,6 +402,13 @@ const styles = themedStyles(() => ({
     paddingHorizontal: spacing.md,
     paddingBottom: spacing.sm,
     gap: spacing.xs,
+    // Phase 74 — the reading measure the rest of the product already uses.
+    // Applied to the chrome and the scroller alike: capping only the list
+    // would have left the back button and title pinned to the window edge
+    // while the cards centred under them.
+    width: "100%",
+    maxWidth: contentWidth.readable,
+    alignSelf: "center",
   },
   backButton: {
     minWidth: 44,
@@ -413,6 +425,22 @@ const styles = themedStyles(() => ({
   skeletonList: {
     padding: spacing.lg,
     gap: spacing.md,
+    width: "100%",
+    maxWidth: contentWidth.readable,
+    alignSelf: "center",
+  },
+  // Phase 74 — the cap for a SCROLLING box goes on the element, not on its
+  // content container. Capping the content centres it inside the scroller's
+  // inner width, which is a few pixels narrower than the screen because the
+  // scrollbar lives there — so the list settled slightly left of the header
+  // that was centred against the full width. Capping the element puts both
+  // boxes on the same measure and leaves the scrollbar at the column's own
+  // edge, where a capped page normally puts it.
+  scroller: {
+    flex: 1,
+    width: "100%",
+    maxWidth: contentWidth.readable,
+    alignSelf: "center",
   },
   content: {
     padding: spacing.lg,

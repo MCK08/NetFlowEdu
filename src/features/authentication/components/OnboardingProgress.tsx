@@ -1,7 +1,7 @@
 import { Text, View } from "react-native";
 
+import { StepTrack } from "@components/ui/StepTrack";
 import { colors } from "@theme/colors";
-import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
 import { themedStyles } from "@theme/themeRuntime";
@@ -39,16 +39,10 @@ export function OnboardingProgress({ flow, currentStep }: OnboardingProgressProp
         <Text style={styles.counter}>{stepCounterLabel(flow, currentStep)}</Text>
         <Text style={styles.stepName}>{steps[activeIndex]?.label ?? ""}</Text>
       </View>
-      <View style={styles.track}>
-        {/* Filled up to AND including the current step — a bar that leaves
-            the step you are on empty reads as "not started yet". */}
-        {steps.map((step, index) => (
-          <View
-            key={step.id}
-            style={[styles.segment, index <= activeIndex ? styles.segmentFilled : null]}
-          />
-        ))}
-      </View>
+      {/* Filled up to AND including the current step — a bar that leaves the
+          step you are on empty reads as "not started yet". Phase 74 moved the
+          bar itself to StepTrack so the guided tour renders the same one. */}
+      <StepTrack total={steps.length} activeIndex={activeIndex} />
     </View>
   );
 }
@@ -72,18 +66,5 @@ const styles = themedStyles(() => ({
   stepName: {
     ...typography.caption,
     color: colors.textSecondary,
-  },
-  track: {
-    flexDirection: "row",
-    gap: spacing.xxs,
-  },
-  segment: {
-    flex: 1,
-    height: 3,
-    borderRadius: radius.pill,
-    backgroundColor: colors.divider,
-  },
-  segmentFilled: {
-    backgroundColor: colors.primary,
   },
 }));
