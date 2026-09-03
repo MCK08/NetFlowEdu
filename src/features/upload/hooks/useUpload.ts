@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { Alert } from "react-native";
 
+import { useSubmitLock } from "@hooks/useSubmitLock";
+
 import { Question, QuestionVisibility } from "@/types/question";
 
 import {
@@ -31,6 +33,8 @@ interface UseUploadOptions {
 // (the actual upload).
 export function useUpload({ uid, organizationId, onUploaded }: UseUploadOptions) {
   const [isUploading, setIsUploading] = useState(false);
+  // Phase 75 — synchronous double-submit guard for the create below.
+  const submitLock = useSubmitLock();
   const [isPickerOpen, setIsPickerOpen] = useState(false);
   const [pendingUpload, setPendingUpload] = useState<{
     localUri: string;
@@ -83,7 +87,14 @@ export function useUpload({ uid, organizationId, onUploaded }: UseUploadOptions)
   }
 
   async function submitMetadata(details: QuestionMetadataInput) {
-    if (!uid || !pendingUpload || isUploading) return;
+    if (!uid || !pendingUpload) return;
+    // Phase 75 — the lock is acquired here, synchronously, INSTEAD of relying
+    // on the `isUploading` state read below. Question creation is the one
+    // durable write left with no operationId backstop (answers, comments and
+    // study outcomes all carry one), so a second run genuinely creates a
+    // second Storage object and a second question document. A state read
+    // cannot close that window — see utils/submitLock.ts.
+    if (!submitLock.acquire()) return;
     setMetadataError(null);
     setIsUploading(true);
     try {
@@ -109,6 +120,9 @@ export function useUpload({ uid, organizationId, onUploaded }: UseUploadOptions)
     } finally {
       if (__DEV__) console.log("[QUESTION_UPLOAD] finally: setIsUploading(false)");
       setIsUploading(false);
+      // Released in `finally`, never on success only: a failed upload must
+      // leave the button usable so the author can retry (Phase 75 §42).
+      submitLock.release();
     }
   }
 

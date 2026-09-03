@@ -80,4 +80,43 @@ describe("loadQuestionDetail", () => {
     expect(result.question).toBeNull();
     expect(result.errorMessage).toBe(QUESTION_GENERIC_ERROR_MESSAGE);
   });
+
+  // Phase 75 — the screen offers "Tekrar Dene" on exactly one of these, so
+  // the distinction has to survive here rather than be re-derived from the
+  // message string.
+  describe("failure kind", () => {
+    it("is null when the question loaded", async () => {
+      mockGetQuestionById.mockResolvedValue(makeQuestion());
+
+      expect((await loadQuestionDetail("q1")).failure).toBeNull();
+    });
+
+    it("marks a missing question as a settled answer, not a retryable failure", async () => {
+      mockGetQuestionById.mockResolvedValue(null);
+
+      expect((await loadQuestionDetail("missing-question")).failure).toBe("not_found");
+    });
+
+    it("marks a denied read as a settled answer, not a retryable failure", async () => {
+      mockGetQuestionById.mockRejectedValue(
+        Object.assign(new Error("denied"), { code: "permission-denied" }),
+      );
+
+      expect((await loadQuestionDetail("someone-elses-question")).failure).toBe("unauthorized");
+    });
+
+    it("marks an unrelated failure as retryable", async () => {
+      mockGetQuestionById.mockRejectedValue(new Error("network-request-failed"));
+
+      expect((await loadQuestionDetail("q1")).failure).toBe("unavailable");
+    });
+
+    it("never claims a technical failure for a question that simply is not there", async () => {
+      mockGetQuestionById.mockResolvedValue(null);
+
+      const result = await loadQuestionDetail("missing-question");
+
+      expect(result.errorMessage).not.toBe(QUESTION_GENERIC_ERROR_MESSAGE);
+    });
+  });
 });

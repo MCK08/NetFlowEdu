@@ -5,9 +5,18 @@ export const QUESTION_NOT_FOUND_MESSAGE = "Bu soru bulunamadı.";
 export const QUESTION_UNAUTHORIZED_MESSAGE = "Bu soruyu görüntüleme yetkiniz yok.";
 export const QUESTION_GENERIC_ERROR_MESSAGE = "Soru yüklenirken bir hata oluştu.";
 
+/** Why the question is not being shown.
+ *
+ *  Phase 75 — added so the screen can tell a RECOVERABLE failure from a
+ *  settled answer. "Bu soru bulunamadı" and "yetkiniz yok" are conclusions:
+ *  offering "Tekrar Dene" on them invites the reader to keep tapping at
+ *  something that will never change. Only `unavailable` is worth retrying. */
+export type QuestionDetailFailure = "not_found" | "unauthorized" | "unavailable";
+
 export interface QuestionDetailResult {
   question: Question | null;
   errorMessage: string | null;
+  failure: QuestionDetailFailure | null;
 }
 
 // Firestore's rules engine can't safely distinguish "document never
@@ -22,14 +31,18 @@ export async function loadQuestionDetail(questionId: string): Promise<QuestionDe
   try {
     const question = await getQuestionById(questionId);
     if (!question) {
-      return { question: null, errorMessage: QUESTION_NOT_FOUND_MESSAGE };
+      return { question: null, errorMessage: QUESTION_NOT_FOUND_MESSAGE, failure: "not_found" };
     }
-    return { question, errorMessage: null };
+    return { question, errorMessage: null, failure: null };
   } catch (error) {
     const code = (error as { code?: string }).code;
     if (code === "permission-denied") {
-      return { question: null, errorMessage: QUESTION_UNAUTHORIZED_MESSAGE };
+      return {
+        question: null,
+        errorMessage: QUESTION_UNAUTHORIZED_MESSAGE,
+        failure: "unauthorized",
+      };
     }
-    return { question: null, errorMessage: QUESTION_GENERIC_ERROR_MESSAGE };
+    return { question: null, errorMessage: QUESTION_GENERIC_ERROR_MESSAGE, failure: "unavailable" };
   }
 }

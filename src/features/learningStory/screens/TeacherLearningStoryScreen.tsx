@@ -16,6 +16,7 @@ import { themedStyles } from "@theme/themeRuntime";
 import { typography } from "@theme/typography";
 
 import { buildTeacherLearningStory } from "../services/buildTeacherLearningStory";
+import { resolveStoryPanel } from "../services/storyPanel";
 import { TeacherStorySectionKind } from "../services/learningStoryTypes";
 
 // Phase 56 — "Sınıfın İlerleme Hikâyesi".
@@ -55,9 +56,20 @@ function sectionColor(kind: TeacherStorySectionKind): string {
 }
 
 export function TeacherLearningStoryScreen({ classId }: TeacherLearningStoryScreenProps) {
-  const { attentionCards, isLoading } = useClassPerformance(classId);
+  // Phase 75 — the error was previously discarded, so a failed class read
+  // rendered "Sınıfın hikâyesi henüz oluşmadı": a statement about the class,
+  // made when the truth was that we could not load it. Same fix, and same
+  // banner, as the student story and the Phase 70/71 surfaces.
+  const { attentionCards, isLoading, error } = useClassPerformance(classId);
 
   const story = useMemo(() => buildTeacherLearningStory(attentionCards), [attentionCards]);
+
+  const panel = resolveStoryPanel({
+    isLoading,
+    hasError: error !== null,
+    hasContent: attentionCards.length > 0,
+    isFirstRun: story.isFirstRun,
+  });
 
   return (
     <SafeAreaView style={styles.flex} edges={["top"]}>
@@ -70,12 +82,19 @@ export function TeacherLearningStoryScreen({ classId }: TeacherLearningStoryScre
             ) : null}
           </View>
 
-          {isLoading && attentionCards.length === 0 ? (
+          {error ? (
+            <View style={styles.errorBanner} accessibilityRole="alert">
+              <Text style={styles.errorTitle}>Sınıf hikâyesi şu an yüklenemedi</Text>
+              <Text style={styles.errorText}>{error}</Text>
+            </View>
+          ) : null}
+
+          {panel === "loading" ? (
             <View style={styles.skeletons}>
               <LoadingSkeleton height={110} borderRadius={16} />
               <LoadingSkeleton height={110} borderRadius={16} />
             </View>
-          ) : story.isFirstRun ? (
+          ) : panel === "error" ? null : panel === "empty" ? (
             <EmptyState
               icon="sparkles-outline"
               title="Sınıfın hikâyesi henüz oluşmadı"
@@ -162,6 +181,20 @@ const styles = themedStyles(() => ({
   },
   heroSubtitle: {
     ...typography.body,
+    color: colors.textSecondary,
+  },
+  errorBanner: {
+    backgroundColor: colors.dangerMuted,
+    borderRadius: radius.lg,
+    padding: spacing.sm,
+    gap: 2,
+  },
+  errorTitle: {
+    ...typography.bodyStrong,
+    color: colors.danger,
+  },
+  errorText: {
+    ...typography.caption,
     color: colors.textSecondary,
   },
   skeletons: {

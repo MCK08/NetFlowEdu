@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { Alert } from "react-native";
 
+import { useSubmitLock } from "@hooks/useSubmitLock";
+
 import { QuestionMetadataDetails } from "@features/questions/components/QuestionMetadataModal";
 import {
   CameraPermissionDeniedError,
@@ -40,6 +42,8 @@ export function useTeacherQuestionComposer({
   const [isSourcePickerOpen, setIsSourcePickerOpen] = useState(false);
   const [pickedImageUri, setPickedImageUri] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  // Phase 75 — synchronous double-submit guard for the create below.
+  const submitLock = useSubmitLock();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   function openComposer() {
@@ -81,7 +85,14 @@ export function useTeacherQuestionComposer({
   }
 
   async function submitDetails(details: QuestionMetadataDetails) {
-    if (!uid || !organizationId || !pickedImageUri || isUploading) return;
+    if (!uid || !organizationId || !pickedImageUri) return;
+    // Phase 75 — the lock is acquired here, synchronously, INSTEAD of relying
+    // on the `isUploading` state read below. Question creation is the one
+    // durable write left with no operationId backstop (answers, comments and
+    // study outcomes all carry one), so a second run genuinely creates a
+    // second Storage object and a second question document. A state read
+    // cannot close that window — see utils/submitLock.ts.
+    if (!submitLock.acquire()) return;
     setErrorMessage(null);
     setIsUploading(true);
     try {
@@ -105,6 +116,9 @@ export function useTeacherQuestionComposer({
       setErrorMessage(mapQuestionUploadErrorToMessage(error));
     } finally {
       setIsUploading(false);
+      // Released in `finally`, never on success only: a failed upload must
+      // leave the button usable so the author can retry (Phase 75 §42).
+      submitLock.release();
     }
   }
 

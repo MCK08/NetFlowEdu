@@ -13,6 +13,7 @@ import { useLearningInsights } from "@features/study/hooks/useLearningInsights";
 import { useStudyQueue } from "@features/study/hooks/useStudyQueue";
 import { colors } from "@theme/colors";
 import { contentWidth } from "@theme/layout";
+import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
 import { themedStyles } from "@theme/themeRuntime";
 import { typography } from "@theme/typography";
@@ -20,6 +21,7 @@ import { typography } from "@theme/typography";
 import { LearningStoryMomentCard } from "../components/LearningStoryMomentCard";
 import { useLearningTrail } from "../hooks/useLearningTrail";
 import { buildStudentLearningStory } from "../services/buildStudentLearningStory";
+import { resolveStoryPanel } from "../services/storyPanel";
 import { LearningEvent, selectTopicTrail, trailInsightText } from "../services/learningTrail";
 import { LearningStoryMoment } from "../services/learningStoryTypes";
 
@@ -39,8 +41,21 @@ export function StudentLearningStoryScreen() {
   const { firebaseUser } = useAuth();
   const uid = firebaseUser?.uid;
 
-  const { summary, isLoading } = useStudyQueue(uid);
-  const { items } = useLearningInsights(uid, summary);
+  // Phase 75 — the loading gate reads BOTH hooks, and the error is no longer
+  // discarded.
+  //
+  // The story is derived entirely from useLearningInsights' items, but this
+  // screen used to gate on useStudyQueue's isLoading alone. That hook fetches
+  // one page of due items and settles first, while insights loads every study
+  // item plus its metadata — so between the two, `items` was still [] with
+  // isLoading already false, and the screen announced "Henüz anlatacak bir
+  // hikâye yok" to a student who has one. The same gap made a FAILED insights
+  // read indistinguishable from an empty one, which is the worst thing this
+  // screen can say: a technical failure of ours rendered as a statement about
+  // the student's own evidence.
+  const { summary, isLoading: isSummaryLoading } = useStudyQueue(uid);
+  const { items, isLoading: isStoryLoading, error } = useLearningInsights(uid, summary);
+  const isLoading = isSummaryLoading || isStoryLoading;
 
   // Phase 59 — ONE bounded query for the student's own recent chronological
   // events (see useLearningTrail). Non-fatal by design: if it fails or the
@@ -49,6 +64,15 @@ export function StudentLearningStoryScreen() {
   const { events } = useLearningTrail(uid);
 
   const story = useMemo(() => buildStudentLearningStory(items), [items]);
+
+  // Precedence lives in resolveStoryPanel, not in a ternary chain here — see
+  // that module for why loading and error must both outrank "first run".
+  const panel = resolveStoryPanel({
+    isLoading,
+    hasError: error !== null,
+    hasContent: items.length > 0,
+    isFirstRun: story.isFirstRun,
+  });
 
   // Each topic's own trail, resolved once per render rather than inside the
   // card, so the card stays presentational and the selection stays testable.
@@ -83,12 +107,22 @@ export function StudentLearningStoryScreen() {
             ) : null}
           </View>
 
-          {isLoading && items.length === 0 ? (
+          {/* Same treatment the Concept Mastery Map and Struggle Pattern Memory
+              already use: a technical failure is reported as ours, and never
+              collapses into "you have no story yet". */}
+          {error ? (
+            <View style={styles.errorBanner} accessibilityRole="alert">
+              <Text style={styles.errorTitle}>Hikâyen şu an yüklenemedi</Text>
+              <Text style={styles.errorText}>{error}</Text>
+            </View>
+          ) : null}
+
+          {panel === "loading" ? (
             <View style={styles.skeletons}>
               <LoadingSkeleton height={150} borderRadius={16} />
               <LoadingSkeleton height={150} borderRadius={16} />
             </View>
-          ) : story.isFirstRun ? (
+          ) : panel === "error" ? null : panel === "empty" ? (
             <View style={styles.firstRun}>
               <EmptyState
                 icon="sparkles-outline"
@@ -157,6 +191,20 @@ const styles = themedStyles(() => ({
   },
   heroSubtitle: {
     ...typography.body,
+    color: colors.textSecondary,
+  },
+  errorBanner: {
+    backgroundColor: colors.dangerMuted,
+    borderRadius: radius.lg,
+    padding: spacing.sm,
+    gap: 2,
+  },
+  errorTitle: {
+    ...typography.bodyStrong,
+    color: colors.danger,
+  },
+  errorText: {
+    ...typography.caption,
     color: colors.textSecondary,
   },
   skeletons: {

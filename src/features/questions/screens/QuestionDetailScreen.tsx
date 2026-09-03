@@ -5,6 +5,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { PrimaryButton } from "@components/ui/PrimaryButton";
 import { Divider } from "@components/ui/Divider";
+import { EmptyState } from "@components/ui/EmptyState";
 import { LoadingSkeleton } from "@components/ui/LoadingSkeleton";
 import { ImageViewer } from "@components/ImageViewer";
 import { AnswerList, useQuestionAnswers } from "@features/answers";
@@ -22,6 +23,7 @@ import { QuestionHeader } from "../components/QuestionHeader";
 import { MultipleChoiceAnswer } from "../components/MultipleChoiceAnswer";
 import { QuestionHintLadder } from "../components/QuestionHintLadder";
 import { useQuestionDetail } from "../hooks/useQuestionDetail";
+import { QUESTION_GENERIC_ERROR_MESSAGE } from "../services/questionDetailService";
 import { hasMultipleChoice } from "../services/multipleChoice";
 
 interface QuestionDetailScreenProps {
@@ -31,7 +33,7 @@ interface QuestionDetailScreenProps {
 export function QuestionDetailScreen({ questionId }: QuestionDetailScreenProps) {
   const { firebaseUser, role } = useAuth();
   const isStudent = role === "student";
-  const { question, isLoading, errorMessage } = useQuestionDetail(questionId);
+  const { question, isLoading, errorMessage, failure, reload } = useQuestionDetail(questionId);
   const { answers, isLoading: answersLoading, error: answersError } = useQuestionAnswers(
     question ? questionId : undefined,
   );
@@ -69,11 +71,27 @@ export function QuestionDetailScreen({ questionId }: QuestionDetailScreenProps) 
   }
 
   if (errorMessage || !question) {
+    // Phase 75 — this was a bare centred sentence with no way forward, on the
+    // one screen a deep link is most likely to land on. Every comparable
+    // screen in the app already reports a failed read as an EmptyState with
+    // "Tekrar Dene"; this one did not, even though the hook has always
+    // exposed `reload`.
+    //
+    // Retry is offered ONLY for `unavailable`. "Bu soru bulunamadı" and
+    // "yetkiniz yok" are settled answers — a retry button on them would
+    // invite the reader to keep tapping at something that cannot change.
+    const canRetry = failure === "unavailable";
     return (
       <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
         <QuestionHeader />
         <View style={styles.centered}>
-          <Text style={styles.errorText}>{errorMessage ?? "Soru yüklenirken bir hata oluştu."}</Text>
+          <EmptyState
+            icon={canRetry ? "cloud-offline-outline" : "help-circle-outline"}
+            title={errorMessage ?? QUESTION_GENERIC_ERROR_MESSAGE}
+          />
+          {canRetry ? (
+            <PrimaryButton label="Tekrar Dene" onPress={reload} variant="secondary" />
+          ) : null}
         </View>
       </SafeAreaView>
     );
@@ -169,11 +187,8 @@ const styles = themedStyles(() => ({
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: spacing.xl,
-  },
-  errorText: {
-    ...typography.subtitle,
-    color: colors.textSecondary,
-    textAlign: "center",
+    // Phase 75 — the EmptyState and its retry are two stacked children now.
+    gap: spacing.md,
   },
   content: {
     padding: spacing.xl,

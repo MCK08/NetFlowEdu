@@ -7,6 +7,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Divider } from "@components/ui/Divider";
 import { ROUTES } from "@constants/routes";
 import { EmptyState } from "@components/ui/EmptyState";
+import { PrimaryButton } from "@components/ui/PrimaryButton";
 import { LoadingSkeleton } from "@components/ui/LoadingSkeleton";
 import { Toast } from "@components/ui/Toast";
 import { useToast } from "@components/ui/useToast";
@@ -155,7 +156,15 @@ export function NotificationScreen({ role }: { role: UserRole }) {
       {isLoading ? (
         <NotificationSkeleton />
       ) : loadError ? (
-        <EmptyState icon="alert-circle-outline" title={loadError} description="Tekrar dene" style={styles.errorState} />
+        // Phase 75 — "Tekrar dene" used to be the EmptyState's DESCRIPTION:
+        // an instruction with nothing to act on. The screen's own `refresh`
+        // is wired only to the list's pull-to-refresh, and this branch
+        // replaces the list, so there was no way to retry at all. Same
+        // EmptyState + "Tekrar Dene" pairing every other error screen uses.
+        <View style={styles.errorState}>
+          <EmptyState icon="cloud-offline-outline" title={loadError} />
+          <PrimaryButton label="Tekrar Dene" onPress={refresh} variant="secondary" />
+        </View>
       ) : sections.length === 0 ? (
         <EmptyState
           icon="notifications-outline"
@@ -272,6 +281,8 @@ const styles = themedStyles(() => ({
   },
   errorState: {
     paddingTop: spacing.xxl,
+    gap: spacing.md,
+    paddingHorizontal: spacing.xl,
   },
   footerSpinner: {
     marginVertical: spacing.lg,
