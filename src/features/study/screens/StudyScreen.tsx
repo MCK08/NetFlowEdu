@@ -28,7 +28,7 @@ import { chronologyExplanationText } from "../services/chronologyExplanation";
 import { buildConceptMasteryMap } from "../services/conceptMasteryMap";
 import { buildReviewReadyTopics, ReviewReadyTopic } from "../services/reviewReadiness";
 import { buildChronologyProfiles } from "../services/chronologyTieBreak";
-import { ConceptMapEntryCard } from "../components/ConceptMapEntryCard";
+import { LearningAtlasEntryCard } from "../components/LearningAtlasEntryCard";
 import { NextActionSection } from "../components/NextActionSection";
 import { ReviewReadySection } from "../components/ReviewReadySection";
 import { StudyProgressCard } from "../components/StudyProgressCard";
@@ -372,15 +372,26 @@ export function StudyScreen() {
               description="Hangi konularda ilerlediğini gör"
               onPress={() => router.push("/(student)/learning-story" as never)}
             />
-            {/* Phase 70 — beside İlerleme Hikâyem, because the two answer the
-                same kind of question: the story says how learning has changed,
-                the map says where the evidence currently stands. Both sit
-                above the work sections so neither competes with the next
-                action for the student's first decision. */}
-            <ConceptMapEntryCard
+            {/* Phase 76 — the Hub's single exploration entry, in the slot the
+                Phase 70 concept-map row used to hold.
+
+                The Atlas composes that map rather than competing with it: the
+                same nodes, verdicts and wording, placed alongside the current
+                focus, the evidence lenses and the ordered motion. Two rows a
+                thumb apart, one of them a strictly larger version of the
+                other, would have made the student choose between a screen and
+                its own superset. Öğrenme Haritam keeps its route and is one
+                tap away from inside the Atlas.
+
+                Still beside İlerleme Hikâyem, and still below the next-action
+                card: the story says how learning has changed, the Atlas says
+                how the signals stand right now, and neither may outshout the
+                one card that tells the student what to do. */}
+            <LearningAtlasEntryCard
               conceptCount={conceptMap.totalConcepts}
               attentionCount={conceptMap.conceptsNeedingAttention}
-              onPress={() => router.push(ROUTES.studentConceptMasteryMap as never)}
+              dueCount={conceptMap.conceptsDueForReview}
+              onPress={() => router.push(ROUTES.studentLearningAtlas as never)}
             />
             <AssignedWorkSection cards={assignmentCards} onOpen={openAssignment} />
             <DailyPracticePlanSection plan={plan} onStart={handleStartPlan} />

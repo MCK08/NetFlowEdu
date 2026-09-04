@@ -21,6 +21,11 @@ export const ROUTES = {
   // Study Hub: the map says where evidence stands, this says how difficulty is
   // repeating, and the Hub already carries four competing entry points.
   studentStrugglePatterns: "/(student)/study/patterns",
+  // Phase 76 — Öğrenme Atlasım. The Hub's single exploration entry: it
+  // composes the concept map, the struggle patterns, the bounded chronology
+  // and the canonical next action into one landscape, and routes into the
+  // deeper screens rather than replacing them.
+  studentLearningAtlas: "/(student)/study/learning-atlas",
   editProfile: "/(student)/edit-profile",
   studentNotifications: "/(student)/notifications",
   teacher: "/(teacher)/(tabs)",
