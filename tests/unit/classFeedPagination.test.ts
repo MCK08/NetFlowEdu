@@ -30,6 +30,7 @@ function q(id: string, createdAt = 0): Question {
     choices: null,
     correctChoice: null,
     hints: [],
+    choiceFeedback: null,
   };
 }
 

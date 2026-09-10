@@ -812,6 +812,79 @@ describe("firestore.rules — questions/{questionId} visibility model", () => {
     );
   });
 
+  // Phase 77 — optional authored feedback per wrong choice. Rules bound the
+  // SHAPE (a map, at most one entry per real choice label); whether an entry
+  // names an option this question has, and whether it sits on the correct
+  // answer, are relationships between three fields that choiceFeedback.ts
+  // enforces on both write and read.
+  it("allows creating a question with authored choice feedback", async () => {
+    const student = studentContext("student-1");
+    const ref = await assertSucceeds(
+      addDoc(collection(student.firestore(), "questions"), {
+        ...publicQuestionDoc({ ownerId: "student-1" }),
+        choices: { A: "Paris", B: "London" },
+        correctChoice: "A",
+        choiceFeedback: { B: { text: "Başkenti karıştırmış olabilirsin.", conceptKey: null } },
+        createdAt: serverTimestamp(),
+      }),
+    );
+    const snapshot = await getDoc(doc(student.firestore(), "questions", ref.id));
+    expect(snapshot.data()?.choiceFeedback).toEqual({
+      B: { text: "Başkenti karıştırmış olabilirsin.", conceptKey: null },
+    });
+  });
+
+  it("allows creating a question with no choiceFeedback field at all", async () => {
+    // Every pre-Phase-77 writer must keep working untouched.
+    const student = studentContext("student-1");
+    await assertSucceeds(
+      addDoc(collection(student.firestore(), "questions"), {
+        ...publicQuestionDoc({ ownerId: "student-1" }),
+        createdAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it("allows an explicitly null choiceFeedback field", async () => {
+    const student = studentContext("student-1");
+    await assertSucceeds(
+      addDoc(collection(student.firestore(), "questions"), {
+        ...publicQuestionDoc({ ownerId: "student-1" }),
+        choiceFeedback: null,
+        createdAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it("denies choice feedback with more entries than there are choice labels", async () => {
+    const student = studentContext("student-1");
+    await assertFails(
+      addDoc(collection(student.firestore(), "questions"), {
+        ...publicQuestionDoc({ ownerId: "student-1" }),
+        choiceFeedback: {
+          A: { text: "a", conceptKey: null },
+          B: { text: "b", conceptKey: null },
+          C: { text: "c", conceptKey: null },
+          D: { text: "d", conceptKey: null },
+          E: { text: "e", conceptKey: null },
+          F: { text: "f", conceptKey: null },
+        },
+        createdAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it("denies a choiceFeedback field that is not a map", async () => {
+    const student = studentContext("student-1");
+    await assertFails(
+      addDoc(collection(student.firestore(), "questions"), {
+        ...publicQuestionDoc({ ownerId: "student-1" }),
+        choiceFeedback: "tek bir geri bildirim",
+        createdAt: serverTimestamp(),
+      }),
+    );
+  });
+
   // A student (not a teacher, and no real class behind classId: null) can
   // never create a 'class'-visibility question — full teacher+class-owner
   // coverage lives in the dedicated "classes" describe block below.

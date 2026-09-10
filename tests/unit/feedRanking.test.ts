@@ -26,6 +26,7 @@ function q(id: string, overrides: Partial<Question> = {}): Question {
     choices: null,
     correctChoice: null,
     hints: [],
+    choiceFeedback: null,
     ...overrides,
   };
 }

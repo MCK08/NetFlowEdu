@@ -197,6 +197,23 @@ service cloud.firestore {
              || (data.hints is list && data.hints.size() <= 3);
     }
 
+    // Phase 77 — optional authored feedback per wrong choice, keyed by the
+    // same A-E labels `choices` already uses. Absent/null is always legal
+    // (every legacy question, and every question whose author attached none).
+    //
+    // Rules can bound the SHAPE — a map, with at most one entry per real
+    // choice label. They deliberately do not try to validate the entries
+    // themselves: whether a note names an option this question actually has,
+    // and whether it sits on the correct answer, are questions about the
+    // relationship between three fields, and choiceFeedback.ts is the one
+    // place that check lives on both the write and the read side. Duplicating
+    // a weaker version of it here would create a second, drifting authority.
+    function choiceFeedbackWithinBounds(data) {
+      return !('choiceFeedback' in data)
+             || data.choiceFeedback == null
+             || (data.choiceFeedback is map && data.choiceFeedback.keys().size() <= 5);
+    }
+
     match /questions/{questionId} {
       // isOwner(...) is listed first, and separately from
       // canReadQuestionData, on purpose: Firestore's query-provability
@@ -249,6 +266,7 @@ service cloud.firestore {
       allow create: if isSignedIn()
                     && request.resource.data.ownerId == uid()
                     && hintsWithinBounds(request.resource.data)
+                    && choiceFeedbackWithinBounds(request.resource.data)
                     && request.resource.data.likeCount == 0
                     && request.resource.data.commentCount == 0
                     && request.resource.data.answerCount == 0
@@ -287,6 +305,7 @@ service cloud.firestore {
       // also smuggle in a posterRole change.
       allow update: if isOwner(resource.data.ownerId)
                     && hintsWithinBounds(request.resource.data)
+                    && choiceFeedbackWithinBounds(request.resource.data)
                     && request.resource.data.ownerId == resource.data.ownerId
                     && request.resource.data.visibility == resource.data.visibility
                     && request.resource.data.classId == resource.data.classId

@@ -150,7 +150,18 @@ const Q_INT_1 = "demo-q-int-1";
 const Q_INT_2 = "demo-q-int-2";
 const Q_INT_3 = "demo-q-int-3";
 
-const QUESTION_IDS = [Q_HEAVY, Q_LIGHT, Q_INT_1, Q_INT_2, Q_INT_3];
+// Phase 77 — the demo's first multiple-choice question, and the one place
+// authored choice feedback is reachable from canonical fixtures.
+//
+// A NEW question rather than choices bolted onto an existing one, deliberately:
+// every other seeded question backs a Phase 41/42 persona's evidence, and
+// MultipleChoiceAnswer reports a real StudyOutcome when a student picks an
+// option (the Phase 25 bridge). Adding choices to Q_HEAVY would therefore let
+// a demo tap rewrite Öğrenci A's counters. This one has no study items, so it
+// carries no evidence to disturb.
+const Q_MC = "demo-q-mc-1";
+
+const QUESTION_IDS = [Q_HEAVY, Q_LIGHT, Q_INT_1, Q_INT_2, Q_INT_3, Q_MC];
 
 // Phase 72 — author-written progressive hints, gentlest first. Deliberately
 // varied rather than the same placeholder on every question: one full
@@ -166,8 +177,29 @@ const QUESTION_HINTS: Readonly<Record<string, string[]>> = {
     "Bilinmeyeni yalnız bıraktıktan sonra katsayıya bölmen yeterli.",
   ],
   [Q_LIGHT]: ["Önce parantezleri açmayı dene."],
+  // Paired with authored choice feedback below, so the demo shows both
+  // authored channels on one question: help BEFORE answering, and a response
+  // to the specific answer given.
+  [Q_MC]: ["Bilinmeyeni yalnız bırakmak için önce sabiti karşı tarafa geçir."],
   // Q_INT_1, Q_INT_2, Q_INT_3 deliberately have none — a question without
   // authored hints must behave exactly as it always did.
+};
+
+// Phase 77 — 2x + 6 = 14, with authored feedback on two of the three wrong
+// options. C is deliberately left UNMAPPED so the demo also shows the honest
+// no-explanation case: a wrong answer the author said nothing about gets the
+// plain result and nothing invented.
+const MC_CHOICES: Readonly<Record<string, string>> = { A: "3", B: "4", C: "7", D: "10" };
+const MC_CORRECT = "B";
+const MC_FEEDBACK: Readonly<Record<string, { text: string; conceptKey: string | null }>> = {
+  A: {
+    text: "6'yı karşı tarafa geçirirken çıkarmak yerine bölmüş olabilirsin. Önce 2x = 8 adımına ulaşmayı dene.",
+    conceptKey: "sign_transfer_error",
+  },
+  D: {
+    text: "Sabiti karşı tarafa geçirdikten sonra katsayıya bölmeyi atlamış olabilirsin. 2x = 8 ise x kaçtır?",
+    conceptKey: "missing_division_step",
+  },
 };
 
 async function seedQuestions(): Promise<void> {
@@ -189,15 +221,16 @@ async function seedQuestions(): Promise<void> {
       likeCount: 0,
       commentCount: 0,
       answerCount: 0,
-      choices: null,
-      correctChoice: null,
+      choices: id === Q_MC ? MC_CHOICES : null,
+      correctChoice: id === Q_MC ? MC_CORRECT : null,
       hints: QUESTION_HINTS[id] ?? [],
+      choiceFeedback: id === Q_MC ? MC_FEEDBACK : null,
     });
   }
   await batch.commit();
   const hinted = QUESTION_IDS.filter((id) => (QUESTION_HINTS[id] ?? []).length > 0).length;
   console.log(
-    `[seedDemoFixtures] seeded ${QUESTION_IDS.length} questions (${hinted} with authored hints).`,
+    `[seedDemoFixtures] seeded ${QUESTION_IDS.length} questions (${hinted} with authored hints, 1 multiple-choice with authored choice feedback).`,
   );
 }
 

@@ -131,6 +131,7 @@ export function QuestionDetailScreen({ questionId }: QuestionDetailScreenProps) 
                 correctChoice={question.correctChoice}
                 questionId={question.id}
                 isStudent={isStudent}
+                choiceFeedback={question.choiceFeedback}
               />
             ) : null}
 

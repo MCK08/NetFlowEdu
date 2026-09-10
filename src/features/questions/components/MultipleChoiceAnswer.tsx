@@ -6,7 +6,7 @@ import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
 import { themedStyles } from "@theme/themeRuntime";
-import { ChoiceLabel, QuestionChoices } from "@/types/question";
+import { ChoiceLabel, QuestionChoiceFeedback, QuestionChoices } from "@/types/question";
 
 import {
   createOnceGuard,
@@ -16,6 +16,8 @@ import {
 import { recordStudyOutcome } from "@features/study/services/studyService";
 
 import { CHOICE_LABELS, evaluateChoice } from "../services/multipleChoice";
+import { resolveChoiceFeedback } from "../services/choiceFeedback";
+import { ChoiceFeedbackPanel } from "./ChoiceFeedbackPanel";
 
 interface MultipleChoiceAnswerProps {
   choices: QuestionChoices;
@@ -29,6 +31,11 @@ interface MultipleChoiceAnswerProps {
   // phase: local Doğru/Yanlış UI only, no backend effect whatsoever.
   questionId?: string;
   isStudent?: boolean;
+  // Phase 77 — optional author-written feedback per wrong choice. Absent on
+  // every question whose author attached none (and on every question created
+  // before that phase), which keeps this component's behaviour byte-identical
+  // to before for them.
+  choiceFeedback?: QuestionChoiceFeedback | null;
 }
 
 // Phase 21 — QuestionDetailScreen's optional multiple-choice answer UI.
@@ -51,6 +58,7 @@ export function MultipleChoiceAnswer({
   correctChoice,
   questionId,
   isStudent,
+  choiceFeedback,
 }: MultipleChoiceAnswerProps) {
   const [selected, setSelected] = useState<ChoiceLabel | null>(null);
   // Guards against the exact same UI interaction recording an outcome
@@ -62,6 +70,16 @@ export function MultipleChoiceAnswer({
 
   const options = CHOICE_LABELS.filter((label) => Boolean(choices[label]));
   const evaluation = selected ? evaluateChoice(correctChoice, selected) : null;
+  // Phase 77 — resolved from `selected`, which is null until the student
+  // commits an answer. So before submission this is null and the panel below
+  // renders NOTHING AT ALL: the authored text is not merely hidden, it is
+  // absent from the tree, from the DOM and from the accessibility tree. That
+  // is what stops a screen reader (or a curious inspector) reaching an
+  // explanation that would give the answer away early.
+  const feedback = resolveChoiceFeedback(
+    { choices, correctChoice, choiceFeedback: choiceFeedback ?? null },
+    selected,
+  );
 
   function handleSelect(label: ChoiceLabel) {
     if (selected !== null) return;
@@ -131,6 +149,11 @@ export function MultipleChoiceAnswer({
           ) : null}
         </View>
       ) : null}
+
+      {/* Phase 77 — the author's own words about the option that was picked.
+          Renders nothing when the author attached none, so an unexplained
+          wrong answer keeps exactly the experience it had before. */}
+      <ChoiceFeedbackPanel feedback={feedback} />
     </View>
   );
 }

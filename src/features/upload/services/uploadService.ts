@@ -2,6 +2,7 @@ import * as ImagePicker from "expo-image-picker";
 
 import { createQuestion } from "@services/questions/questions";
 import { sanitizeHints } from "@features/questions/services/questionHints";
+import { sanitizeChoiceFeedback } from "@features/questions/services/choiceFeedback";
 import { uploadQuestionImage } from "@services/storage/questionImages";
 import { ChoiceLabel, Question, QuestionChoices, QuestionPosterRole, QuestionVisibility } from "@/types/question";
 
@@ -91,6 +92,9 @@ export interface QuestionMetadataInput {
   correctChoice?: ChoiceLabel | null;
   // Phase 72 — optional author-written hints, gentlest first.
   hints?: readonly string[] | null;
+  // Phase 77 — optional author-written feedback per wrong choice, keyed by
+  // ChoiceLabel. Sanitized against choices/correctChoice downstream.
+  choiceFeedback?: Partial<Record<ChoiceLabel, unknown>> | null;
 }
 
 interface UploadQuestionInput extends QuestionMetadataInput {
@@ -128,6 +132,7 @@ export async function uploadQuestionWithMetadata(input: UploadQuestionInput): Pr
     choices: input.choices ?? null,
     correctChoice: input.correctChoice ?? null,
     hints: input.hints ?? null,
+    choiceFeedback: input.choiceFeedback ?? null,
   });
 
   return {
@@ -150,6 +155,11 @@ export async function uploadQuestionWithMetadata(input: UploadQuestionInput): Pr
     correctChoice: input.correctChoice ?? null,
     // Mirrors what createQuestion just persisted, sanitized the same way.
     hints: sanitizeHints(input.hints),
+    choiceFeedback: sanitizeChoiceFeedback(
+      input.choiceFeedback,
+      input.choices ?? null,
+      input.correctChoice ?? null,
+    ),
   };
 }
 
@@ -188,6 +198,8 @@ interface UploadClassQuestionInput {
   correctChoice?: ChoiceLabel | null;
   // Phase 72 — optional author-written hints, gentlest first.
   hints?: readonly string[] | null;
+  // Phase 77 — optional author-written feedback per wrong choice.
+  choiceFeedback?: Partial<Record<ChoiceLabel, unknown>> | null;
 }
 
 // The upload+create half of captureAndUploadClassQuestion, split out so a
@@ -218,6 +230,13 @@ export async function uploadClassQuestionImage(
     gradeLevel: input.gradeLevel,
     choices: input.choices ?? null,
     correctChoice: input.correctChoice ?? null,
+    // Phase 77 fix — `hints` was accepted and returned here but never handed
+    // to createQuestion, so authored hints on CLASS questions (the teacher
+    // composer's own path) were silently dropped on write while the
+    // optimistic return below claimed they had been saved. Passing both
+    // fields is what makes that return comment true.
+    hints: input.hints ?? null,
+    choiceFeedback: input.choiceFeedback ?? null,
   });
   if (__DEV__) console.log("[QUESTION_UPLOAD] firestore create succeeded");
 
@@ -241,6 +260,11 @@ export async function uploadClassQuestionImage(
     correctChoice: input.correctChoice ?? null,
     // Mirrors what createQuestion just persisted, sanitized the same way.
     hints: sanitizeHints(input.hints),
+    choiceFeedback: sanitizeChoiceFeedback(
+      input.choiceFeedback,
+      input.choices ?? null,
+      input.correctChoice ?? null,
+    ),
   };
 }
 

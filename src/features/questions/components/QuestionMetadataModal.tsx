@@ -9,11 +9,16 @@ import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
 import { themedStyles } from "@theme/themeRuntime";
-import { ChoiceLabel, QuestionChoices } from "@/types/question";
+import { ChoiceLabel, QuestionChoiceFeedback, QuestionChoices } from "@/types/question";
 
 import { GRADE_LEVELS, getTopicsForSubject, QUESTION_SUBJECTS } from "../data/questionTaxonomy";
 import { buildChoicesPayload, CHOICE_LABELS } from "../services/multipleChoice";
 import { MAX_HINT_LENGTH, MAX_QUESTION_HINTS, sanitizeHints } from "../services/questionHints";
+import {
+  MAX_CHOICE_FEEDBACK_LENGTH,
+  MAX_CONCEPT_KEY_LENGTH,
+  sanitizeChoiceFeedback,
+} from "../services/choiceFeedback";
 
 const MAX_DESCRIPTION_LENGTH = 300;
 
@@ -26,6 +31,8 @@ export interface QuestionMetadataDetails {
   correctChoice: ChoiceLabel | null;
   // Phase 72 — author-written, gentlest first. Empty when none were added.
   hints: string[];
+  // Phase 77 — optional author-written feedback per wrong choice.
+  choiceFeedback: QuestionChoiceFeedback | null;
 }
 
 interface QuestionMetadataModalProps {
@@ -73,6 +80,11 @@ export function QuestionMetadataModal({
   const [choiceDrafts, setChoiceDrafts] = useState<Partial<Record<ChoiceLabel, string>>>({});
   const [correctChoice, setCorrectChoice] = useState<ChoiceLabel | null>(null);
   const [hintsEnabled, setHintsEnabled] = useState(false);
+  // Phase 77 — one draft per option, keyed by the SAME stable ChoiceLabel the
+  // option itself uses, so an author's note stays attached to the row they
+  // typed it under no matter how the text is later edited.
+  const [feedbackDrafts, setFeedbackDrafts] = useState<Partial<Record<ChoiceLabel, string>>>({});
+  const [conceptDrafts, setConceptDrafts] = useState<Partial<Record<ChoiceLabel, string>>>({});
   // One draft per rung. Blank boxes are dropped on save, so an author who
   // fills 1 and 3 still publishes a contiguous two-step ladder.
   const [hintDrafts, setHintDrafts] = useState<string[]>(
@@ -107,6 +119,14 @@ export function QuestionMetadataModal({
       setMcEnabled(false);
       setChoiceDrafts({});
       setCorrectChoice(null);
+      // Phase 77 fix — the hint drafts were left out of this reset, so text
+      // typed for one question reappeared, already filled in, on the NEXT
+      // upload. An author who did not scroll down would have published
+      // another question's hints without ever seeing them.
+      setHintsEnabled(false);
+      setHintDrafts(Array.from({ length: MAX_QUESTION_HINTS }, () => ""));
+      setFeedbackDrafts({});
+      setConceptDrafts({});
       setValidationError(null);
     }
   }, [visible, initialSubject, initialGradeLevel, initialTopic]);
@@ -128,6 +148,14 @@ export function QuestionMetadataModal({
 
   function handleChoiceTextChange(label: ChoiceLabel, value: string) {
     setChoiceDrafts((prev) => ({ ...prev, [label]: value }));
+  }
+
+  function handleFeedbackTextChange(label: ChoiceLabel, value: string) {
+    setFeedbackDrafts((prev) => ({ ...prev, [label]: value }));
+  }
+
+  function handleConceptKeyChange(label: ChoiceLabel, value: string) {
+    setConceptDrafts((prev) => ({ ...prev, [label]: value }));
   }
 
   function handleSubmit() {
@@ -163,6 +191,21 @@ export function QuestionMetadataModal({
     setValidationError(null);
     const hints = hintsEnabled ? sanitizeHints(hintDrafts) : [];
 
+    // Sanitized against the options actually being saved, so a note left
+    // behind on a choice the author later blanked — or on the one they marked
+    // correct — is dropped rather than persisted where it could resurface
+    // attached to different text.
+    const choiceFeedback = sanitizeChoiceFeedback(
+      Object.fromEntries(
+        CHOICE_LABELS.map((label) => [
+          label,
+          { text: feedbackDrafts[label] ?? "", conceptKey: conceptDrafts[label] ?? "" },
+        ]),
+      ) as Partial<Record<ChoiceLabel, unknown>>,
+      choices,
+      finalCorrectChoice,
+    );
+
     onSubmit({
       subject,
       gradeLevel,
@@ -171,6 +214,7 @@ export function QuestionMetadataModal({
       choices,
       correctChoice: finalCorrectChoice,
       hints,
+      choiceFeedback,
     });
   }
 
@@ -212,19 +256,66 @@ export function QuestionMetadataModal({
 
               {mcEnabled ? (
                 <View style={styles.mcFields}>
-                  {CHOICE_LABELS.map((label) => (
-                    <View key={label} style={styles.choiceRow}>
-                      <Text style={styles.choiceLetter}>{label}</Text>
-                      <TextInput
-                        style={styles.choiceInput}
-                        placeholder={`${label} şıkkı`}
-                        placeholderTextColor={colors.textTertiary}
-                        value={choiceDrafts[label] ?? ""}
-                        onChangeText={(value) => handleChoiceTextChange(label, value)}
-                        maxLength={200}
-                      />
-                    </View>
-                  ))}
+                  {CHOICE_LABELS.map((label) => {
+                    const choiceText = (choiceDrafts[label] ?? "").trim();
+                    // Phase 77 — feedback is offered only where it can mean
+                    // something: an option that exists, and is not the one
+                    // marked correct. That is progressive disclosure doing
+                    // real work rather than hiding fields — five choices plus
+                    // three hints plus five always-open notes would turn the
+                    // composer into a worksheet, and a note on the right
+                    // answer has no moment at which to appear.
+                    const canExplain = choiceText.length > 0 && correctChoice !== label;
+                    const feedbackText = feedbackDrafts[label] ?? "";
+                    return (
+                      <View key={label} style={styles.choiceGroup}>
+                        <View style={styles.choiceRow}>
+                          <Text style={styles.choiceLetter}>{label}</Text>
+                          <TextInput
+                            style={styles.choiceInput}
+                            placeholder={`${label} şıkkı`}
+                            placeholderTextColor={colors.textTertiary}
+                            value={choiceDrafts[label] ?? ""}
+                            onChangeText={(value) => handleChoiceTextChange(label, value)}
+                            maxLength={200}
+                            accessibilityLabel={`${label} şıkkının metni`}
+                          />
+                        </View>
+
+                        {canExplain ? (
+                          <View style={styles.feedbackBlock}>
+                            <TextInput
+                              style={styles.feedbackInput}
+                              placeholder="Bu şık seçilirse gösterilecek geri bildirim (isteğe bağlı)"
+                              placeholderTextColor={colors.textTertiary}
+                              value={feedbackText}
+                              onChangeText={(value) => handleFeedbackTextChange(label, value)}
+                              maxLength={MAX_CHOICE_FEEDBACK_LENGTH}
+                              multiline
+                              accessibilityLabel={`${label} şıkkı seçilirse gösterilecek geri bildirim`}
+                            />
+                            {feedbackText.trim().length > 0 ? (
+                              <TextInput
+                                style={styles.conceptInput}
+                                placeholder="Hata etiketi (isteğe bağlı, öğrenciye gösterilmez)"
+                                placeholderTextColor={colors.textTertiary}
+                                value={conceptDrafts[label] ?? ""}
+                                onChangeText={(value) => handleConceptKeyChange(label, value)}
+                                maxLength={MAX_CONCEPT_KEY_LENGTH}
+                                autoCapitalize="none"
+                                accessibilityLabel={`${label} şıkkı için hata etiketi, öğrenciye gösterilmez`}
+                              />
+                            ) : null}
+                          </View>
+                        ) : null}
+                      </View>
+                    );
+                  })}
+
+                  <Text style={styles.hintHelp}>
+                    Geri bildirim, öğrenci o şıkkı seçtikten sonra gösterilir. Neyi yeniden
+                    gözden geçirmesi gerektiğini yaz; cevabı doğrudan verme.
+                  </Text>
 
                   <Text style={styles.label}>Doğru cevap</Text>
                   <View style={styles.correctChoiceRow}>
@@ -430,6 +521,34 @@ const styles = themedStyles(() => ({
     paddingHorizontal: spacing.sm,
     fontSize: 14,
     color: colors.textPrimary,
+  },
+  choiceGroup: {
+    gap: spacing.xxs,
+  },
+  feedbackBlock: {
+    // Indented to sit visually beneath its own option letter, so the
+    // relationship between a note and the choice it explains is structural
+    // rather than something the author has to remember.
+    marginLeft: spacing.lg,
+    gap: spacing.xxs,
+  },
+  feedbackInput: {
+    ...typography.caption,
+    color: colors.textPrimary,
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    minHeight: 44,
+  },
+  conceptInput: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    minHeight: 44,
   },
   correctChoiceRow: {
     flexDirection: "row",

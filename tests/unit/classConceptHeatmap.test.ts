@@ -23,7 +23,7 @@ function question(id: string, subject = "Matematik", topic = "Denklemler"): Ques
     imageUrl: "", classId: "c1", subject, topic, gradeLevel: "9",
     description: null, posterRole: "teacher", createdAt: 0,
     likeCount: 0, commentCount: 0, answerCount: 0,
-    choices: null, correctChoice: null, hints: [],
+    choices: null, correctChoice: null, hints: [], choiceFeedback: null,
   };
 }
 

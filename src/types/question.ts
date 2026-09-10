@@ -9,6 +9,24 @@ export type QuestionVisibility = "private" | "public" | "class";
 export const CHOICE_LABELS = ["A", "B", "C", "D", "E"] as const;
 export type ChoiceLabel = (typeof CHOICE_LABELS)[number];
 
+// Phase 77 — optional AUTHOR-WRITTEN feedback for a specific wrong option.
+// Keyed by the SAME ChoiceLabel `choices` and `correctChoice` already use, so
+// an explanation is bound to an option's stable slot rather than to its text
+// or its position. See choiceFeedback.ts for why that association matters.
+export interface ChoiceFeedbackEntry {
+  text: string;
+  // Optional, authored, never inferred, and never shown to the student.
+  conceptKey: string | null;
+}
+
+export interface QuestionChoiceFeedback {
+  A?: ChoiceFeedbackEntry;
+  B?: ChoiceFeedbackEntry;
+  C?: ChoiceFeedbackEntry;
+  D?: ChoiceFeedbackEntry;
+  E?: ChoiceFeedbackEntry;
+}
+
 export interface QuestionChoices {
   A?: string;
   B?: string;
@@ -75,4 +93,11 @@ export interface Question {
   // `subject`/`topic` already use, so no consumer needs a null check that did
   // not already exist. Never generated: see questionHints.ts.
   hints: string[];
+  // Phase 77 — optional author-written feedback per wrong choice. `null` for
+  // every question created before this phase and for every question whose
+  // author attached none, matching how `choices` itself is null rather than
+  // an empty object. Only ever non-null alongside a valid `choices`, and it
+  // never holds an entry for `correctChoice` — see choiceFeedback.ts, the one
+  // place both invariants are enforced.
+  choiceFeedback: QuestionChoiceFeedback | null;
 }

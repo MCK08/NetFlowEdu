@@ -18,6 +18,7 @@ import {
 
 import { parseChoicesFromUnknown, parseCorrectChoiceFromUnknown } from "@features/questions/services/multipleChoice";
 import { parseHintsFromUnknown } from "@features/questions/services/questionHints";
+import { parseChoiceFeedbackFromUnknown } from "@features/questions/services/choiceFeedback";
 import { db } from "@services/firebase/config";
 import { Question } from "@/types/question";
 
@@ -62,6 +63,7 @@ export async function isQuestionSaved(uid: string, questionId: string): Promise<
 
 function toQuestion(id: string, data: DocumentData): Question {
   const choices = parseChoicesFromUnknown(data.choices);
+  const correctChoice = parseCorrectChoiceFromUnknown(data.correctChoice, choices);
   return {
     id,
     ownerId: data.ownerId ?? "",
@@ -84,8 +86,9 @@ function toQuestion(id: string, data: DocumentData): Question {
           ? data.createdAt.toMillis()
           : 0,
     choices,
-    correctChoice: parseCorrectChoiceFromUnknown(data.correctChoice, choices),
+    correctChoice,
     hints: parseHintsFromUnknown(data.hints),
+    choiceFeedback: parseChoiceFeedbackFromUnknown(data.choiceFeedback, choices, correctChoice),
   };
 }
 

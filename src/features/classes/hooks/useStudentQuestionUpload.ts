@@ -114,6 +114,7 @@ export function useStudentQuestionUpload({
         choices: details.choices,
         correctChoice: details.correctChoice,
         hints: details.hints,
+        choiceFeedback: details.choiceFeedback,
       });
       if (__DEV__) console.log("[QUESTION_UPLOAD] details submit succeeded", { classId, uid6: uid.slice(0, 6) });
       onUploaded(question);

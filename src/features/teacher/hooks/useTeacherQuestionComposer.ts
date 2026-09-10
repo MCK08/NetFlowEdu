@@ -109,6 +109,7 @@ export function useTeacherQuestionComposer({
         choices: details.choices,
         correctChoice: details.correctChoice,
         hints: details.hints,
+        choiceFeedback: details.choiceFeedback,
       });
       onUploaded(question);
       setPickedImageUri(null);

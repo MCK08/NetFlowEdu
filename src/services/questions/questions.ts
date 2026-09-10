@@ -18,6 +18,10 @@ import {
 
 import { parseChoicesFromUnknown, parseCorrectChoiceFromUnknown } from "@features/questions/services/multipleChoice";
 import { parseHintsFromUnknown, sanitizeHints } from "@features/questions/services/questionHints";
+import {
+  parseChoiceFeedbackFromUnknown,
+  sanitizeChoiceFeedback,
+} from "@features/questions/services/choiceFeedback";
 import { db } from "@services/firebase/config";
 import { ChoiceLabel, Question, QuestionChoices, QuestionPosterRole, QuestionVisibility } from "@/types/question";
 
@@ -53,6 +57,10 @@ export interface CreateQuestionInput {
   // Phase 72 — optional author-written hints, gentlest first. Omitted by every
   // existing caller, which keeps writing exactly the shape it always did.
   hints?: readonly string[] | null;
+  // Phase 77 — optional author-written feedback per wrong choice. Sanitized
+  // against `choices`/`correctChoice` below rather than trusted, so it can
+  // never name an option this question does not have.
+  choiceFeedback?: Partial<Record<ChoiceLabel, unknown>> | null;
 }
 
 // Matches firestore.rules `allow create` exactly: ownerId must be the
@@ -80,6 +88,14 @@ export async function createQuestion(input: CreateQuestionInput): Promise<string
     // Sanitized on the way in as well as on the way out: a blank or
     // over-long hint must never reach the document in the first place.
     hints: sanitizeHints(input.hints),
+    // Same posture as `hints`: sanitized on the way in as well as on the way
+    // out, and validated against this question's OWN options, so a stale
+    // mapping for a since-removed choice never reaches the document.
+    choiceFeedback: sanitizeChoiceFeedback(
+      input.choiceFeedback,
+      input.choices ?? null,
+      input.correctChoice ?? null,
+    ),
     likeCount: 0,
     commentCount: 0,
     answerCount: 0,
@@ -90,6 +106,7 @@ export async function createQuestion(input: CreateQuestionInput): Promise<string
 
 function toQuestion(id: string, data: DocumentData): Question {
   const choices = parseChoicesFromUnknown(data.choices);
+  const correctChoice = parseCorrectChoiceFromUnknown(data.correctChoice, choices);
   return {
     id,
     ownerId: data.ownerId ?? "",
@@ -109,8 +126,9 @@ function toQuestion(id: string, data: DocumentData): Question {
     answerCount: data.answerCount ?? 0,
     createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toMillis() : 0,
     choices,
-    correctChoice: parseCorrectChoiceFromUnknown(data.correctChoice, choices),
+    correctChoice,
     hints: parseHintsFromUnknown(data.hints),
+    choiceFeedback: parseChoiceFeedbackFromUnknown(data.choiceFeedback, choices, correctChoice),
   };
 }
 
