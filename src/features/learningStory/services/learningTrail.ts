@@ -28,10 +28,27 @@ import { StudyOutcome } from "@features/study/domain/studyTypes";
  *  `namespaceId` is the question author's uid. It is what stops one author's
  *  "sign_transfer_error" from ever merging with another's — see
  *  functions/src/study/semanticChoiceEvidence.ts for why that matters. */
-export interface StoredSemanticChoice {
+/** Phase 80 — whose vocabulary a semantic id belongs to. Comparing (kind, id)
+ *  rather than a bare string is what keeps a user uid and a class id from ever
+ *  being mistaken for one another. */
+export type SemanticNamespaceKind = "author" | "class";
+
+/** One semantic meaning, fully qualified. The single shape every aggregator
+ *  compares, so legacy author-scoped events and new shared ones flow through
+ *  exactly the same code rather than two parallel pipelines. */
+export interface SemanticIdentity {
+  namespaceKind: SemanticNamespaceKind;
   namespaceId: string;
-  conceptKey: string;
+  semanticId: string;
+}
+
+export interface StoredSemanticChoice {
+  identity: SemanticIdentity;
   choiceLabel: ChoiceLabel;
+  /** The shared definition's label as it read when this outcome was recorded.
+   *  Display only, and null for author-scoped identities, which have no label
+   *  an author ever wrote for a reader. */
+  label: string | null;
 }
 
 /** Phase 79 — which authored meanings were SELECTABLE when this outcome was
@@ -43,9 +60,22 @@ export interface StoredSemanticChoice {
  *  it means the question was simply never observed as a decision. Nothing may
  *  read absence as a passed-over opportunity. */
 export interface StoredSemanticOpportunities {
-  namespaceId: string;
-  conceptKeys: string[];
+  /** Every meaning that was selectable and wrong, each with its OWN namespace.
+   *  A question may legitimately mix a private conceptKey on one option with a
+   *  shared definition on another, and both are represented here. */
+  items: SemanticIdentity[];
   selectedChoice: ChoiceLabel;
+}
+
+/** Whether two identities are the same meaning. Compares every component:
+ *  a matching semanticId in two different namespaces is a coincidence, not a
+ *  shared meaning. */
+export function sameSemanticIdentity(a: SemanticIdentity, b: SemanticIdentity): boolean {
+  return (
+    a.namespaceKind === b.namespaceKind &&
+    a.namespaceId === b.namespaceId &&
+    a.semanticId === b.semanticId
+  );
 }
 
 export interface LearningEvent {

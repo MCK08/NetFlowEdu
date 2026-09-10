@@ -57,6 +57,9 @@ describe("normalizeConceptKey mirrors the client implementation", () => {
 describe("a wrong pick with an authored key", () => {
   it("produces verified evidence", () => {
     expect(resolve("B")).toEqual({
+      // Phase 80 — the kind is explicit now. A legacy event without it is read
+      // as "author", which is exactly what those events were.
+      namespaceKind: "author",
       namespaceId: "teacher-1",
       conceptKey: "sign_transfer_error",
       choiceLabel: "B",

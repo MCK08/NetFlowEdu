@@ -1,4 +1,8 @@
-import { LearningEvent } from "@features/learningStory/services/learningTrail";
+import {
+  LearningEvent,
+  sameSemanticIdentity,
+  SemanticIdentity,
+} from "@features/learningStory/services/learningTrail";
 
 // Phase 78 — repeated authored choice meanings, across DIFFERENT questions.
 //
@@ -102,6 +106,19 @@ export interface VerifiedChoicePattern {
   /** The questions that contributed, most recently seen first. Lets a caller
    *  show evidence markers without re-deriving them. */
   questionIds: string[];
+  /** Phase 80 — the shared definition's human label, when this identity is a
+   *  shared one and an author actually wrote a label for it.
+   *
+   *  Null for every author-scoped identity, and that is deliberate: a private
+   *  conceptKey is internal vocabulary with no reader-facing wording, and
+   *  turning "sign_transfer_error" into prose would be the product inventing
+   *  words an author never wrote. Those patterns keep the generic Phase 78
+   *  presentation.
+   *
+   *  Taken from the MOST RECENT selection carrying one, so a definition
+   *  renamed between two occurrences shows the wording that was current when
+   *  the student last met it. */
+  label: string | null;
   /** Phase 79 — present only when the strict post-pattern contract passes.
    *
    *  Null means "no recovery evidence right now", which covers three genuinely
@@ -125,11 +142,14 @@ interface Accumulator {
   id: string;
   /** The identity's components, kept alongside the joined id so the recovery
    *  pass compares fields rather than re-splitting a delimited string. */
-  identity: { namespaceId: string; conceptKey: string; subject: string; topic: string };
+  scoped: { identity: SemanticIdentity; subject: string; topic: string };
   subject: string;
   topic: string;
   occurrenceCount: number;
   lastSeenAt: number;
+  /** The label from the most recent occurrence that carried one. */
+  label: string | null;
+  labelAt: number;
   /** questionId -> most recent occurrence, so distinct count and evidence
    *  ordering both come from one pass. */
   questions: Map<string, number>;
@@ -145,8 +165,8 @@ interface Accumulator {
 function qualifies(event: LearningEvent): boolean {
   const semantic = event.semanticChoice;
   if (!semantic) return false;
-  if (!semantic.namespaceId.trim()) return false;
-  if (!semantic.conceptKey.trim()) return false;
+  if (!semantic.identity.namespaceId.trim()) return false;
+  if (!semantic.identity.semanticId.trim()) return false;
   if (!event.questionId) return false;
   // Phase 70's concept scope, trim-only, exactly as every other surface reads
   // it. An event whose question metadata never resolved has "" for both and is
@@ -170,13 +190,17 @@ function qualifies(event: LearningEvent): boolean {
  *     are the same idea, treating them as one would be a guess. Phase 70's
  *     concept identity is reused rather than a second normalizer invented. */
 function identityOf(event: LearningEvent): string {
-  const semantic = event.semanticChoice!;
+  const { identity } = event.semanticChoice!;
   return [
-    semantic.namespaceId.trim(),
-    semantic.conceptKey.trim(),
+    // Phase 80 — the KIND leads. A class id and a user uid are different id
+    // spaces with no guarantee against collision, and without this a shared
+    // meaning and a private one could in principle land on the same string.
+    identity.namespaceKind,
+    identity.namespaceId.trim(),
+    identity.semanticId.trim(),
     event.subject.trim(),
     event.topic.trim(),
-  ].join("|");
+  ].join("\u0000");
 }
 
 /** Whether one event shows this exact identity being OFFERED and passed over.
@@ -199,27 +223,25 @@ function identityOf(event: LearningEvent): string {
  *  between "chose otherwise" and "was never asked". */
 function declinesIdentity(
   event: LearningEvent,
-  identity: { namespaceId: string; conceptKey: string; subject: string; topic: string },
+  scoped: { identity: SemanticIdentity; subject: string; topic: string },
 ): boolean {
   const offered = event.semanticOpportunities;
   if (!offered) return false;
-  if (offered.namespaceId.trim() !== identity.namespaceId) return false;
-  if (event.subject.trim() !== identity.subject) return false;
-  if (event.topic.trim() !== identity.topic) return false;
-  if (!offered.conceptKeys.some((key) => key.trim() === identity.conceptKey)) return false;
+  if (event.subject.trim() !== scoped.subject) return false;
+  if (event.topic.trim() !== scoped.topic) return false;
+  if (!offered.items.some((item) => sameSemanticIdentity(item, scoped.identity))) return false;
 
   // Taken, not declined. This is a re-selection, and the window logic below
   // has already excluded anything before the latest one — so reaching here
   // with a matching selection would mean counting a step backwards as a step
   // forwards.
+  //
+  // Phase 80 — for a SHARED identity this is exactly where cross-author
+  // recovery becomes possible: the declining question may have a completely
+  // different author from the one that formed the pattern, and it still counts,
+  // because both point at the same canonical definition.
   const selected = event.semanticChoice;
-  if (
-    selected &&
-    selected.namespaceId.trim() === identity.namespaceId &&
-    selected.conceptKey.trim() === identity.conceptKey
-  ) {
-    return false;
-  }
+  if (selected && sameSemanticIdentity(selected.identity, scoped.identity)) return false;
   return true;
 }
 
@@ -232,7 +254,7 @@ function declinesIdentity(
  *  Evidence earned before a relapse can never be presented as current. */
 function resolveRecovery(
   events: readonly LearningEvent[],
-  identity: { namespaceId: string; conceptKey: string; subject: string; topic: string },
+  scoped: { identity: SemanticIdentity; subject: string; topic: string },
   since: number,
 ): ChoiceRecoverySignal | null {
   let declinedOpportunityCount = 0;
@@ -244,7 +266,7 @@ function resolveRecovery(
     // against itself.
     if (event.occurredAt <= since) continue;
     if (!event.questionId) continue;
-    if (!declinesIdentity(event, identity)) continue;
+    if (!declinesIdentity(event, scoped)) continue;
 
     declinedOpportunityCount += 1;
     questions.add(event.questionId);
@@ -284,9 +306,8 @@ export function buildVerifiedChoicePatterns(params: {
     if (!group) {
       group = {
         id,
-        identity: {
-          namespaceId: event.semanticChoice!.namespaceId.trim(),
-          conceptKey: event.semanticChoice!.conceptKey.trim(),
+        scoped: {
+          identity: event.semanticChoice!.identity,
           subject: event.subject.trim(),
           topic: event.topic.trim(),
         },
@@ -294,6 +315,8 @@ export function buildVerifiedChoicePatterns(params: {
         topic: event.topic.trim(),
         occurrenceCount: 0,
         lastSeenAt: event.occurredAt,
+        label: null,
+        labelAt: 0,
         questions: new Map(),
       };
       groups.set(id, group);
@@ -301,6 +324,11 @@ export function buildVerifiedChoicePatterns(params: {
 
     group.occurrenceCount += 1;
     if (event.occurredAt > group.lastSeenAt) group.lastSeenAt = event.occurredAt;
+    const eventLabel = event.semanticChoice?.label ?? null;
+    if (eventLabel && event.occurredAt >= group.labelAt) {
+      group.label = eventLabel;
+      group.labelAt = event.occurredAt;
+    }
     const previous = group.questions.get(event.questionId);
     if (previous === undefined || event.occurredAt > previous) {
       group.questions.set(event.questionId, event.occurredAt);
@@ -322,6 +350,7 @@ export function buildVerifiedChoicePatterns(params: {
       occurrenceCount: group.occurrenceCount,
       distinctQuestionCount: group.questions.size,
       lastSeenAt: group.lastSeenAt,
+      label: group.label,
       questionIds: [...group.questions.entries()]
         .sort((a, b) => (b[1] !== a[1] ? b[1] - a[1] : a[0].localeCompare(b[0])))
         .map(([questionId]) => questionId),
@@ -330,7 +359,7 @@ export function buildVerifiedChoicePatterns(params: {
       // about a pattern, so there is nothing to recover from until there is
       // one, and a stray declined opportunity can never manufacture a
       // "recovering" state on its own.
-      recovery: resolveRecovery(params.events, group.identity, group.lastSeenAt),
+      recovery: resolveRecovery(params.events, group.scoped, group.lastSeenAt),
     });
   }
 
@@ -374,6 +403,16 @@ export function choicePatternFact(pattern: VerifiedChoicePattern): string {
 /** The supporting counts, stated as counts and never as a rate or a score. */
 export function choicePatternEvidence(pattern: VerifiedChoicePattern): string {
   return `${pattern.distinctQuestionCount} farklı soru · ${pattern.occurrenceCount} kayıt`;
+}
+
+/** The instructional focus line, when a shared definition gave this pattern a
+ *  label an author actually wrote.
+ *
+ *  "Odak" and not "Yanılgın": the label names what the AUTHOR said the option
+ *  represents, which is a statement about the question, not a diagnosis of the
+ *  reader. The evidence sentence beneath it does the rest of the work. */
+export function choicePatternFocusLabel(pattern: VerifiedChoicePattern): string | null {
+  return pattern.label ? `Odak: ${pattern.label}` : null;
 }
 
 /** The recovery fact, when there is one.

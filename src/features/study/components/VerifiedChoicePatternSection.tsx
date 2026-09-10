@@ -14,6 +14,7 @@ import {
   CHOICE_RECOVERY_LABEL,
   choicePatternEvidence,
   choicePatternFact,
+  choicePatternFocusLabel,
   choiceRecoveryFact,
   VerifiedChoicePattern,
 } from "../services/verifiedChoicePatterns";
@@ -101,6 +102,9 @@ export const VerifiedChoicePatternSection = memo(function VerifiedChoicePatternS
           // since. The state is carried by these words, never by the accent.
           accessibilityLabel={[
             `${pattern.subject}, ${pattern.topic}.`,
+            // Phase 80 — the shared focus, when an author wrote one. Read
+            // before the evidence, because it is what the evidence is about.
+            choicePatternFocusLabel(pattern),
             choicePatternFact(pattern),
             `${choicePatternEvidence(pattern)}.`,
             pattern.recovery
@@ -121,6 +125,16 @@ export const VerifiedChoicePatternSection = memo(function VerifiedChoicePatternS
             <Text style={styles.scope} numberOfLines={2}>
               {pattern.subject} · {pattern.topic}
             </Text>
+            {/* Phase 80 — the author's own words for what this option
+                represents, shown only when a shared definition actually
+                supplied one. A pattern backed by a private conceptKey keeps
+                the generic presentation rather than having prose invented
+                from its slug. */}
+            {pattern.label ? (
+              <Text style={styles.focus} numberOfLines={2}>
+                {choicePatternFocusLabel(pattern)}
+              </Text>
+            ) : null}
             <Text style={styles.fact}>{choicePatternFact(pattern)}</Text>
             <Text style={styles.evidence}>{choicePatternEvidence(pattern)}</Text>
 
@@ -263,6 +277,11 @@ const styles = themedStyles(() => ({
   scope: {
     ...typography.bodyStrong,
     color: colors.textPrimary,
+  },
+  focus: {
+    ...typography.caption,
+    color: colors.primary,
+    fontWeight: "600",
   },
   fact: {
     ...typography.caption,

@@ -34,8 +34,8 @@ function selected(questionId: string, at: number, over: Partial<LearningEvent> =
   return base({
     questionId,
     occurredAt: at,
-    semanticChoice: { namespaceId: NS, conceptKey: KEY, choiceLabel: "A" },
-    semanticOpportunities: { namespaceId: NS, conceptKeys: [KEY], selectedChoice: "A" },
+    semanticChoice: { identity: { namespaceKind: "author", namespaceId: NS, semanticId: KEY }, choiceLabel: "A", label: null },
+    semanticOpportunities: { items: [{ namespaceKind: "author", namespaceId: NS, semanticId: KEY }], selectedChoice: "A" },
     ...over,
   });
 }
@@ -47,7 +47,7 @@ function declined(questionId: string, at: number, over: Partial<LearningEvent> =
     occurredAt: at,
     outcome: "solved",
     semanticChoice: null,
-    semanticOpportunities: { namespaceId: NS, conceptKeys: [KEY], selectedChoice: "B" },
+    semanticOpportunities: { items: [{ namespaceKind: "author", namespaceId: NS, semanticId: KEY }], selectedChoice: "B" },
     ...over,
   });
 }
@@ -131,10 +131,10 @@ describe("what cannot count as a decline", () => {
 
   it("an event that offered a DIFFERENT meaning", () => {
     const other = declined("q3", T0 + 200, {
-      semanticOpportunities: { namespaceId: NS, conceptKeys: ["other_key"], selectedChoice: "B" },
+      semanticOpportunities: { items: [{ namespaceKind: "author", namespaceId: NS, semanticId: "other_key" }], selectedChoice: "B" },
     });
     const other2 = declined("q4", T0 + 300, {
-      semanticOpportunities: { namespaceId: NS, conceptKeys: ["other_key"], selectedChoice: "B" },
+      semanticOpportunities: { items: [{ namespaceKind: "author", namespaceId: NS, semanticId: "other_key" }], selectedChoice: "B" },
     });
     expect(only([...PATTERN, other, other2])?.recovery).toBeNull();
   });
@@ -142,7 +142,7 @@ describe("what cannot count as a decline", () => {
   it("an event from a DIFFERENT author offering the identical key", () => {
     const foreign = (q: string, at: number) =>
       declined(q, at, {
-        semanticOpportunities: { namespaceId: "teacher-2", conceptKeys: [KEY], selectedChoice: "B" },
+        semanticOpportunities: { items: [{ namespaceKind: "author", namespaceId: "teacher-2", semanticId: KEY }], selectedChoice: "B" },
       });
     expect(only([...PATTERN, foreign("q3", T0 + 200), foreign("q4", T0 + 300)])?.recovery).toBeNull();
   });

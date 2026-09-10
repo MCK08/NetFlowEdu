@@ -24,9 +24,13 @@ function event(over: Partial<LearningEvent> = {}): LearningEvent {
     subject: "Matematik",
     topic: "Denklemler",
     semanticChoice: {
-      namespaceId: "teacher-1",
-      conceptKey: "sign_transfer_error",
+      identity: {
+        namespaceKind: "author",
+        namespaceId: "teacher-1",
+        semanticId: "sign_transfer_error",
+      },
       choiceLabel: "B",
+      label: null,
     },
     ...over,
   };
@@ -111,8 +115,8 @@ describe("a verified cross-question pattern", () => {
     // Question 1's distractor B and question 2's distractor D can be the same
     // authored idea — that is the whole point of a conceptKey.
     const memory = build([
-      event({ id: "a", questionId: "q1", semanticChoice: { namespaceId: "teacher-1", conceptKey: "sign_transfer_error", choiceLabel: "B" } }),
-      event({ id: "b", questionId: "q2", occurredAt: T0 + 1, semanticChoice: { namespaceId: "teacher-1", conceptKey: "sign_transfer_error", choiceLabel: "D" } }),
+      event({ id: "a", questionId: "q1", semanticChoice: { identity: { namespaceKind: "author", namespaceId: "teacher-1", semanticId: "sign_transfer_error" }, choiceLabel: "B", label: null } }),
+      event({ id: "b", questionId: "q2", occurredAt: T0 + 1, semanticChoice: { identity: { namespaceKind: "author", namespaceId: "teacher-1", semanticId: "sign_transfer_error" }, choiceLabel: "D", label: null } }),
     ]);
     expect(memory.patterns).toHaveLength(1);
     expect(memory.patterns[0]?.distinctQuestionCount).toBe(2);
@@ -122,8 +126,8 @@ describe("a verified cross-question pattern", () => {
 describe("identities that must never merge", () => {
   it("keeps the same key from two different authors apart", () => {
     const memory = build([
-      event({ id: "a", questionId: "q1", semanticChoice: { namespaceId: "teacher-1", conceptKey: "sign_transfer_error", choiceLabel: "B" } }),
-      event({ id: "b", questionId: "q2", semanticChoice: { namespaceId: "teacher-2", conceptKey: "sign_transfer_error", choiceLabel: "B" } }),
+      event({ id: "a", questionId: "q1", semanticChoice: { identity: { namespaceKind: "author", namespaceId: "teacher-1", semanticId: "sign_transfer_error" }, choiceLabel: "B", label: null } }),
+      event({ id: "b", questionId: "q2", semanticChoice: { identity: { namespaceKind: "author", namespaceId: "teacher-2", semanticId: "sign_transfer_error" }, choiceLabel: "B", label: null } }),
     ]);
     // Two identities, each with one occurrence — so no pattern at all.
     expect(memory.patterns).toEqual([]);
@@ -133,8 +137,8 @@ describe("identities that must never merge", () => {
   it("does not let a second author's event complete another author's pattern", () => {
     const memory = build([
       event({ id: "a", questionId: "q1" }),
-      event({ id: "b", questionId: "q2", semanticChoice: { namespaceId: "teacher-2", conceptKey: "sign_transfer_error", choiceLabel: "B" } }),
-      event({ id: "c", questionId: "q3", semanticChoice: { namespaceId: "teacher-3", conceptKey: "sign_transfer_error", choiceLabel: "B" } }),
+      event({ id: "b", questionId: "q2", semanticChoice: { identity: { namespaceKind: "author", namespaceId: "teacher-2", semanticId: "sign_transfer_error" }, choiceLabel: "B", label: null } }),
+      event({ id: "c", questionId: "q3", semanticChoice: { identity: { namespaceKind: "author", namespaceId: "teacher-3", semanticId: "sign_transfer_error" }, choiceLabel: "B", label: null } }),
     ]);
     expect(memory.patterns).toEqual([]);
   });
@@ -158,7 +162,7 @@ describe("identities that must never merge", () => {
   it("keeps two different keys from one author apart", () => {
     const memory = build([
       event({ id: "a", questionId: "q1" }),
-      event({ id: "b", questionId: "q2", semanticChoice: { namespaceId: "teacher-1", conceptKey: "denominator_addition", choiceLabel: "C" } }),
+      event({ id: "b", questionId: "q2", semanticChoice: { identity: { namespaceKind: "author", namespaceId: "teacher-1", semanticId: "denominator_addition" }, choiceLabel: "C", label: null } }),
     ]);
     expect(memory.patterns).toEqual([]);
   });
@@ -167,7 +171,7 @@ describe("identities that must never merge", () => {
 describe("incomplete evidence never becomes a wildcard", () => {
   it("skips an event with no namespace", () => {
     const memory = build([
-      event({ id: "a", questionId: "q1", semanticChoice: { namespaceId: "", conceptKey: "sign_transfer_error", choiceLabel: "B" } }),
+      event({ id: "a", questionId: "q1", semanticChoice: { identity: { namespaceKind: "author", namespaceId: "", semanticId: "sign_transfer_error" }, choiceLabel: "B", label: null } }),
       event({ id: "b", questionId: "q2" }),
     ]);
     expect(memory.patterns).toEqual([]);
@@ -176,7 +180,7 @@ describe("incomplete evidence never becomes a wildcard", () => {
 
   it("skips an event with no conceptKey", () => {
     const memory = build([
-      event({ id: "a", questionId: "q1", semanticChoice: { namespaceId: "teacher-1", conceptKey: "  ", choiceLabel: "B" } }),
+      event({ id: "a", questionId: "q1", semanticChoice: { identity: { namespaceKind: "author", namespaceId: "teacher-1", semanticId: "  " }, choiceLabel: "B", label: null } }),
       event({ id: "b", questionId: "q2" }),
     ]);
     expect(memory.semanticEventCount).toBe(1);
@@ -284,6 +288,7 @@ describe("copy", () => {
     distinctQuestionCount: 2,
     lastSeenAt: T0,
     questionIds: ["q2", "q1"],
+    label: null,
     recovery: null,
   };
 

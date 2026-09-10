@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { FlatList, Pressable, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -16,6 +16,8 @@ import { resolveAssignmentDisplayStatus } from "@features/assignments/services/a
 import { selectRecentTopicAssignments } from "@features/assignments/services/assignmentHistorySignals";
 import { ImageSourcePicker } from "@features/classes/components/ImageSourcePicker";
 import { QuestionMetadataModal } from "@features/questions/components/QuestionMetadataModal";
+import { useClassSemanticDefinitions } from "@features/questions/hooks/useClassSemanticDefinitions";
+import type { SemanticDefinitionInput } from "@features/questions/services/semanticDefinition";
 import { LearningTrend } from "@features/study/services/learningTrend";
 import { getClassById } from "@services/firebase/classes";
 import { colors } from "@theme/colors";
@@ -172,6 +174,16 @@ export function ClassPerformanceScreen({ classId }: ClassPerformanceScreenProps)
     // new fetch mechanism.
     onUploaded: refresh,
   });
+  // Phase 80 — loaded only while the composer is open (see the hook's own
+  // note on why it is one-shot rather than a listener).
+  const { definitions: semanticDefinitions, create: createSemanticDefinition } =
+    useClassSemanticDefinitions(classId, composer.pickedImageUri !== null);
+
+  const handleCreateSemanticDefinition = useCallback(
+    (input: SemanticDefinitionInput) =>
+      firebaseUser ? createSemanticDefinition(firebaseUser.uid, input) : Promise.resolve(null),
+    [createSemanticDefinition, firebaseUser],
+  );
 
   // Phase 43 — gradeLevel is carried through when the topic's own questions
   // agree on one, and OMITTED when they do not. Passing a guess would be
@@ -645,6 +657,11 @@ export function ClassPerformanceScreen({ classId }: ClassPerformanceScreenProps)
         // undefined when they do not, so the modal keeps its own default
         // instead of being handed a guess.
         initialGradeLevel={composerTopicContext?.gradeLevel ?? undefined}
+        // Phase 80 — the class's shared vocabulary. Loaded lazily, only while
+        // the composer is actually open, so a teacher who never authors a
+        // question never pays the read.
+        semanticDefinitions={semanticDefinitions}
+        onCreateSemanticDefinition={handleCreateSemanticDefinition}
       />
     </SafeAreaView>
   );

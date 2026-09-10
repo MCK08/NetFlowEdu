@@ -7,6 +7,7 @@ import { AnimatedPressable } from "@components/ui/AnimatedPressable";
 import { EmptyState } from "@components/ui/EmptyState";
 import { useAuth } from "@features/authentication";
 import { QuestionMetadataModal } from "@features/questions/components/QuestionMetadataModal";
+import { useClassSemanticDefinitions } from "@features/questions/hooks/useClassSemanticDefinitions";
 import { QuestionGridItem } from "@features/profile/components/QuestionGridItem";
 import { colors, darkColors } from "@theme/colors";
 import { radius } from "@theme/radius";
@@ -50,6 +51,14 @@ export function StudentClassDetailScreen({ classId }: StudentClassDetailScreenPr
     classId,
     onUploaded: prepend,
   });
+  // Phase 80 — read-only access to the class's curated vocabulary, loaded only
+  // while this student's composer is open. Selection lets their question join
+  // the same verified meaning the teacher's questions use; creating one is not
+  // offered here and is denied by firestore.rules regardless.
+  const { definitions: semanticDefinitions } = useClassSemanticDefinitions(
+    classId,
+    pickedImageUri !== null,
+  );
   // Prevents a double-tap from pushing the feed screen twice. Held until
   // this screen is focused again, not for a fixed cooldown.
   const guardedNavigate = useNavigationGuard();
@@ -193,6 +202,12 @@ export function StudentClassDetailScreen({ classId }: StudentClassDetailScreenPr
         errorMessage={uploadErrorMessage}
         onSubmit={submitDetails}
         onCancel={cancelDetails}
+        // Phase 80 — a student may SELECT from their class's curated
+        // vocabulary but is given no way to add to it: `onCreateSemanticDefinition`
+        // is deliberately omitted, and firestore.rules deny the write anyway.
+        // Selecting is what lets a student's own class question join the same
+        // verified meaning the teacher's questions use.
+        semanticDefinitions={semanticDefinitions}
       />
     </SafeAreaView>
   );

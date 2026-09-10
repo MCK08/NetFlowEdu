@@ -25,11 +25,22 @@ function resolve(selectedChoice: unknown, question: object = QUESTION) {
   return resolveSemanticOpportunities({ question, selectedChoice });
 }
 
+/** The semantic ids that were offered, in stored order. The tests below care
+ *  about WHICH meanings were recorded; the namespace of each is covered by
+ *  sharedSemanticIdentity.test.ts. */
+function keysOf(result: ReturnType<typeof resolve>): string[] {
+  return (result?.items ?? []).map((item) => item.semanticId);
+}
+
 describe("what was on offer", () => {
   it("records every authored meaning that was selectable and wrong", () => {
+    // Phase 80 — per-item identities, so a question mixing a private key with
+    // a shared reference can be represented truthfully.
     expect(resolve("C")).toEqual({
-      namespaceId: "teacher-1",
-      conceptKeys: ["missing_division_step", "sign_transfer_error"],
+      items: [
+        { namespaceKind: "author", namespaceId: "teacher-1", semanticId: "missing_division_step" },
+        { namespaceKind: "author", namespaceId: "teacher-1", semanticId: "sign_transfer_error" },
+      ],
       selectedChoice: "C",
       schemaVersion: SEMANTIC_CHOICE_SCHEMA_VERSION,
     });
@@ -38,7 +49,7 @@ describe("what was on offer", () => {
   it("records the meaning the student DID take alongside the others", () => {
     // Taking A does not remove A from what was offered — the opportunity set
     // is about the page, not about the outcome.
-    expect(resolve("A")?.conceptKeys).toEqual([
+    expect(keysOf(resolve("A"))).toEqual([
       "missing_division_step",
       "sign_transfer_error",
     ]);
@@ -50,15 +61,17 @@ describe("what was on offer", () => {
     // MEANING would have thrown it away.
     const result = resolve("B");
     expect(result?.selectedChoice).toBe("B");
-    expect(result?.conceptKeys).toContain("sign_transfer_error");
+    expect(keysOf(result)).toContain("sign_transfer_error");
   });
 
   it("sorts keys so the stored bytes are deterministic", () => {
-    expect(resolve("C")?.conceptKeys).toEqual([...(resolve("C")?.conceptKeys ?? [])].sort());
+    expect(keysOf(resolve("C"))).toEqual([...keysOf(resolve("C"))].sort());
   });
 
   it("takes the namespace from the question", () => {
-    expect(resolve("C", { ...QUESTION, ownerId: "teacher-9" })?.namespaceId).toBe("teacher-9");
+    expect(resolve("C", { ...QUESTION, ownerId: "teacher-9" })?.items?.[0]?.namespaceId).toBe(
+      "teacher-9",
+    );
   });
 });
 
@@ -71,24 +84,24 @@ describe("what is never an opportunity", () => {
         B: { text: "Doğru cevabın açıklaması.", conceptKey: "should_never_appear" },
       },
     };
-    expect(resolve("C", question)?.conceptKeys).not.toContain("should_never_appear");
+    expect(keysOf(resolve("C", question))).not.toContain("should_never_appear");
   });
 
   it("a wrong option whose author wrote no key", () => {
     // C has feedback but conceptKey null.
-    expect(resolve("A")?.conceptKeys).not.toContain("");
-    expect(resolve("A")?.conceptKeys).toHaveLength(2);
+    expect(keysOf(resolve("A"))).not.toContain("");
+    expect(keysOf(resolve("A"))).toHaveLength(2);
   });
 
   it("an option that does not exist on the question", () => {
     const question = { ...QUESTION, choices: { A: "3", B: "4" } };
     // D's feedback is stranded because D is no longer an option.
-    expect(resolve("A", question)?.conceptKeys).toEqual(["sign_transfer_error"]);
+    expect(keysOf(resolve("A", question))).toEqual(["sign_transfer_error"]);
   });
 
   it("an option whose text was blanked out", () => {
     const question = { ...QUESTION, choices: { ...QUESTION.choices, D: "   " } };
-    expect(resolve("A", question)?.conceptKeys).toEqual(["sign_transfer_error"]);
+    expect(keysOf(resolve("A", question))).toEqual(["sign_transfer_error"]);
   });
 
   it("a feedback entry with a key but no authored sentence", () => {
@@ -161,7 +174,7 @@ describe("deduplication and bounds", () => {
         D: { text: "z", conceptKey: "Sign Transfer Error" },
       },
     };
-    expect(resolve("B", question)?.conceptKeys).toEqual(["sign_transfer_error"]);
+    expect(keysOf(resolve("B", question))).toEqual(["sign_transfer_error"]);
   });
 
   it("cannot exceed the number of wrong options a question can have", () => {
@@ -176,7 +189,7 @@ describe("deduplication and bounds", () => {
         D: { text: "d", conceptKey: "k_d" },
       },
     };
-    const keys = resolve("A", question)?.conceptKeys ?? [];
+    const keys = keysOf(resolve("A", question)) ?? [];
     expect(keys).toHaveLength(4);
     expect(keys.length).toBeLessThanOrEqual(MAX_SEMANTIC_OPPORTUNITIES);
   });
@@ -190,7 +203,7 @@ describe("a caller cannot declare what was offered", () => {
       question: QUESTION,
       selectedChoice: "C",
     });
-    expect(result?.conceptKeys).toEqual(["missing_division_step", "sign_transfer_error"]);
+    expect(keysOf(result)).toEqual(["missing_division_step", "sign_transfer_error"]);
   });
 
   it("ignores a malformed feedback map rather than trusting it", () => {

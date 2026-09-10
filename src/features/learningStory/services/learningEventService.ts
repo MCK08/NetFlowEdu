@@ -4,7 +4,12 @@ import { StudyOutcome } from "@features/study/domain/studyTypes";
 import { db } from "@services/firebase/config";
 import { CHOICE_LABELS, ChoiceLabel } from "@/types/question";
 
-import type { StoredSemanticChoice, StoredSemanticOpportunities } from "./learningTrail";
+import type {
+  SemanticIdentity,
+  SemanticNamespaceKind,
+  StoredSemanticChoice,
+  StoredSemanticOpportunities,
+} from "./learningTrail";
 
 // Phase 59 — reading the chronological learning history.
 //
@@ -45,16 +50,43 @@ function isOutcome(value: unknown): value is StudyOutcome {
 // identity, it is a different and unsafe one — it would let two authors'
 // vocabularies merge, which is the single thing this evidence model exists to
 // prevent.
+// Phase 80 — a missing kind means "author".
+//
+// That default is the entire backward-compatibility story for Phase 78 and 79
+// events: they were all author-scoped, they simply had no field saying so, and
+// reading their silence as anything else would retroactively turn one person's
+// private vocabulary into a shared one. Only an explicit "class" is shared.
+function toNamespaceKind(value: unknown): SemanticNamespaceKind {
+  return value === "class" ? "class" : "author";
+}
+
+function toIdentity(namespaceKind: unknown, namespaceId: unknown, semanticId: unknown): SemanticIdentity | null {
+  const id = typeof namespaceId === "string" ? namespaceId.trim() : "";
+  const semantic = typeof semanticId === "string" ? semanticId.trim() : "";
+  if (!id || !semantic) return null;
+  return { namespaceKind: toNamespaceKind(namespaceKind), namespaceId: id, semanticId: semantic };
+}
+
 function toSemanticChoice(value: unknown): StoredSemanticChoice | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
-  const namespaceId = typeof record.namespaceId === "string" ? record.namespaceId.trim() : "";
-  const conceptKey = typeof record.conceptKey === "string" ? record.conceptKey.trim() : "";
+  // `conceptKey` keeps its Phase 78 field name and now holds either a typed
+  // key or an opaque definition id, decided by the kind beside it.
+  const identity = toIdentity(record.namespaceKind, record.namespaceId, record.conceptKey);
+  if (!identity) return null;
   const choiceLabel = record.choiceLabel;
-  if (!namespaceId || !conceptKey) return null;
   if (typeof choiceLabel !== "string") return null;
   if (!(CHOICE_LABELS as readonly string[]).includes(choiceLabel)) return null;
-  return { namespaceId, conceptKey, choiceLabel: choiceLabel as ChoiceLabel };
+
+  const rawLabel = typeof record.label === "string" ? record.label.trim() : "";
+  return {
+    identity,
+    choiceLabel: choiceLabel as ChoiceLabel,
+    // A label only ever means anything for a shared identity. Refusing it for
+    // an author-scoped one stops a stray field from putting invented prose in
+    // front of a student.
+    label: identity.namespaceKind === "class" && rawLabel ? rawLabel : null,
+  };
 }
 
 // Skips any document that cannot be read as a real event rather than
@@ -81,23 +113,42 @@ function toEvent(id: string, data: DocumentData): StoredLearningEvent | null {
 function toSemanticOpportunities(value: unknown): StoredSemanticOpportunities | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
-  const namespaceId = typeof record.namespaceId === "string" ? record.namespaceId.trim() : "";
-  if (!namespaceId) return null;
 
   const selectedChoice = record.selectedChoice;
   if (typeof selectedChoice !== "string") return null;
   if (!(CHOICE_LABELS as readonly string[]).includes(selectedChoice)) return null;
 
-  if (!Array.isArray(record.conceptKeys)) return null;
-  const conceptKeys: string[] = [];
-  for (const key of record.conceptKeys) {
-    if (typeof key !== "string") continue;
-    const trimmed = key.trim();
-    if (trimmed && !conceptKeys.includes(trimmed)) conceptKeys.push(trimmed);
-  }
-  if (conceptKeys.length === 0) return null;
+  const items: SemanticIdentity[] = [];
+  const seen = new Set<string>();
+  const push = (identity: SemanticIdentity | null) => {
+    if (!identity) return;
+    const key = `${identity.namespaceKind}\u0000${identity.namespaceId}\u0000${identity.semanticId}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    items.push(identity);
+  };
 
-  return { namespaceId, conceptKeys, selectedChoice: selectedChoice as ChoiceLabel };
+  // Phase 80 shape first.
+  if (Array.isArray(record.items)) {
+    for (const raw of record.items) {
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+      const entry = raw as Record<string, unknown>;
+      push(toIdentity(entry.namespaceKind, entry.namespaceId, entry.semanticId));
+    }
+  }
+
+  // Phase 79 shape, read exactly as it was written: one namespace, a flat list
+  // of keys, all author-scoped. No backfill and no rewriting — an old document
+  // simply describes itself, and this turns it into the same shape everything
+  // downstream now compares.
+  if (items.length === 0 && Array.isArray(record.conceptKeys)) {
+    for (const key of record.conceptKeys) {
+      push(toIdentity("author", record.namespaceId, key));
+    }
+  }
+
+  if (items.length === 0) return null;
+  return { items, selectedChoice: selectedChoice as ChoiceLabel };
 }
 
 // A student's own recent learning events. Owner-read, exactly what

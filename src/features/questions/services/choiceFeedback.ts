@@ -1,6 +1,7 @@
 import { CHOICE_LABELS, ChoiceLabel, QuestionChoices } from "@/types/question";
 
 import { isChoiceLabel } from "./multipleChoice";
+import { MAX_SEMANTIC_LABEL_LENGTH } from "./semanticDefinition";
 
 // Phase 77 — optional AUTHOR-WRITTEN feedback attached to a specific wrong
 // answer choice.
@@ -45,6 +46,33 @@ export interface ChoiceFeedbackEntry {
   /** What the author wants the student to reconsider. Always non-empty. */
   text: string;
   /**
+   * Phase 80 — an explicit reference to a SHARED definition in this question's
+   * own class vocabulary, or null.
+   *
+   * This is the only mechanism by which two different authors' questions may
+   * ever be treated as carrying the same meaning. Not a matching label, not a
+   * matching key, not a matching subject — an author deliberately pointing at
+   * the same canonical definition someone else pointed at.
+   *
+   * Opaque by design. Nothing may parse it, prefix-match it, or derive meaning
+   * from its characters; it identifies and does nothing else.
+   */
+  semanticDefinitionId: string | null;
+  /**
+   * A snapshot of that definition's human label at authoring time, or null.
+   *
+   * DISPLAY ONLY, and never identity — two definitions may share a label and
+   * remain different meanings. It is stored on the question so the outcome
+   * path can put a readable focus in front of a student without reading the
+   * definition document, which is what keeps this whole feature free of extra
+   * reads on the hot path.
+   *
+   * A snapshot, so it can go stale if the definition is later renamed. That is
+   * the accepted trade: the grouping follows the id and stays correct, and only
+   * the wording a reader sees may lag.
+   */
+  semanticLabel: string | null;
+  /**
    * An optional stable, machine-readable name for what this option
    * represents — e.g. "sign_transfer_error".
    *
@@ -69,6 +97,10 @@ export const MAX_CHOICE_FEEDBACK_LENGTH = 240;
 // Long enough for a readable compound name, short enough that it stays a key
 // rather than becoming a sentence.
 export const MAX_CONCEPT_KEY_LENGTH = 48;
+
+// A Firestore auto-id is 20 characters; this leaves room for any other opaque
+// scheme without ever becoming a place to smuggle a payload.
+export const MAX_SEMANTIC_DEFINITION_ID_LENGTH = 64;
 
 /** Normalises an authored semantic key, or null when it is not usable.
  *
@@ -100,10 +132,44 @@ function cleanEntry(value: unknown): ChoiceFeedbackEntry | null {
   // who started typing and stopped. Dropped outright, exactly as sanitizeHints
   // drops an empty rung.
   if (text.length === 0) return null;
+  const semanticDefinitionId = cleanDefinitionId(record.semanticDefinitionId);
+  const conceptKey = normalizeConceptKey(record.conceptKey);
+
   return {
     text: text.slice(0, MAX_CHOICE_FEEDBACK_LENGTH),
-    conceptKey: normalizeConceptKey(record.conceptKey),
+    // Phase 80 — one authority per entry, decided here rather than left to
+    // whichever reader looks first.
+    //
+    // A shared reference is an explicit act of pointing at a definition the
+    // author chose from a list; a private conceptKey is a string they typed.
+    // When both are present the shared one wins and the private one is
+    // DROPPED, so no entry can ever carry two competing identities and no
+    // downstream reader has to guess which one meant it.
+    //
+    // Legacy entries are untouched by this: with no reference, the conceptKey
+    // is still the identity, exactly as in Phase 78.
+    semanticDefinitionId,
+    semanticLabel: semanticDefinitionId ? cleanLabel(record.semanticLabel) : null,
+    conceptKey: semanticDefinitionId ? null : conceptKey,
   };
+}
+
+/** A definition id is opaque: accepted or rejected, never interpreted.
+ *  Bounded because it lands in a document a student keeps, and a Firestore id
+ *  is far shorter than this. */
+function cleanDefinitionId(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (trimmed.length === 0 || trimmed.length > MAX_SEMANTIC_DEFINITION_ID_LENGTH) return null;
+  // Firestore ids cannot contain "/", and nothing else should reach here.
+  if (trimmed.includes("/")) return null;
+  return trimmed;
+}
+
+function cleanLabel(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed.slice(0, MAX_SEMANTIC_LABEL_LENGTH) : null;
 }
 
 /** Raw author input -> what is actually worth persisting.

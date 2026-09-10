@@ -208,6 +208,18 @@ service cloud.firestore {
     // relationship between three fields, and choiceFeedback.ts is the one
     // place that check lives on both the write and the read side. Duplicating
     // a weaker version of it here would create a second, drifting authority.
+    // Rules can bound the MAP, but cannot iterate it to inspect each entry's
+    // fields — the same limitation hintsWithinBounds documents. Per-entry
+    // shape (text/conceptKey/semanticDefinitionId/semanticLabel, and the rule
+    // that a shared reference drops the private key) is enforced by
+    // choiceFeedback.ts's sanitiser on BOTH the write and the read, so a
+    // hand-crafted document still cannot surface a malformed entry.
+    //
+    // Phase 80 note on why a cross-class reference needs no rule here: a
+    // shared identity's namespace is taken from the QUESTION's own classId at
+    // outcome time, never from the referenced definition. A stale or forged id
+    // on a class-B question therefore resolves inside class B and can never
+    // reach class A's meaning, whatever it points at.
     function choiceFeedbackWithinBounds(data) {
       return !('choiceFeedback' in data)
              || data.choiceFeedback == null
@@ -430,6 +442,84 @@ service cloud.firestore {
     // {uid} below. clientMessageId is a non-empty client-generated
     // correlation id (optimistic-UI reconciliation only — carries no
     // authorization meaning, just required to be present).
+    // Phase 80 — one class's shared instructional vocabulary.
+    //
+    // WHY THE CLASS OWNS IT
+    //
+    // This is the only scope in this ruleset that more than one question
+    // author can legitimately share: the class's own teacher authors
+    // questions in it, and so do its student members (see questions'
+    // create rule). A definition is what lets two of those authors point at
+    // the SAME meaning on purpose, instead of the product guessing that two
+    // typed strings meant the same thing.
+    //
+    // WHO MAY MANAGE IT
+    //
+    // The class's teacher, and nobody else. Students read it — a student's own
+    // class question may reference a definition the teacher curated — but they
+    // never create, rename or retire one. Reusing classData(classId).teacherId
+    // rather than inventing a second membership notion keeps this consistent
+    // with every other class-scoped rule here.
+    //
+    // WHY THERE IS NO DELETE
+    //
+    // Questions reference definitions by id, and studyEvents record that id
+    // permanently. Deleting one would leave both pointing at nothing and would
+    // silently break a student's historical pattern. `archived` retires a
+    // definition from new selection while leaving every existing reference
+    // valid, which is the only safe shape.
+    match /classes/{classId}/semanticDefinitions/{definitionId} {
+      allow read: if isSignedIn()
+                  && (classData(classId).teacherId == uid() || isClassMember(classId));
+
+      allow create: if isSignedIn()
+                    && isTeacher()
+                    && classData(classId).teacherId == uid()
+                    && request.resource.data.classId == classId
+                    && request.resource.data.createdBy == uid()
+                    && request.resource.data.label is string
+                    && request.resource.data.label.size() > 0
+                    && request.resource.data.label.size() <= 60
+                    && (request.resource.data.description == null
+                        || (request.resource.data.description is string
+                            && request.resource.data.description.size() <= 200))
+                    && request.resource.data.subject is string
+                    && request.resource.data.subject.size() > 0
+                    && request.resource.data.subject.size() <= 40
+                    && request.resource.data.topic is string
+                    && request.resource.data.topic.size() > 0
+                    && request.resource.data.topic.size() <= 80
+                    // A definition is born active. Creating one already
+                    // archived would be a document nothing can ever select.
+                    && request.resource.data.archived == false
+                    && request.resource.data.createdAt == request.time
+                    && request.resource.data.updatedAt == request.time;
+
+      // Only presentation and retirement may change. The four identity-bearing
+      // fields are pinned to their stored values: a definition that could
+      // change class, scope or author would retroactively re-group every
+      // pattern that ever referenced it, which is exactly the silent rewrite
+      // this whole design refuses.
+      allow update: if isSignedIn()
+                    && isTeacher()
+                    && classData(classId).teacherId == uid()
+                    && request.resource.data.classId == resource.data.classId
+                    && request.resource.data.createdBy == resource.data.createdBy
+                    && request.resource.data.subject == resource.data.subject
+                    && request.resource.data.topic == resource.data.topic
+                    && request.resource.data.createdAt == resource.data.createdAt
+                    && request.resource.data.archived is bool
+                    && request.resource.data.label is string
+                    && request.resource.data.label.size() > 0
+                    && request.resource.data.label.size() <= 60
+                    && (request.resource.data.description == null
+                        || (request.resource.data.description is string
+                            && request.resource.data.description.size() <= 200))
+                    && request.resource.data.updatedAt == request.time;
+
+      allow delete: if false;
+    }
+
     match /classes/{classId}/messages/{messageId} {
       allow read: if isSignedIn() && isClassMember(classId);
 

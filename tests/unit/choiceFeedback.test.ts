@@ -226,7 +226,12 @@ describe("choice feedback — resolution never crosses options", () => {
   });
 
   it("never returns an entry whose text is blank", () => {
-    expect(resolve({ C: { text: "   ", conceptKey: null } }, "C")).toBeNull();
+    expect(
+      resolve(
+        { C: { text: "   ", conceptKey: null, semanticDefinitionId: null, semanticLabel: null } },
+        "C",
+      ),
+    ).toBeNull();
   });
 });
 

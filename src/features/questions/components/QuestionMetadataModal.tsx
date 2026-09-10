@@ -15,6 +15,11 @@ import { GRADE_LEVELS, getTopicsForSubject, QUESTION_SUBJECTS } from "../data/qu
 import { buildChoicesPayload, CHOICE_LABELS } from "../services/multipleChoice";
 import { MAX_HINT_LENGTH, MAX_QUESTION_HINTS, sanitizeHints } from "../services/questionHints";
 import {
+  SemanticDefinition,
+  SemanticDefinitionInput,
+} from "../services/semanticDefinition";
+import { SemanticDefinitionPicker } from "./SemanticDefinitionPicker";
+import {
   MAX_CHOICE_FEEDBACK_LENGTH,
   MAX_CONCEPT_KEY_LENGTH,
   sanitizeChoiceFeedback,
@@ -51,6 +56,14 @@ interface QuestionMetadataModalProps {
   initialSubject?: string;
   initialGradeLevel?: string;
   initialTopic?: string;
+  // Phase 80 — the class's shared instructional vocabulary, loaded ONCE by the
+  // caller that already knows the class. Omitted entirely for private/public
+  // questions, which have no class and therefore no shared scope: the picker
+  // simply does not render, and authoring behaves exactly as before.
+  semanticDefinitions?: readonly SemanticDefinition[];
+  onCreateSemanticDefinition?: (
+    input: SemanticDefinitionInput,
+  ) => Promise<SemanticDefinition | null>;
 }
 
 // Phase 21's "yeni soru oluşturma ekranı" — shown after an image has
@@ -71,6 +84,8 @@ export function QuestionMetadataModal({
   initialSubject,
   initialGradeLevel,
   initialTopic,
+  semanticDefinitions,
+  onCreateSemanticDefinition,
 }: QuestionMetadataModalProps) {
   const [subject, setSubject] = useState<string>(QUESTION_SUBJECTS[0]);
   const [gradeLevel, setGradeLevel] = useState<string>(GRADE_LEVELS[0]);
@@ -85,6 +100,19 @@ export function QuestionMetadataModal({
   // typed it under no matter how the text is later edited.
   const [feedbackDrafts, setFeedbackDrafts] = useState<Partial<Record<ChoiceLabel, string>>>({});
   const [conceptDrafts, setConceptDrafts] = useState<Partial<Record<ChoiceLabel, string>>>({});
+  // Phase 80 — the shared definition each wrong option points at, if any.
+  // Held as the whole definition rather than an id so the label snapshot
+  // written onto the question comes from the canonical record the teacher
+  // actually selected, never from anything retyped.
+  const [sharedDrafts, setSharedDrafts] = useState<
+    Partial<Record<ChoiceLabel, SemanticDefinition>>
+  >({});
+
+  // Shared vocabulary exists only where a shared scope does. Both props are
+  // supplied together by the class composers and by neither of the
+  // private/public ones, so this single flag decides whether an author is
+  // offered a curated label or the original free-text key.
+  const canShare = Boolean(semanticDefinitions && onCreateSemanticDefinition);
   // One draft per rung. Blank boxes are dropped on save, so an author who
   // fills 1 and 3 still publishes a contiguous two-step ladder.
   const [hintDrafts, setHintDrafts] = useState<string[]>(
@@ -199,7 +227,14 @@ export function QuestionMetadataModal({
       Object.fromEntries(
         CHOICE_LABELS.map((label) => [
           label,
-          { text: feedbackDrafts[label] ?? "", conceptKey: conceptDrafts[label] ?? "" },
+          {
+            text: feedbackDrafts[label] ?? "",
+            conceptKey: conceptDrafts[label] ?? "",
+            // The sanitiser drops the private key whenever a shared reference
+            // is present, so an entry can never carry two identities.
+            semanticDefinitionId: sharedDrafts[label]?.id ?? null,
+            semanticLabel: sharedDrafts[label]?.label ?? null,
+          },
         ]),
       ) as Partial<Record<ChoiceLabel, unknown>>,
       choices,
@@ -295,16 +330,40 @@ export function QuestionMetadataModal({
                               accessibilityLabel={`${label} şıkkı seçilirse gösterilecek geri bildirim`}
                             />
                             {feedbackText.trim().length > 0 ? (
-                              <TextInput
-                                style={styles.conceptInput}
-                                placeholder="Hata etiketi (isteğe bağlı, öğrenciye gösterilmez)"
-                                placeholderTextColor={colors.textTertiary}
-                                value={conceptDrafts[label] ?? ""}
-                                onChangeText={(value) => handleConceptKeyChange(label, value)}
-                                maxLength={MAX_CONCEPT_KEY_LENGTH}
-                                autoCapitalize="none"
-                                accessibilityLabel={`${label} şıkkı için hata etiketi, öğrenciye gösterilmez`}
-                              />
+                              canShare ? (
+                                // Phase 80 — inside a class, the shared
+                                // vocabulary REPLACES the private key field.
+                                // Offering both would let an author fill in two
+                                // competing identities for one option and then
+                                // have the sanitiser silently discard one of
+                                // them; showing exactly one authority is how
+                                // the choice stays theirs.
+                                <SemanticDefinitionPicker
+                                  definitions={semanticDefinitions ?? []}
+                                  subject={subject}
+                                  topic={topic}
+                                  choiceLabel={label}
+                                  selectedId={sharedDrafts[label]?.id ?? null}
+                                  onSelect={(definition) =>
+                                    setSharedDrafts((current) => ({
+                                      ...current,
+                                      [label]: definition ?? undefined,
+                                    }))
+                                  }
+                                  onCreate={onCreateSemanticDefinition!}
+                                />
+                              ) : (
+                                <TextInput
+                                  style={styles.conceptInput}
+                                  placeholder="Hata etiketi (isteğe bağlı, öğrenciye gösterilmez)"
+                                  placeholderTextColor={colors.textTertiary}
+                                  value={conceptDrafts[label] ?? ""}
+                                  onChangeText={(value) => handleConceptKeyChange(label, value)}
+                                  maxLength={MAX_CONCEPT_KEY_LENGTH}
+                                  autoCapitalize="none"
+                                  accessibilityLabel={`${label} şıkkı için hata etiketi, öğrenciye gösterilmez`}
+                                />
+                              )
                             ) : null}
                           </View>
                         ) : null}

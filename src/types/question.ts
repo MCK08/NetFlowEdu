@@ -15,7 +15,17 @@ export type ChoiceLabel = (typeof CHOICE_LABELS)[number];
 // or its position. See choiceFeedback.ts for why that association matters.
 export interface ChoiceFeedbackEntry {
   text: string;
+  // Phase 80 — an explicit reference to a shared definition in this question's
+  // own class vocabulary, and a display-only snapshot of its label. The id is
+  // the ONLY thing that grants two authors the same meaning; the label is
+  // never identity. Null on every entry authored before Phase 80 and on every
+  // entry whose author did not pick one.
+  semanticDefinitionId: string | null;
+  semanticLabel: string | null;
   // Optional, authored, never inferred, and never shown to the student.
+  // Mutually exclusive with semanticDefinitionId — see choiceFeedback.ts's
+  // sanitiser, which drops this when a shared reference is present so no entry
+  // can carry two competing identities.
   conceptKey: string | null;
 }
 

@@ -4719,3 +4719,278 @@ describe("firestore.rules — assignments/{assignmentId} and submissions (Phase 
     );
   });
 });
+
+// Phase 80 — the shared instructional vocabulary a class's authors may point
+// at on purpose. These tests are mostly about who may NOT touch it, and about
+// the four fields that must never change once a definition exists.
+describe("firestore.rules — classes/{classId}/semanticDefinitions/{definitionId} (Phase 80)", () => {
+  let testEnv: RulesTestEnvironment;
+
+  const CLASS_ID = "class-1";
+  const TEACHER = "teacher-1";
+  const OTHER_TEACHER = "teacher-2";
+  const STUDENT = "student-1";
+  const OUTSIDER = "student-9";
+  const DEF_ID = "def-1";
+
+  beforeAll(async () => {
+    testEnv = await initializeTestEnvironment({
+      projectId: PROJECT_ID,
+      firestore: {
+        rules: fs.readFileSync("firestore.rules", "utf8"),
+        host: "127.0.0.1",
+        port: 8080,
+      },
+    });
+  });
+
+  afterAll(async () => {
+    await testEnv.cleanup();
+  });
+
+  afterEach(async () => {
+    await testEnv.clearFirestore();
+  });
+
+  async function seedClass() {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      const db = context.firestore();
+      await setDoc(doc(db, "classes", CLASS_ID), {
+        teacherId: TEACHER,
+        organizationId: "org-1",
+        name: "Demo",
+      });
+      await setDoc(doc(db, "classes", CLASS_ID, "members", TEACHER), { role: "teacher" });
+      await setDoc(doc(db, "classes", CLASS_ID, "members", STUDENT), { role: "student" });
+    });
+  }
+
+  async function seedDefinition(overrides: Record<string, unknown> = {}) {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(
+        doc(context.firestore(), "classes", CLASS_ID, "semanticDefinitions", DEF_ID),
+        {
+          classId: CLASS_ID,
+          label: "İşaret aktarımı",
+          description: null,
+          subject: "Matematik",
+          topic: "Denklemler",
+          createdBy: TEACHER,
+          createdAt: 1,
+          updatedAt: 1,
+          archived: false,
+          schemaVersion: 1,
+          ...overrides,
+        },
+      );
+    });
+  }
+
+  function teacherDb(uid = TEACHER) {
+    return testEnv
+      .authenticatedContext(uid, { role: "teacher", organizationId: "org-1" })
+      .firestore();
+  }
+
+  function studentDb(uid = STUDENT) {
+    return testEnv.authenticatedContext(uid, { role: "student", organizationId: null }).firestore();
+  }
+
+  function newDefinition(overrides: Record<string, unknown> = {}) {
+    return {
+      classId: CLASS_ID,
+      label: "İşaret aktarımı",
+      description: null,
+      subject: "Matematik",
+      topic: "Denklemler",
+      createdBy: TEACHER,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      archived: false,
+      schemaVersion: 1,
+      ...overrides,
+    };
+  }
+
+  const defRef = (db: ReturnType<typeof teacherDb>, id = DEF_ID) =>
+    doc(db, "classes", CLASS_ID, "semanticDefinitions", id);
+
+  describe("create", () => {
+    it("allows the class's own teacher", async () => {
+      await seedClass();
+      await assertSucceeds(setDoc(defRef(teacherDb(), "new-1"), newDefinition()));
+    });
+
+    it("denies a different teacher, even one with a teacher claim", async () => {
+      await seedClass();
+      await assertFails(
+        setDoc(defRef(teacherDb(OTHER_TEACHER), "new-1"), newDefinition({ createdBy: OTHER_TEACHER })),
+      );
+    });
+
+    it("denies a student member — vocabulary is teacher-curated", async () => {
+      await seedClass();
+      await assertFails(setDoc(defRef(studentDb(), "new-1"), newDefinition({ createdBy: STUDENT })));
+    });
+
+    it("denies an outsider", async () => {
+      await seedClass();
+      await assertFails(
+        setDoc(defRef(studentDb(OUTSIDER), "new-1"), newDefinition({ createdBy: OUTSIDER })),
+      );
+    });
+
+    it("denies an unauthenticated caller", async () => {
+      await seedClass();
+      await assertFails(
+        setDoc(
+          doc(testEnv.unauthenticatedContext().firestore(), "classes", CLASS_ID, "semanticDefinitions", "new-1"),
+          newDefinition(),
+        ),
+      );
+    });
+
+    it("denies a createdBy that is not the caller", async () => {
+      await seedClass();
+      await assertFails(setDoc(defRef(teacherDb(), "new-1"), newDefinition({ createdBy: STUDENT })));
+    });
+
+    it("denies a classId that does not match the path", async () => {
+      await seedClass();
+      await assertFails(setDoc(defRef(teacherDb(), "new-1"), newDefinition({ classId: "class-2" })));
+    });
+
+    it("denies an empty label", async () => {
+      await seedClass();
+      await assertFails(setDoc(defRef(teacherDb(), "new-1"), newDefinition({ label: "" })));
+    });
+
+    it("denies an overlong label", async () => {
+      await seedClass();
+      await assertFails(
+        setDoc(defRef(teacherDb(), "new-1"), newDefinition({ label: "a".repeat(61) })),
+      );
+    });
+
+    it("denies an overlong description", async () => {
+      await seedClass();
+      await assertFails(
+        setDoc(defRef(teacherDb(), "new-1"), newDefinition({ description: "a".repeat(201) })),
+      );
+    });
+
+    it("denies a definition with no scope", async () => {
+      await seedClass();
+      await assertFails(setDoc(defRef(teacherDb(), "new-1"), newDefinition({ subject: "" })));
+      await assertFails(setDoc(defRef(teacherDb(), "new-2"), newDefinition({ topic: "" })));
+    });
+
+    it("denies creating one already archived", async () => {
+      await seedClass();
+      await assertFails(setDoc(defRef(teacherDb(), "new-1"), newDefinition({ archived: true })));
+    });
+  });
+
+  describe("read", () => {
+    it("allows the class's teacher", async () => {
+      await seedClass();
+      await seedDefinition();
+      await assertSucceeds(getDoc(defRef(teacherDb())));
+    });
+
+    it("allows a student member — their own class question may reference one", async () => {
+      await seedClass();
+      await seedDefinition();
+      await assertSucceeds(getDoc(defRef(studentDb())));
+    });
+
+    it("denies a non-member", async () => {
+      await seedClass();
+      await seedDefinition();
+      await assertFails(getDoc(defRef(studentDb(OUTSIDER))));
+    });
+  });
+
+  describe("update", () => {
+    it("allows the teacher to archive", async () => {
+      await seedClass();
+      await seedDefinition();
+      await assertSucceeds(
+        updateDoc(defRef(teacherDb()), { archived: true, updatedAt: serverTimestamp() }),
+      );
+    });
+
+    it("allows the teacher to fix a label typo", async () => {
+      await seedClass();
+      await seedDefinition();
+      await assertSucceeds(
+        updateDoc(defRef(teacherDb()), { label: "İşaret aktarma", updatedAt: serverTimestamp() }),
+      );
+    });
+
+    it("denies a student", async () => {
+      await seedClass();
+      await seedDefinition();
+      await assertFails(
+        updateDoc(defRef(studentDb()), { archived: true, updatedAt: serverTimestamp() }),
+      );
+    });
+
+    // The four identity-bearing fields. Any of these changing would silently
+    // re-group every historical pattern that referenced this definition.
+    it("denies changing the subject", async () => {
+      await seedClass();
+      await seedDefinition();
+      await assertFails(
+        updateDoc(defRef(teacherDb()), { subject: "Fizik", updatedAt: serverTimestamp() }),
+      );
+    });
+
+    it("denies changing the topic", async () => {
+      await seedClass();
+      await seedDefinition();
+      await assertFails(
+        updateDoc(defRef(teacherDb()), { topic: "Geometri", updatedAt: serverTimestamp() }),
+      );
+    });
+
+    it("denies changing createdBy", async () => {
+      await seedClass();
+      await seedDefinition();
+      await assertFails(
+        updateDoc(defRef(teacherDb()), { createdBy: OTHER_TEACHER, updatedAt: serverTimestamp() }),
+      );
+    });
+
+    it("denies changing the classId", async () => {
+      await seedClass();
+      await seedDefinition();
+      await assertFails(
+        updateDoc(defRef(teacherDb()), { classId: "class-2", updatedAt: serverTimestamp() }),
+      );
+    });
+
+    it("denies an overlong label on update", async () => {
+      await seedClass();
+      await seedDefinition();
+      await assertFails(
+        updateDoc(defRef(teacherDb()), { label: "a".repeat(61), updatedAt: serverTimestamp() }),
+      );
+    });
+  });
+
+  // Questions reference these by id and studyEvents record that id forever.
+  describe("delete", () => {
+    it("denies deletion outright, even for the owning teacher", async () => {
+      await seedClass();
+      await seedDefinition();
+      await assertFails(deleteDoc(defRef(teacherDb())));
+    });
+
+    it("denies deletion for a student", async () => {
+      await seedClass();
+      await seedDefinition();
+      await assertFails(deleteDoc(defRef(studentDb())));
+    });
+  });
+});
