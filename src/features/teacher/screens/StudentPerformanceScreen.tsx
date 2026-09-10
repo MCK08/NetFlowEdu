@@ -12,6 +12,8 @@ import { PrimaryButton } from "@components/ui/PrimaryButton";
 import { TeacherLearningTimeline } from "@features/learningStory/components/TeacherLearningTimeline";
 import { useTeacherLearningTimeline } from "@features/learningStory/hooks/useTeacherLearningTimeline";
 import { buildTeacherLearningTimeline } from "@features/learningStory/services/teacherLearningTimeline";
+import { VerifiedChoicePatternSection } from "@features/study/components/VerifiedChoicePatternSection";
+import { buildVerifiedChoicePatterns } from "@features/study/services/verifiedChoicePatterns";
 import { TopicInsight } from "@features/study/services/learningInsights";
 import { LearningTrend } from "@features/study/services/learningTrend";
 import { colors } from "@theme/colors";
@@ -96,6 +98,20 @@ export function StudentPerformanceScreen({ classId, studentId, studentName }: St
   } = useTeacherLearningTimeline(studentId, classId);
   const timeline = useMemo(
     () => buildTeacherLearningTimeline(timelineEvents),
+    [timelineEvents],
+  );
+
+  // Phase 78 — derived from the SAME bounded class-scoped events the timeline
+  // above already fetched. Zero incremental reads, and nothing per pattern.
+  //
+  // The teacher sees the student's own verified facts, unchanged. It is
+  // deliberately NOT wired into Phase 43 targeting, Phase 44 effectiveness,
+  // Phase 47 post-intervention action or the Phase 73 Action Center: a
+  // repeated selection is context for a human, and letting it silently raise
+  // urgency would make an unproven signal start driving the intervention
+  // machinery.
+  const choicePatterns = useMemo(
+    () => buildVerifiedChoicePatterns({ events: timelineEvents }),
     [timelineEvents],
   );
   const attention = useMemo(
@@ -279,6 +295,21 @@ export function StudentPerformanceScreen({ classId, studentId, studentName }: St
               hasError={hasTimelineError}
             />
           </Card>
+
+          {/* Phase 78 — repeated authored selections, directly under the flow
+              they were derived from. Rendered only when a pattern actually
+              qualified, so a student without one costs this screen nothing —
+              not a card, not a heading, not an empty state. */}
+          {choicePatterns.patterns.length > 0 ? (
+            <Card style={styles.card}>
+              <Text style={styles.sectionLabel}>Tekrarlayan seçim örüntüleri</Text>
+              <VerifiedChoicePatternSection
+                intro="Son öğrenme kayıtlarında aynı doğrulanmış seçim anlamı farklı sorularda tekrarlandı."
+                patterns={choicePatterns.patterns}
+                compact
+              />
+            </Card>
+          ) : null}
 
           {/* Phase 44 — the result of the LAST intervention, placed directly
               above the diagnosis that offers to create the next one: a

@@ -17,7 +17,7 @@ import {
 import { httpsCallable } from "firebase/functions";
 
 import { auth, db, functions } from "@services/firebase/config";
-import { Question } from "@/types/question";
+import { ChoiceLabel, Question } from "@/types/question";
 
 import { StudyOutcome, StudyStatus } from "../domain/studyTypes";
 import { createOperationId } from "./gestureOperationId";
@@ -357,9 +357,22 @@ export async function recordStudyOutcome(
   questionId: string,
   outcome: StudyOutcome,
   operationId: string = createOperationId(),
+  // Phase 78 — which option the student picked, when this outcome came from
+  // answering a multiple-choice question. Sent as a bare label and nothing
+  // more: the server decides whether it was real, whether it was wrong, what
+  // its author said it represents, and whose vocabulary that belongs to. There
+  // is deliberately no parameter here for any of those, so this client cannot
+  // assert meaning even by mistake.
+  selectedChoice?: ChoiceLabel,
 ): Promise<RecordOutcomeResult> {
   const callable = httpsCallable<
-    { questionId: string; outcome: StudyOutcome; timeZone: string; operationId: string },
+    {
+      questionId: string;
+      outcome: StudyOutcome;
+      timeZone: string;
+      operationId: string;
+      selectedChoice?: ChoiceLabel;
+    },
     RecordOutcomeResult
   >(functions, "recordStudyOutcome");
   const result = await callable({
@@ -367,6 +380,9 @@ export async function recordStudyOutcome(
     outcome,
     timeZone: resolveLocalTimeZone(),
     operationId,
+    // Omitted rather than sent as undefined/null: every existing caller's
+    // payload stays byte-identical to before this phase.
+    ...(selectedChoice ? { selectedChoice } : {}),
   });
   return result.data;
 }

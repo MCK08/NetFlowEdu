@@ -52,6 +52,12 @@ export function useLearningTrail(uid: string | undefined) {
             // can never contaminate a real topic's trail.
             subject: question?.subject ?? "",
             topic: question?.topic ?? "",
+            // Phase 78 — passed straight through. The subject/topic joined
+            // just above are what give a semantic identity its conservative
+            // learning scope, and they are resolved here, from the metadata
+            // cache, for exactly the reason the event itself refuses to store
+            // them (see functions/src/study/learningEvent.ts).
+            semanticChoice: event.semanticChoice,
           };
         }),
       );

@@ -78,6 +78,10 @@ export function useTeacherLearningTimeline(
             // events rather than grouping them under an unnamed topic.
             subject: question?.subject ?? "",
             topic: question?.topic ?? "",
+            // Phase 78 — passed through so the teacher's view of a repeated
+            // selection pattern is built from the SAME events already fetched
+            // here. No second query, and no separate teacher aggregation.
+            semanticChoice: event.semanticChoice,
           };
         }),
       );

@@ -2,6 +2,9 @@ import { collection, DocumentData, getDocs, limit, orderBy, query, where } from 
 
 import { StudyOutcome } from "@features/study/domain/studyTypes";
 import { db } from "@services/firebase/config";
+import { CHOICE_LABELS, ChoiceLabel } from "@/types/question";
+
+import type { StoredSemanticChoice } from "./learningTrail";
 
 // Phase 59 — reading the chronological learning history.
 //
@@ -24,10 +27,31 @@ export interface StoredLearningEvent {
   outcome: StudyOutcome;
   occurredAt: number;
   sourceClassId: string | null;
+  // Absent on every pre-Phase-78 event and on every outcome that carried no
+  // authored distractor meaning — which is most of them. Absence means "no
+  // authored semantic meaning was recorded", never "nothing happened".
+  semanticChoice: StoredSemanticChoice | null;
 }
 
 function isOutcome(value: unknown): value is StudyOutcome {
   return value === "solved" || value === "struggled" || value === "again";
+}
+
+// All-or-nothing: a payload missing any component is dropped entirely rather
+// than partially kept. A conceptKey without its namespace is not a weaker
+// identity, it is a different and unsafe one — it would let two authors'
+// vocabularies merge, which is the single thing this evidence model exists to
+// prevent.
+function toSemanticChoice(value: unknown): StoredSemanticChoice | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const namespaceId = typeof record.namespaceId === "string" ? record.namespaceId.trim() : "";
+  const conceptKey = typeof record.conceptKey === "string" ? record.conceptKey.trim() : "";
+  const choiceLabel = record.choiceLabel;
+  if (!namespaceId || !conceptKey) return null;
+  if (typeof choiceLabel !== "string") return null;
+  if (!(CHOICE_LABELS as readonly string[]).includes(choiceLabel)) return null;
+  return { namespaceId, conceptKey, choiceLabel: choiceLabel as ChoiceLabel };
 }
 
 // Skips any document that cannot be read as a real event rather than
@@ -42,6 +66,7 @@ function toEvent(id: string, data: DocumentData): StoredLearningEvent | null {
     outcome: data.outcome,
     occurredAt,
     sourceClassId: typeof data.sourceClassId === "string" ? data.sourceClassId : null,
+    semanticChoice: toSemanticChoice(data.semanticChoice),
   };
 }
 

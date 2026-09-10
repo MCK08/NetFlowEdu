@@ -18,12 +18,17 @@ import { useThemeSubscription } from "@theme/ThemeProvider";
 import { typography } from "@theme/typography";
 
 import { StrugglePatternListView } from "../components/StrugglePatternListView";
+import { VerifiedChoicePatternSection } from "../components/VerifiedChoicePatternSection";
 import { useLearningInsights } from "../hooks/useLearningInsights";
 import { useStudyQueue } from "../hooks/useStudyQueue";
 import {
   buildStrugglePatternMemory,
   patternAbsenceCopy,
 } from "../services/strugglePatternMemory";
+import {
+  buildVerifiedChoicePatterns,
+  choicePatternAbsenceCopy,
+} from "../services/verifiedChoicePatterns";
 
 // Phase 71 — "Zorlanma Örüntülerim".
 //
@@ -58,6 +63,20 @@ export function StrugglePatternsScreen() {
     [items, events],
   );
 
+  // Phase 78 — built from the SAME bounded event window this screen already
+  // loads, so it costs no query of its own.
+  //
+  // It lives here rather than on a route of its own because it is the same
+  // question asked one level deeper: Phase 71 says a difficulty is repeating,
+  // this says a specific authored SELECTION is repeating across different
+  // questions. A separate destination would have made the student choose
+  // between two answers to "what keeps coming back", and would have remounted
+  // these identical hooks to do it.
+  const choicePatterns = useMemo(
+    () => buildVerifiedChoicePatterns({ events }),
+    [events],
+  );
+
   const handleStudy = useCallback(() => {
     // The existing canonical practice entry point. Phase 71 adds no targeted
     // selector, so a "study just this topic" button would be a promise the
@@ -67,6 +86,7 @@ export function StrugglePatternsScreen() {
 
   const isLoading = isLoadingItems || isLoadingEvents;
   const absence = patternAbsenceCopy(memory);
+  const choiceAbsence = choicePatternAbsenceCopy(choicePatterns);
   const showAbsence = !isLoading && !error && memory.isEmpty;
 
   return (
@@ -109,12 +129,39 @@ export function StrugglePatternsScreen() {
           ) : null}
 
           {!memory.isEmpty ? (
-            <>
-              <StrugglePatternListView patterns={memory.patterns} />
-              <View style={styles.footer}>
-                <PrimaryButton label="Çalışmaya Devam Et" onPress={handleStudy} />
-              </View>
-            </>
+            <StrugglePatternListView patterns={memory.patterns} />
+          ) : null}
+
+          {/* Phase 78 — a secondary section, below the general patterns and
+              deliberately quieter than them. Phase 71 remains the headline
+              answer to "what keeps being hard"; this narrower signal only
+              exists when an author actually attached meaning to the options a
+              student picked, which is a small slice of all evidence. */}
+          {!isLoading && !error ? (
+            choicePatterns.isEmpty ? (
+              // Shown only when the general patterns already filled the screen.
+              // On an otherwise empty screen the absence state above is the
+              // whole message, and a second "nothing here either" under it
+              // would read as piling on.
+              !memory.isEmpty ? (
+                <View style={styles.choiceAbsence}>
+                  <Text style={styles.choiceAbsenceTitle}>{choiceAbsence.title}</Text>
+                  <Text style={styles.choiceAbsenceText}>{choiceAbsence.description}</Text>
+                </View>
+              ) : null
+            ) : (
+              <VerifiedChoicePatternSection
+                title="Tekrarlayan Seçim Örüntüleri"
+                intro="Farklı sorularda aynı doğrulanmış seçim anlamı tekrarlandı."
+                patterns={choicePatterns.patterns}
+              />
+            )
+          ) : null}
+
+          {!memory.isEmpty || !choicePatterns.isEmpty ? (
+            <View style={styles.footer}>
+              <PrimaryButton label="Çalışmaya Devam Et" onPress={handleStudy} />
+            </View>
           ) : null}
         </View>
       </ScrollView>
@@ -167,6 +214,20 @@ const styles = themedStyles(() => ({
   },
   empty: {
     gap: spacing.md,
+  },
+  choiceAbsence: {
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    gap: 2,
+  },
+  choiceAbsenceTitle: {
+    ...typography.bodyStrong,
+    color: colors.textSecondary,
+  },
+  choiceAbsenceText: {
+    ...typography.caption,
+    color: colors.textTertiary,
   },
   footer: {
     paddingTop: spacing.xs,

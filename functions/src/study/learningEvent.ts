@@ -1,3 +1,4 @@
+import type { SemanticChoiceEvidence } from "./semanticChoiceEvidence";
 import type { StudyOutcome } from "./reviewScheduler";
 
 // Phase 59 — the chronological half of a learning outcome.
@@ -56,6 +57,24 @@ export interface LearningEventRecord {
   // is what lets firestore.rules grant a teacher read access to exactly the
   // events that happened inside their own classroom, and nothing else.
   sourceClassId: string | null;
+  // Phase 78 — OPTIONAL server-derived meaning of the option the student
+  // picked, present only when the pick was a wrong answer whose author had
+  // attached a conceptKey (see semanticChoiceEvidence.ts for every reason it
+  // is usually absent).
+  //
+  // Optional rather than a new schema version, and that is a deliberate
+  // reading decision: every pre-Phase-78 event is still a completely valid
+  // version-1 event, and nothing about how it is parsed changes. A reader that
+  // does not know this field ignores it; a reader that does treats absence as
+  // "this outcome carried no authored semantic meaning", which is exactly what
+  // it means for both an old event and a new one. Bumping the version would
+  // have implied old events need translating, and they do not.
+  //
+  // The payload itself is frozen at write time. If the author later edits the
+  // question — changes the option, the feedback, or the key — this event still
+  // says what was true when the student answered. Rewriting history to match a
+  // later edit would destroy the only thing an event is for.
+  semanticChoice?: SemanticChoiceEvidence;
   schemaVersion: number;
 }
 
@@ -81,12 +100,18 @@ export function buildLearningEventRecord(params: {
   outcome: StudyOutcome;
   now: number;
   sourceClassId: string | null;
+  semanticChoice?: SemanticChoiceEvidence | null;
 }): LearningEventRecord {
-  return {
+  const record: LearningEventRecord = {
     questionId: params.questionId,
     outcome: params.outcome,
     occurredAt: params.now,
     sourceClassId: params.sourceClassId,
     schemaVersion: LEARNING_EVENT_SCHEMA_VERSION,
   };
+  // Spread only when present: Firestore throws on an `undefined` value, and
+  // writing an explicit null would make every ordinary outcome carry a field
+  // that means nothing to it.
+  if (params.semanticChoice) record.semanticChoice = params.semanticChoice;
+  return record;
 }

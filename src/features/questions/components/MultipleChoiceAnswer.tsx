@@ -94,7 +94,15 @@ export function MultipleChoiceAnswer({
     // network failure here must never block or alter what the student
     // already sees on screen (same posture as StudyScreen's
     // refreshInsights() being best-effort after a recorded outcome).
-    recordStudyOutcome(questionId, outcome).catch((err) => {
+    //
+    // Phase 78 — the picked label rides along on the SAME call. Not a second
+    // write, not a write at tap time ahead of the outcome: the semantic
+    // evidence is recorded if and only if this confirmed outcome is, inside
+    // the one transaction that already carries the operationId guard. A
+    // student who picks an option and never gets a confirmed outcome leaves no
+    // semantic trace, which is the honest result — they may still have read
+    // the authored feedback below, and that costs nothing and proves nothing.
+    recordStudyOutcome(questionId, outcome, undefined, label).catch((err) => {
       if (__DEV__) console.log("[MC_STUDY_BRIDGE] recordStudyOutcome failed", err);
     });
   }

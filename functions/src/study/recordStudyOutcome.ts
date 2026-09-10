@@ -7,6 +7,7 @@ import { advanceStreak, resolveTimeZone, toDayKey } from "./dayKey";
 import { buildLearningEventId, buildLearningEventRecord } from "./learningEvent";
 import { appendOperationId, hasProcessedOperation, isValidOperationId } from "./operationId";
 import { isStudyOutcome, scheduleNextReview, StudyOutcome } from "./reviewScheduler";
+import { isChoiceLabel, resolveSemanticChoiceEvidence } from "./semanticChoiceEvidence";
 import {
   DEFAULT_DAILY_GOAL,
   incrementOutcomeCounters,
@@ -21,6 +22,13 @@ interface RecordStudyOutcomeRequest {
   // Per-gesture replay guard — see operationId.ts. Optional so an older
   // client keeps working (it simply gets no dedupe protection).
   operationId?: string;
+  // Phase 78 — which multiple-choice option the student picked, when this
+  // outcome came from answering one. UNTRUSTED: it is the only thing the
+  // client contributes to semantic evidence, and it is a label, not a
+  // meaning. Whether that label is real, whether it was wrong, what it
+  // represents and who authored that meaning are all resolved server-side
+  // from the question document (see semanticChoiceEvidence.ts).
+  selectedChoice?: string;
 }
 
 interface RecordStudyOutcomeResult {
@@ -96,6 +104,20 @@ export const recordStudyOutcome = onCall<RecordStudyOutcomeRequest>(
       throw new HttpsError("invalid-argument", "Geçersiz işlem kimliği.");
     }
     const operationId = rawOperationId as string | undefined;
+
+    // Validated as a LABEL only, and rejected rather than ignored so a client
+    // bug surfaces instead of silently dropping evidence. An absent value is
+    // the ordinary case — every non-multiple-choice outcome, and every client
+    // older than this phase.
+    //
+    // Note what is NOT accepted anywhere in this request: a conceptKey, a
+    // namespace, a correctness claim, or feedback text. There is no field for
+    // them, so a malicious caller has nothing to put a forged meaning in.
+    const rawSelectedChoice = request.data?.selectedChoice;
+    if (rawSelectedChoice !== undefined && !isChoiceLabel(rawSelectedChoice)) {
+      throw new HttpsError("invalid-argument", "Geçersiz şık.");
+    }
+    const selectedChoice = rawSelectedChoice as string | undefined;
 
     const now = Date.now();
     // The client may suggest its zone; an invalid/spoofed value silently
@@ -221,6 +243,24 @@ export const recordStudyOutcome = onCall<RecordStudyOutcomeRequest>(
       const itemCounters = incrementOutcomeCounters(existing, outcome);
       const dayCounters = incrementOutcomeCounters(day, outcome);
 
+      // Phase 78 — derived here, in the pure COMPUTE section, from the
+      // question document THIS transaction already read in its read phase.
+      // That is what makes the whole feature cost zero additional reads: the
+      // choices, the correct answer, the authored feedback and the owner are
+      // all already in hand for the access check above.
+      //
+      // Replay safety needs no new guard for the same structural reason the
+      // counters need none: the operationId branch RETURNS long before this
+      // line, so a replayed gesture can never reach it. One mechanism keeps
+      // the counters, the scheduler, the event and now this consistent.
+      //
+      // Returns null for almost every outcome, and that is correct — see
+      // resolveSemanticChoiceEvidence for each reason.
+      const semanticChoice = resolveSemanticChoiceEvidence({
+        question,
+        selectedChoice,
+      });
+
       // ================= WRITE PHASE =================
       // Every field below is a concrete value — `undefined` is never written
       // to Firestore (it throws); optional values are normalized to null.
@@ -298,6 +338,12 @@ export const recordStudyOutcome = onCall<RecordStudyOutcomeRequest>(
           outcome,
           now,
           sourceClassId: typeof question.classId === "string" ? question.classId : null,
+          // Phase 78 — rides INSIDE the existing event rather than becoming a
+          // second document. One confirmed outcome remains exactly one written
+          // event, so there is no window where semantic evidence exists
+          // without the outcome it belongs to, and no second collection whose
+          // idempotency would have to be reasoned about separately.
+          semanticChoice,
         }),
       );
 

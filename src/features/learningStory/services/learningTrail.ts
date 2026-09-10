@@ -1,3 +1,4 @@
+import { ChoiceLabel } from "@/types/question";
 import { StudyOutcome } from "@features/study/domain/studyTypes";
 
 // Phase 59 — turning real chronological events into a Learning Trail.
@@ -17,6 +18,22 @@ import { StudyOutcome } from "@features/study/domain/studyTypes";
 // in by the caller from the shared question-metadata cache — the event
 // document itself deliberately stores no question content (see
 // functions/src/study/learningEvent.ts).
+/** Phase 78 — the server-written meaning of the option a student picked.
+ *
+ *  Declared HERE, in the pure module, rather than beside the Firestore reader
+ *  that parses it: the aggregator that consumes it is pure too, and a pure
+ *  module must not have to reach through a Firebase-importing one to name a
+ *  shape. The reader imports this; nothing imports the reader.
+ *
+ *  `namespaceId` is the question author's uid. It is what stops one author's
+ *  "sign_transfer_error" from ever merging with another's — see
+ *  functions/src/study/semanticChoiceEvidence.ts for why that matters. */
+export interface StoredSemanticChoice {
+  namespaceId: string;
+  conceptKey: string;
+  choiceLabel: ChoiceLabel;
+}
+
 export interface LearningEvent {
   id: string;
   questionId: string;
@@ -24,6 +41,11 @@ export interface LearningEvent {
   occurredAt: number;
   subject: string;
   topic: string;
+  // Phase 78 — carried through unchanged from the stored event so one shape
+  // serves both the trail and the verified-choice aggregator. Nothing in this
+  // module reads it: a trail is about ORDER of outcomes, and mixing an
+  // authored distractor meaning into that would blur two different claims.
+  semanticChoice?: StoredSemanticChoice | null;
 }
 
 // How many steps a trail shows. Small on purpose: this is a narrative beat in
