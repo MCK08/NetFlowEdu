@@ -58,6 +58,7 @@ export function useLearningTrail(uid: string | undefined) {
             // cache, for exactly the reason the event itself refuses to store
             // them (see functions/src/study/learningEvent.ts).
             semanticChoice: event.semanticChoice,
+            semanticOpportunities: event.semanticOpportunities,
           };
         }),
       );

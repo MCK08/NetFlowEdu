@@ -34,6 +34,20 @@ export interface StoredSemanticChoice {
   choiceLabel: ChoiceLabel;
 }
 
+/** Phase 79 — which authored meanings were SELECTABLE when this outcome was
+ *  recorded, and which option the student actually took.
+ *
+ *  Present only when the student made a real pick on a question carrying at
+ *  least one authored distractor meaning. Absence is not "none were offered" —
+ *  on a legacy event, or on an outcome recorded without touching the options,
+ *  it means the question was simply never observed as a decision. Nothing may
+ *  read absence as a passed-over opportunity. */
+export interface StoredSemanticOpportunities {
+  namespaceId: string;
+  conceptKeys: string[];
+  selectedChoice: ChoiceLabel;
+}
+
 export interface LearningEvent {
   id: string;
   questionId: string;
@@ -46,6 +60,10 @@ export interface LearningEvent {
   // module reads it: a trail is about ORDER of outcomes, and mixing an
   // authored distractor meaning into that would blur two different claims.
   semanticChoice?: StoredSemanticChoice | null;
+  // Phase 79 — carried through unchanged, like semanticChoice. Nothing in this
+  // module reads it either: a trail is about the order of outcomes, and what
+  // was on offer is a different claim.
+  semanticOpportunities?: StoredSemanticOpportunities | null;
 }
 
 // How many steps a trail shows. Small on purpose: this is a narrative beat in

@@ -1,4 +1,7 @@
-import type { SemanticChoiceEvidence } from "./semanticChoiceEvidence";
+import type {
+  SemanticChoiceEvidence,
+  SemanticOpportunityEvidence,
+} from "./semanticChoiceEvidence";
 import type { StudyOutcome } from "./reviewScheduler";
 
 // Phase 59 — the chronological half of a learning outcome.
@@ -75,6 +78,20 @@ export interface LearningEventRecord {
   // says what was true when the student answered. Rewriting history to match a
   // later edit would destroy the only thing an event is for.
   semanticChoice?: SemanticChoiceEvidence;
+  // Phase 79 — OPTIONAL record of which authored meanings were SELECTABLE when
+  // this outcome was recorded, present only when the student actually picked an
+  // option on a question that carried at least one.
+  //
+  // Same optional-field-under-the-same-version decision as semanticChoice, and
+  // for the same reason: an event without it is not an event needing
+  // translation, it is an event where this was never observed. That
+  // distinction is load-bearing for Phase 79 — a legacy event proves nothing
+  // about what was on the page, so it must never be read as a passed-over
+  // opportunity.
+  //
+  // Frozen at write time. A later edit to the question's options, feedback or
+  // keys does not rewrite what the server saw when the student answered.
+  semanticOpportunities?: SemanticOpportunityEvidence;
   schemaVersion: number;
 }
 
@@ -101,6 +118,7 @@ export function buildLearningEventRecord(params: {
   now: number;
   sourceClassId: string | null;
   semanticChoice?: SemanticChoiceEvidence | null;
+  semanticOpportunities?: SemanticOpportunityEvidence | null;
 }): LearningEventRecord {
   const record: LearningEventRecord = {
     questionId: params.questionId,
@@ -113,5 +131,6 @@ export function buildLearningEventRecord(params: {
   // writing an explicit null would make every ordinary outcome carry a field
   // that means nothing to it.
   if (params.semanticChoice) record.semanticChoice = params.semanticChoice;
+  if (params.semanticOpportunities) record.semanticOpportunities = params.semanticOpportunities;
   return record;
 }

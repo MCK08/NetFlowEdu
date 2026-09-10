@@ -284,6 +284,7 @@ describe("copy", () => {
     distinctQuestionCount: 2,
     lastSeenAt: T0,
     questionIds: ["q2", "q1"],
+    recovery: null,
   };
 
   it("states the repetition as a bounded fact", () => {

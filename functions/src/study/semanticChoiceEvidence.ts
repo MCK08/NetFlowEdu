@@ -96,6 +96,48 @@ export interface SemanticChoiceEvidence {
   schemaVersion: number;
 }
 
+/** Phase 79 — which authored semantic distractors were ON THE PAGE when the
+ *  student answered.
+ *
+ *  WHY THIS EXISTS
+ *
+ *  Phase 78 could record that a meaning was SELECTED. It could never record
+ *  that a meaning was AVAILABLE and passed over, so "the student has not
+ *  picked X lately" was ambiguous between two completely different facts:
+ *  they saw X and chose otherwise, or X was simply never in front of them
+ *  again. Without this payload the second is indistinguishable from the
+ *  first, and any recovery claim built on that silence would be a guess.
+ *
+ *  WHY IT REQUIRES A SELECTION
+ *
+ *  `selectedChoice` is not decoration here — it is what makes the whole
+ *  payload meaningful. A student can record an outcome on a multiple-choice
+ *  question WITHOUT touching the options (the rating control does exactly
+ *  that), and in that case the distractors were technically present but were
+ *  never offered as a decision. Counting it would turn "did not engage" into
+ *  "declined", which is precisely the fabrication this phase exists to
+ *  prevent. So opportunities are recorded only alongside a real pick.
+ *
+ *  WHY namespaceId IS HOISTED
+ *
+ *  Every option on one question belongs to one author, because `ownerId` is a
+ *  property of the question. Repeating it per entry would store the same
+ *  string up to four times and imply, wrongly, that entries could differ. */
+export interface SemanticOpportunityEvidence {
+  /** The question author's uid. Same namespace rule as SemanticChoiceEvidence:
+   *  a conceptKey means nothing without the author it belongs to. */
+  namespaceId: string;
+  /** Every distinct authored meaning that was selectable and wrong on this
+   *  question, deduplicated and sorted so the stored value is deterministic.
+   *  Bounded by the choice model — at most four wrong options exist. */
+  conceptKeys: string[];
+  /** The option the student actually picked. Proves a decision was made, and
+   *  lets a reader tell "chose something else" from "chose this one" without
+   *  re-reading the question. */
+  selectedChoice: ChoiceLabel;
+  schemaVersion: number;
+}
+
 /** The fields of a question document this resolver reads. Structural so the
  *  caller can pass a raw Firestore payload without a cast. */
 export interface SemanticQuestionSource {
@@ -169,6 +211,81 @@ export function resolveSemanticChoiceEvidence(params: {
     namespaceId,
     conceptKey,
     choiceLabel: selectedChoice,
+    schemaVersion: SEMANTIC_CHOICE_SCHEMA_VERSION,
+  };
+}
+
+/** At most four wrong options can exist alongside one correct answer, so this
+ *  is the natural ceiling rather than an invented one. Enforced explicitly all
+ *  the same: an array written to a document a student keeps forever should
+ *  have a stated bound, not an implied one. */
+export const MAX_SEMANTIC_OPPORTUNITIES = CHOICE_LABELS.length - 1;
+
+/** Reads the authored meaning off ONE option, or null.
+ *
+ *  Shares every gate with resolveSemanticChoiceEvidence except the "is this
+ *  the option that was picked" one — which is the whole difference between
+ *  "was offered" and "was chosen". */
+function conceptKeyForOption(
+  question: SemanticQuestionSource,
+  label: ChoiceLabel,
+): string | null {
+  if (!optionText(question.choices, label)) return null;
+  // The correct answer is never an opportunity to hold a misconception, and
+  // Phase 77 already refuses to keep feedback on it. Re-stated here so this
+  // resolver is safe even if a document somehow holds one.
+  if (!isChoiceLabel(question.correctChoice)) return null;
+  if (label === question.correctChoice) return null;
+
+  const feedback = question.choiceFeedback;
+  if (!feedback || typeof feedback !== "object" || Array.isArray(feedback)) return null;
+  const entry = (feedback as Record<string, unknown>)[label];
+  if (!entry || typeof entry !== "object" || Array.isArray(entry)) return null;
+
+  const text = (entry as Record<string, unknown>).text;
+  if (typeof text !== "string" || text.trim().length === 0) return null;
+
+  return normalizeConceptKey((entry as Record<string, unknown>).conceptKey);
+}
+
+/** Every authored semantic distractor that was selectable on this question at
+ *  the moment it was answered, or null when there were none.
+ *
+ *  Returns null — not an empty array — when nothing qualifies, so an ordinary
+ *  outcome never carries a field that means nothing to it.
+ *
+ *  Deduplicated by conceptKey: if an author attached the same meaning to two
+ *  different wrong options, the student was offered that meaning ONCE, not
+ *  twice. Counting it twice would inflate every later decline.
+ *
+ *  Sorted, so the same question always produces the same stored bytes and a
+ *  diff of two events is about what changed, not about map iteration order. */
+export function resolveSemanticOpportunities(params: {
+  question: SemanticQuestionSource;
+  selectedChoice: unknown;
+}): SemanticOpportunityEvidence | null {
+  const { question, selectedChoice } = params;
+
+  // No pick, no opportunity — see the interface note. This is the gate that
+  // keeps a rating-only outcome on a multiple-choice question from ever
+  // looking like a declined distractor.
+  if (!isChoiceLabel(selectedChoice)) return null;
+  if (!optionText(question.choices, selectedChoice)) return null;
+
+  const namespaceId = typeof question.ownerId === "string" ? question.ownerId.trim() : "";
+  if (namespaceId.length === 0) return null;
+
+  const keys = new Set<string>();
+  for (const label of CHOICE_LABELS) {
+    const conceptKey = conceptKeyForOption(question, label);
+    if (conceptKey) keys.add(conceptKey);
+  }
+  if (keys.size === 0) return null;
+
+  return {
+    namespaceId,
+    conceptKeys: [...keys].sort().slice(0, MAX_SEMANTIC_OPPORTUNITIES),
+    selectedChoice,
     schemaVersion: SEMANTIC_CHOICE_SCHEMA_VERSION,
   };
 }

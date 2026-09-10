@@ -11,8 +11,10 @@ import { useThemeSubscription } from "@theme/ThemeProvider";
 import { typography } from "@theme/typography";
 
 import {
+  CHOICE_RECOVERY_LABEL,
   choicePatternEvidence,
   choicePatternFact,
+  choiceRecoveryFact,
   VerifiedChoicePattern,
 } from "../services/verifiedChoicePatterns";
 
@@ -41,6 +43,19 @@ import {
 // a single line. That is the literal claim being made: separate questions,
 // one recorded meaning. It is decorative and hidden from assistive technology;
 // the sentence beside it says the same thing in words.
+//
+// PHASE 79 — THE SECOND HALF OF THE STORY
+//
+// A pattern can now carry evidence of what happened AFTER it: the same trap
+// offered again on other questions, and not taken. That is rendered as a
+// continuation of the same row rather than a separate badge, because it is the
+// same evidence trail moving forward — the convergence mark gains an onward
+// step, and one more sentence appears beneath the first.
+//
+// It is deliberately NOT a success state. No trophy, no green tick, no
+// percentage, and the accent stays the same brand blue the rest of the row
+// uses. The strongest thing on screen is a sentence saying the option was not
+// re-selected, because that is the strongest thing the evidence supports.
 //
 // WHAT IS NEVER RENDERED
 //
@@ -81,12 +96,25 @@ export const VerifiedChoicePatternSection = memo(function VerifiedChoicePatternS
           // Read in the order a sighted reader takes it: what area, what
           // repeated, and on how much evidence. The convergence marks add
           // nothing here — they are the same fact drawn.
-          accessibilityLabel={`${pattern.subject}, ${pattern.topic}. ${choicePatternFact(
-            pattern,
-          )} ${choicePatternEvidence(pattern)}.`}
+          // Read in the order a sighted reader takes it: what area, what
+          // repeated, on how much evidence, and only then what has happened
+          // since. The state is carried by these words, never by the accent.
+          accessibilityLabel={[
+            `${pattern.subject}, ${pattern.topic}.`,
+            choicePatternFact(pattern),
+            `${choicePatternEvidence(pattern)}.`,
+            pattern.recovery
+              ? `${CHOICE_RECOVERY_LABEL}. ${choiceRecoveryFact(pattern.recovery)}`
+              : null,
+          ]
+            .filter(Boolean)
+            .join(" ")}
         >
           <View style={styles.markerColumn} accessibilityElementsHidden importantForAccessibility="no">
-            <Converge count={pattern.distinctQuestionCount} />
+            <Converge
+              count={pattern.distinctQuestionCount}
+              onward={pattern.recovery !== null}
+            />
           </View>
 
           <View style={styles.body}>
@@ -95,6 +123,28 @@ export const VerifiedChoicePatternSection = memo(function VerifiedChoicePatternS
             </Text>
             <Text style={styles.fact}>{choicePatternFact(pattern)}</Text>
             <Text style={styles.evidence}>{choicePatternEvidence(pattern)}</Text>
+
+            {pattern.recovery ? (
+              // A continuation, not a verdict: the divider and the inset say
+              // "and then this happened", which is exactly the claim.
+              <View style={styles.recovery}>
+                <View
+                  style={styles.recoveryRule}
+                  accessibilityElementsHidden
+                  importantForAccessibility="no"
+                />
+                <View style={styles.recoveryHead}>
+                  <Ionicons
+                    name="arrow-forward-outline"
+                    size={iconSize.xs}
+                    color={colors.primary}
+                    accessibilityElementsHidden
+                  />
+                  <Text style={styles.recoveryLabel}>{CHOICE_RECOVERY_LABEL}</Text>
+                </View>
+                <Text style={styles.fact}>{choiceRecoveryFact(pattern.recovery)}</Text>
+              </View>
+            ) : null}
           </View>
         </View>
       ))}
@@ -106,7 +156,7 @@ export const VerifiedChoicePatternSection = memo(function VerifiedChoicePatternS
 // motif rather than becoming a chart.
 const MAX_MARKERS = 4;
 
-function Converge({ count }: { count: number }) {
+function Converge({ count, onward }: { count: number; onward: boolean }) {
   const markers = Math.min(Math.max(count, 2), MAX_MARKERS);
   return (
     <View style={styles.converge}>
@@ -117,6 +167,15 @@ function Converge({ count }: { count: number }) {
       </View>
       <View style={styles.convergeLine} />
       <Ionicons name="git-merge-outline" size={iconSize.xs} color={colors.primary} />
+      {/* Phase 79 — the evidence continues past the pattern. A short onward
+          stroke and a filled endpoint, not a badge: the trail moved forward,
+          it did not finish. */}
+      {onward ? (
+        <>
+          <View style={styles.convergeLine} />
+          <View style={styles.onwardPoint} />
+        </>
+      ) : null}
     </View>
   );
 }
@@ -173,6 +232,33 @@ const styles = themedStyles(() => ({
     flex: 1,
     minWidth: 0,
     gap: 2,
+  },
+  onwardPoint: {
+    width: 6,
+    height: 6,
+    borderRadius: radius.pill,
+    backgroundColor: colors.primary,
+  },
+  recovery: {
+    gap: 2,
+    paddingTop: spacing.xs,
+  },
+  recoveryRule: {
+    height: 1,
+    backgroundColor: colors.divider,
+    marginBottom: spacing.xxs,
+  },
+  recoveryHead: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xxs,
+  },
+  recoveryLabel: {
+    ...typography.label,
+    color: colors.primary,
+    letterSpacing: 0.4,
+    flex: 1,
+    minWidth: 0,
   },
   scope: {
     ...typography.bodyStrong,

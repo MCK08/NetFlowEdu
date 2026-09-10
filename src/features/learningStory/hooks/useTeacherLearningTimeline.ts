@@ -82,6 +82,7 @@ export function useTeacherLearningTimeline(
             // selection pattern is built from the SAME events already fetched
             // here. No second query, and no separate teacher aggregation.
             semanticChoice: event.semanticChoice,
+            semanticOpportunities: event.semanticOpportunities,
           };
         }),
       );

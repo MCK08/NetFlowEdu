@@ -4,7 +4,7 @@ import { StudyOutcome } from "@features/study/domain/studyTypes";
 import { db } from "@services/firebase/config";
 import { CHOICE_LABELS, ChoiceLabel } from "@/types/question";
 
-import type { StoredSemanticChoice } from "./learningTrail";
+import type { StoredSemanticChoice, StoredSemanticOpportunities } from "./learningTrail";
 
 // Phase 59 — reading the chronological learning history.
 //
@@ -27,6 +27,9 @@ export interface StoredLearningEvent {
   outcome: StudyOutcome;
   occurredAt: number;
   sourceClassId: string | null;
+  // Phase 79 — absent on every pre-Phase-79 event and on every outcome
+  // recorded without an actual pick.
+  semanticOpportunities: StoredSemanticOpportunities | null;
   // Absent on every pre-Phase-78 event and on every outcome that carried no
   // authored distractor meaning — which is most of them. Absence means "no
   // authored semantic meaning was recorded", never "nothing happened".
@@ -67,7 +70,34 @@ function toEvent(id: string, data: DocumentData): StoredLearningEvent | null {
     occurredAt,
     sourceClassId: typeof data.sourceClassId === "string" ? data.sourceClassId : null,
     semanticChoice: toSemanticChoice(data.semanticChoice),
+    semanticOpportunities: toSemanticOpportunities(data.semanticOpportunities),
   };
+}
+
+// All-or-nothing, exactly like the selected payload above, and with one extra
+// requirement: `selectedChoice` must be present and real. Without it the record
+// cannot show that a DECISION was made, and an opportunity nobody was asked to
+// decide on is not an opportunity — see the type's own note.
+function toSemanticOpportunities(value: unknown): StoredSemanticOpportunities | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const namespaceId = typeof record.namespaceId === "string" ? record.namespaceId.trim() : "";
+  if (!namespaceId) return null;
+
+  const selectedChoice = record.selectedChoice;
+  if (typeof selectedChoice !== "string") return null;
+  if (!(CHOICE_LABELS as readonly string[]).includes(selectedChoice)) return null;
+
+  if (!Array.isArray(record.conceptKeys)) return null;
+  const conceptKeys: string[] = [];
+  for (const key of record.conceptKeys) {
+    if (typeof key !== "string") continue;
+    const trimmed = key.trim();
+    if (trimmed && !conceptKeys.includes(trimmed)) conceptKeys.push(trimmed);
+  }
+  if (conceptKeys.length === 0) return null;
+
+  return { namespaceId, conceptKeys, selectedChoice: selectedChoice as ChoiceLabel };
 }
 
 // A student's own recent learning events. Owner-read, exactly what

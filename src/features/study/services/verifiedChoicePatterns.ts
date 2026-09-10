@@ -28,14 +28,24 @@ import { LearningEvent } from "@features/learningStory/services/learningTrail";
 // signal travels with the student rather than with the item, and it is the
 // only shape this module reports.
 //
-// WHY THERE IS NO RECOVERY STATE
+// WHY THERE IS STILL NO "RESOLVED" STATE
 //
-// A later correct answer does not prove a semantic misconception was resolved.
-// The student may have guessed, met a different sub-skill, or simply never
-// been offered that distractor again. None of those is evidence of correction,
-// and the repository has nothing that could distinguish them. So Phase 78 has
-// no "resolved", no "recovered" and no "fixed" — a future phase may earn one
-// if a real resolution contract can be defined.
+// Phase 78 could not say anything about what came after a pattern, because the
+// only thing recorded was what the student SELECTED. "They have not picked X
+// lately" was ambiguous between two unrelated facts: they saw X and chose
+// otherwise, or X was never in front of them again.
+//
+// Phase 79 closes exactly that gap and nothing wider. The server now also
+// records which authored meanings were SELECTABLE at the moment a student
+// picked something, so "offered again and not re-selected" becomes a checkable
+// fact rather than an inference from silence.
+//
+// That earns a RECOVERY SIGNAL. It does not earn "resolved", "mastered" or
+// "understood", and this module still has no such state. A student who is
+// offered a distractor and picks something else may have reasoned it through,
+// guessed, or chosen a different wrong answer entirely. What can be said is
+// what happened: the trap was on the page, and it was not taken. That is the
+// whole claim.
 
 /** How many patterns a surface may show. Small on purpose: this is a short
  *  reflective list, not an error log. */
@@ -47,6 +57,35 @@ export const MIN_OCCURRENCES = 2;
 /** The threshold that makes it a CROSS-QUESTION signal rather than a
  *  same-question one Phase 71 already covers. */
 export const MIN_DISTINCT_QUESTIONS = 2;
+
+/** Phase 79 — how many later, distinct questions must offer the meaning and
+ *  not have it taken before a recovery signal is stated.
+ *
+ *  Deliberately the same shape as the repetition threshold above: one declined
+ *  opportunity is a single moment and could be anything, and requiring breadth
+ *  across questions is what stopped the repetition claim from being about one
+ *  item. The evidence for recovering should not be weaker than the evidence
+ *  that raised the pattern. */
+export const MIN_RECOVERY_OPPORTUNITIES = 2;
+export const MIN_RECOVERY_DISTINCT_QUESTIONS = 2;
+
+/** Phase 79 — evidence that the same authored meaning was put in front of the
+ *  student again, after the pattern, and was not taken.
+ *
+ *  Every field is a count of real events. There is no score, no probability and
+ *  no "resolved" flag, because none of those is something the evidence can
+ *  support. */
+export interface ChoiceRecoverySignal {
+  /** Later events that offered this meaning and where the student picked
+   *  something else. */
+  declinedOpportunityCount: number;
+  /** How many DIFFERENT questions those came from. */
+  distinctQuestionCount: number;
+  /** The selection this window opens after — always the most recent time the
+   *  meaning WAS taken. */
+  since: number;
+  lastDeclinedAt: number;
+}
 
 export interface VerifiedChoicePattern {
   /** Stable across renders. Internal only — it contains the conceptKey and the
@@ -63,6 +102,14 @@ export interface VerifiedChoicePattern {
   /** The questions that contributed, most recently seen first. Lets a caller
    *  show evidence markers without re-deriving them. */
   questionIds: string[];
+  /** Phase 79 — present only when the strict post-pattern contract passes.
+   *
+   *  Null means "no recovery evidence right now", which covers three genuinely
+   *  different situations the UI must not conflate: the meaning has not been
+   *  offered again, it has been offered too few times to say anything, or it
+   *  was offered and taken again. Only the last of those is a step backwards,
+   *  and none of them is a failure to report. */
+  recovery: ChoiceRecoverySignal | null;
 }
 
 export interface VerifiedChoicePatternMemory {
@@ -76,6 +123,9 @@ export interface VerifiedChoicePatternMemory {
 
 interface Accumulator {
   id: string;
+  /** The identity's components, kept alongside the joined id so the recovery
+   *  pass compares fields rather than re-splitting a delimited string. */
+  identity: { namespaceId: string; conceptKey: string; subject: string; topic: string };
   subject: string;
   topic: string;
   occurrenceCount: number;
@@ -129,6 +179,91 @@ function identityOf(event: LearningEvent): string {
   ].join("|");
 }
 
+/** Whether one event shows this exact identity being OFFERED and passed over.
+ *
+ *  Four things must all hold, and each rules out a different way of being
+ *  wrong:
+ *
+ *   · the event carries opportunity evidence at all — a legacy event, or an
+ *     outcome recorded without touching the options, proves nothing about what
+ *     was on the page, and reading its silence as a decline is exactly the
+ *     inference Phase 78 refused to make;
+ *   · the namespace matches — another author's identical key is a different
+ *     meaning, not the same one declined;
+ *   · the concept scope matches — the same author's key in an unrelated topic
+ *     is held apart by Phase 78's identity, and must be here too;
+ *   · this meaning was actually among the options offered, and the student's
+ *     pick was NOT it.
+ *
+ *  The last clause is why `selectedChoice` is stored: it is the difference
+ *  between "chose otherwise" and "was never asked". */
+function declinesIdentity(
+  event: LearningEvent,
+  identity: { namespaceId: string; conceptKey: string; subject: string; topic: string },
+): boolean {
+  const offered = event.semanticOpportunities;
+  if (!offered) return false;
+  if (offered.namespaceId.trim() !== identity.namespaceId) return false;
+  if (event.subject.trim() !== identity.subject) return false;
+  if (event.topic.trim() !== identity.topic) return false;
+  if (!offered.conceptKeys.some((key) => key.trim() === identity.conceptKey)) return false;
+
+  // Taken, not declined. This is a re-selection, and the window logic below
+  // has already excluded anything before the latest one — so reaching here
+  // with a matching selection would mean counting a step backwards as a step
+  // forwards.
+  const selected = event.semanticChoice;
+  if (
+    selected &&
+    selected.namespaceId.trim() === identity.namespaceId &&
+    selected.conceptKey.trim() === identity.conceptKey
+  ) {
+    return false;
+  }
+  return true;
+}
+
+/** The recovery evidence for one already-repeated identity, or null.
+ *
+ *  The window opens at `since` — the most recent time this meaning WAS taken —
+ *  and that single choice is what makes re-selection self-correcting. There is
+ *  no separate "reset" branch to get wrong: a later selection moves `since`
+ *  forward, and every decline before it falls out of the window automatically.
+ *  Evidence earned before a relapse can never be presented as current. */
+function resolveRecovery(
+  events: readonly LearningEvent[],
+  identity: { namespaceId: string; conceptKey: string; subject: string; topic: string },
+  since: number,
+): ChoiceRecoverySignal | null {
+  let declinedOpportunityCount = 0;
+  let lastDeclinedAt = 0;
+  const questions = new Set<string>();
+
+  for (const event of events) {
+    // Strictly after: the selection that opens the window is not evidence
+    // against itself.
+    if (event.occurredAt <= since) continue;
+    if (!event.questionId) continue;
+    if (!declinesIdentity(event, identity)) continue;
+
+    declinedOpportunityCount += 1;
+    questions.add(event.questionId);
+    if (event.occurredAt > lastDeclinedAt) lastDeclinedAt = event.occurredAt;
+  }
+
+  // BOTH thresholds. Answering one question twice is not breadth, for the same
+  // reason it was not breadth when the pattern was formed.
+  if (declinedOpportunityCount < MIN_RECOVERY_OPPORTUNITIES) return null;
+  if (questions.size < MIN_RECOVERY_DISTINCT_QUESTIONS) return null;
+
+  return {
+    declinedOpportunityCount,
+    distinctQuestionCount: questions.size,
+    since,
+    lastDeclinedAt,
+  };
+}
+
 /** Builds the memory from the bounded event window.
  *
  *  O(n) over events plus one sort of the qualifying groups. Pure: no Firestore
@@ -149,6 +284,12 @@ export function buildVerifiedChoicePatterns(params: {
     if (!group) {
       group = {
         id,
+        identity: {
+          namespaceId: event.semanticChoice!.namespaceId.trim(),
+          conceptKey: event.semanticChoice!.conceptKey.trim(),
+          subject: event.subject.trim(),
+          topic: event.topic.trim(),
+        },
         subject: event.subject.trim(),
         topic: event.topic.trim(),
         occurrenceCount: 0,
@@ -184,6 +325,12 @@ export function buildVerifiedChoicePatterns(params: {
       questionIds: [...group.questions.entries()]
         .sort((a, b) => (b[1] !== a[1] ? b[1] - a[1] : a[0].localeCompare(b[0])))
         .map(([questionId]) => questionId),
+      // Evaluated only for identities that ALREADY qualified as repeated —
+      // both threshold checks are above this line. Recovery is a statement
+      // about a pattern, so there is nothing to recover from until there is
+      // one, and a stray declined opportunity can never manufacture a
+      // "recovering" state on its own.
+      recovery: resolveRecovery(params.events, group.identity, group.lastSeenAt),
     });
   }
 
@@ -228,6 +375,27 @@ export function choicePatternFact(pattern: VerifiedChoicePattern): string {
 export function choicePatternEvidence(pattern: VerifiedChoicePattern): string {
   return `${pattern.distinctQuestionCount} farklı soru · ${pattern.occurrenceCount} kayıt`;
 }
+
+/** The recovery fact, when there is one.
+ *
+ *  States the two things the evidence actually supports — that the same
+ *  selection came up again, and that it was not taken — and stops there. It
+ *  does not say the student now understands the idea, because a declined
+ *  option is not a demonstrated one. */
+export function choiceRecoveryFact(recovery: ChoiceRecoverySignal): string {
+  return `Sonraki ${recovery.distinctQuestionCount} farklı soruda aynı seçim yeniden seçilmedi.`;
+}
+
+/** The short label beside a recovering pattern.
+ *
+ *  "Sinyal" is doing real work in this phrase. It is not "toparlandı" and not
+ *  "çözüldü": the product is reporting something it noticed, not certifying an
+ *  outcome, and the wording keeps that distance. */
+export const CHOICE_RECOVERY_LABEL = "Toparlanma sinyali";
+
+/** The label for a pattern with no recovery evidence yet. Descriptive, not a
+ *  verdict — it names what the records show, not what the learner is. */
+export const CHOICE_REPEATED_LABEL = "Tekrar eden seçim";
 
 /** What an empty memory should say.
  *

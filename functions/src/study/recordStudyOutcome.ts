@@ -7,7 +7,11 @@ import { advanceStreak, resolveTimeZone, toDayKey } from "./dayKey";
 import { buildLearningEventId, buildLearningEventRecord } from "./learningEvent";
 import { appendOperationId, hasProcessedOperation, isValidOperationId } from "./operationId";
 import { isStudyOutcome, scheduleNextReview, StudyOutcome } from "./reviewScheduler";
-import { isChoiceLabel, resolveSemanticChoiceEvidence } from "./semanticChoiceEvidence";
+import {
+  isChoiceLabel,
+  resolveSemanticChoiceEvidence,
+  resolveSemanticOpportunities,
+} from "./semanticChoiceEvidence";
 import {
   DEFAULT_DAILY_GOAL,
   incrementOutcomeCounters,
@@ -261,6 +265,19 @@ export const recordStudyOutcome = onCall<RecordStudyOutcomeRequest>(
         selectedChoice,
       });
 
+      // Phase 79 — what was ON OFFER, from the same already-read document.
+      //
+      // Derived independently of the line above, and deliberately so: a
+      // student who picks the CORRECT answer records no selected meaning but
+      // was still shown every authored distractor, and that is exactly the
+      // event a later recovery claim rests on. Tying opportunities to the
+      // presence of a selected meaning would have thrown away the strongest
+      // evidence this phase produces.
+      const semanticOpportunities = resolveSemanticOpportunities({
+        question,
+        selectedChoice,
+      });
+
       // ================= WRITE PHASE =================
       // Every field below is a concrete value — `undefined` is never written
       // to Firestore (it throws); optional values are normalized to null.
@@ -344,6 +361,9 @@ export const recordStudyOutcome = onCall<RecordStudyOutcomeRequest>(
           // without the outcome it belongs to, and no second collection whose
           // idempotency would have to be reasoned about separately.
           semanticChoice,
+          // Rides in the SAME event as everything else. One confirmed outcome
+          // is still exactly one written document, under one operationId.
+          semanticOpportunities,
         }),
       );
 
