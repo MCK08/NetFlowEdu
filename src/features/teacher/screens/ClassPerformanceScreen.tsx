@@ -28,6 +28,7 @@ import { typography } from "@theme/typography";
 import { themedStyles } from "@theme/themeRuntime";
 
 import { ClassConceptHeatmapSection } from "../components/ClassConceptHeatmapSection";
+import { ClassSemanticCohortSection } from "../components/ClassSemanticCohortSection";
 import { StudentPerformanceCard } from "../components/StudentPerformanceCard";
 import { TeacherActionCenterSection } from "../components/TeacherActionCenterSection";
 import { useClassInterventionOutcomes } from "../hooks/useClassInterventionOutcomes";
@@ -36,7 +37,9 @@ import {
   TeacherActionCenterItem,
 } from "../services/teacherActionCenter";
 import { useClassPerformance } from "../hooks/useClassPerformance";
+import { useClassSemanticCohorts } from "../hooks/useClassSemanticCohorts";
 import { useTeacherQuestionComposer } from "../hooks/useTeacherQuestionComposer";
+import { ClassSemanticCohort } from "../services/classSemanticCohorts";
 import { ClassTopicHotspot } from "../services/classTopicInsights";
 import {
   AttentionCategory,
@@ -46,6 +49,7 @@ import { buildClassPerformanceSummary, StudentPerformanceCard as StudentPerforma
 import { buildTeacherActionSummary } from "../services/teacherActionSummary";
 import {
   hasRecentTopicIntervention,
+  InterventionCandidate,
   resolveTopicInterventionTargets,
 } from "../services/teacherIntervention";
 
@@ -217,8 +221,11 @@ export function ClassPerformanceScreen({ classId }: ClassPerformanceScreenProps)
     topic?: string;
     gradeLevel?: string | null;
     studentIds?: readonly string[];
-    // Phase 44 — set ONLY by openTargetedAssignmentForHotspot below, never
-    // by the bare "+ Yeni" button. Not inferred from subject/topic/
+    // Phase 44 — set ONLY by openTargetedAssignmentForHotspot and Phase 81's
+    // openSmallGroupDraft below, never by the bare "+ Yeni" button. Both of
+    // those gate on resolveTopicInterventionTargets, which is what makes them
+    // interventions; a semantic cohort on its own never sets this. Not
+    // inferred from subject/topic/
     // studentIds being present — this same function is the ordinary create
     // path too, which can legitimately carry all three without being an
     // intervention.
@@ -320,6 +327,19 @@ export function ClassPerformanceScreen({ classId }: ClassPerformanceScreenProps)
     });
   }
 
+  // Phase 43's own input, derived once from the roster this screen already
+  // holds. Phase 81 needs the SAME list the hotspot CTA has always used —
+  // sharing it is what guarantees the two surfaces can never disagree about
+  // who is targetable.
+  const interventionCandidates: InterventionCandidate[] = useMemo(
+    () =>
+      cards.map((card) => ({
+        studentUid: card.studentUid,
+        persistentStruggleTopics: card.snapshot.persistentStruggleTopics,
+      })),
+    [cards],
+  );
+
   // Phase 43 — who a TOPIC intervention should actually be for: the
   // students with a persistent, unresolved struggle in THAT topic (see
   // learningState.ts). Deliberately narrower than affectedStudentsForHotspot
@@ -327,14 +347,50 @@ export function ClassPerformanceScreen({ classId }: ClassPerformanceScreenProps)
   // state — assigning to a student who slipped once, or who has already
   // recovered, is the over-intervention this phase exists to prevent.
   function interventionTargetsForHotspot(hotspot: ClassTopicHotspot): string[] {
-    return resolveTopicInterventionTargets(
-      cards.map((card) => ({
-        studentUid: card.studentUid,
-        persistentStruggleTopics: card.snapshot.persistentStruggleTopics,
-      })),
-      hotspot.subject,
-      hotspot.topic,
-    );
+    return resolveTopicInterventionTargets(interventionCandidates, hotspot.subject, hotspot.topic);
+  }
+
+  const semanticRoster = useMemo(
+    () => cards.map((card) => ({ studentUid: card.studentUid, displayName: card.displayName })),
+    [cards],
+  );
+
+  // Phase 81 — the class's shared semantic cohorts. The only NEW read cost on
+  // this screen: one bounded studyEvents query per student member. See the
+  // hook's own doc comment for why that fan-out was preferred to a
+  // collection-group query.
+  const {
+    summary: semanticCohorts,
+    isLoading: isLoadingCohorts,
+    hasError: cohortsFailed,
+  } = useClassSemanticCohorts({
+    classId,
+    students: semanticRoster,
+    interventionCandidates,
+  });
+
+  // Phase 81 — opens the EXISTING composer, prefilled, and writes nothing.
+  //
+  // Recipients are exactly cohort.actionReadyStudentIds: the cohort members
+  // Phase 43 independently marks targetable in this exact topic. Cohort
+  // members who are not are deliberately left out — being in a cohort is not
+  // evidence that anyone should be assigned anything, and padding the group
+  // with them would be precisely the over-intervention Phase 43 exists to
+  // prevent.
+  //
+  // gradeLevel is OMITTED, not guessed. The cohort's supporting questions come
+  // from studyEvents, and this screen's question metadata was resolved from
+  // studyItems — overlapping, but not guaranteed to be the same set. A grade
+  // derived from a partial set could be confidently wrong, and a wrong grade
+  // silently changes which questions the composer selects (see
+  // teacherIntervention.ts). An absent one just means the teacher picks.
+  function openSmallGroupDraft(cohort: ClassSemanticCohort) {
+    openCreateAssignment({
+      subject: cohort.subject,
+      topic: cohort.topic,
+      studentIds: cohort.actionReadyStudentIds,
+      isIntervention: true,
+    });
   }
 
   // When nobody in the class is persistently struggling in this topic there
@@ -440,6 +496,20 @@ export function ClassPerformanceScreen({ classId }: ClassPerformanceScreenProps)
               <ClassConceptHeatmapSection
                 heatmap={conceptHeatmap}
                 onOpenStudent={openStudent}
+              />
+
+              {/* Phase 81 — where SEVERAL students independently met the same
+                  shared authored meaning. A third, distinct question from the
+                  two above it: the Action Center says what needs attention now,
+                  the heatmap says how concept states are distributed, and this
+                  says where a single shared instructional focus would reach
+                  more than one person at once. */}
+              <ClassSemanticCohortSection
+                summary={semanticCohorts}
+                isLoading={isLoadingCohorts}
+                hasError={cohortsFailed}
+                onOpenStudent={openStudent}
+                onDraftSmallGroup={openSmallGroupDraft}
               />
 
               {/* CLASS HEALTH */}

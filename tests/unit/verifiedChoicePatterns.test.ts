@@ -282,6 +282,11 @@ describe("ordering and bounds", () => {
 describe("copy", () => {
   const pattern = {
     id: "teacher-1|sign_transfer_error|Matematik|Denklemler",
+    identity: {
+      namespaceKind: "author" as const,
+      namespaceId: "teacher-1",
+      semanticId: "sign_transfer_error",
+    },
     subject: "Matematik",
     topic: "Denklemler",
     occurrenceCount: 3,

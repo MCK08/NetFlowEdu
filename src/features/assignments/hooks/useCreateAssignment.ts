@@ -50,7 +50,7 @@ export function useCreateAssignment(params: {
   organizationId: string | null;
   teacherId: string | undefined;
   // Phase 44 — true only when this composer instance was opened from one of
-  // the two explicit Phase 43 intervention CTAs (see CreateAssignmentScreen's
+  // the three explicit Phase 43 intervention CTAs (see CreateAssignmentScreen's
   // own prop of the same name for the full contract). Determines ONLY
   // whether publish() writes interventionOf — never affects question
   // selection, targeting, or due-date logic.

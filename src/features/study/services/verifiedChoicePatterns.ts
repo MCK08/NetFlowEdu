@@ -95,6 +95,16 @@ export interface VerifiedChoicePattern {
   /** Stable across renders. Internal only — it contains the conceptKey and the
    *  author's uid, and neither may ever reach a screen. */
   id: string;
+  /** Phase 81 — the identity this pattern is about, carried rather than
+   *  re-derived.
+   *
+   *  A class-level aggregator has to know WHOSE vocabulary a pattern belongs
+   *  to before it may group one student's pattern with another's, and the only
+   *  other way to learn that from this shape would be splitting `id` back
+   *  apart on its delimiter. That would make an internal string format into a
+   *  contract, and a `label != null` test would be worse still — it infers the
+   *  namespace from a display field that is allowed to be absent. */
+  identity: SemanticIdentity;
   subject: string;
   topic: string;
   /** Total qualifying selections of this meaning in the window. */
@@ -293,6 +303,14 @@ function resolveRecovery(
  *  patterns in the same order. */
 export function buildVerifiedChoicePatterns(params: {
   events: readonly LearningEvent[];
+  /** How many patterns to return. Defaults to the student surface's own small
+   *  display cap.
+   *
+   *  Phase 81 — an aggregate over a whole class must pass Infinity. The cap
+   *  above is a presentation decision about one reflective list, and letting it
+   *  reach a class aggregation would silently drop a student from a cohort
+   *  because of how many UNRELATED patterns they happen to have. */
+  maxPatterns?: number;
 }): VerifiedChoicePatternMemory {
   const groups = new Map<string, Accumulator>();
   let semanticEventCount = 0;
@@ -345,6 +363,7 @@ export function buildVerifiedChoicePatterns(params: {
 
     patterns.push({
       id: group.id,
+      identity: group.scoped.identity,
       subject: group.subject,
       topic: group.topic,
       occurrenceCount: group.occurrenceCount,
@@ -377,7 +396,7 @@ export function buildVerifiedChoicePatterns(params: {
     return a.id.localeCompare(b.id);
   });
 
-  const visible = patterns.slice(0, MAX_VISIBLE_CHOICE_PATTERNS);
+  const visible = patterns.slice(0, params.maxPatterns ?? MAX_VISIBLE_CHOICE_PATTERNS);
   return {
     patterns: visible,
     semanticEventCount,

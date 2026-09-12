@@ -32,10 +32,12 @@ interface CreateAssignmentScreenProps {
   // change it" suggestion contract as initialTopic (§12 "DO NOT
   // AUTO-PUBLISH" — this only prefills the form, never submits it).
   initialTargetStudentIds?: string;
-  // Phase 44 — true ONLY when this screen was opened from one of the two
+  // Phase 44 — true ONLY when this screen was opened from one of the three
   // explicit Phase 43 intervention CTAs (StudentPerformanceScreen's
   // persistent-struggle "Takip Ödevi Oluştur", ClassPerformanceScreen's
-  // topic-hotspot targeted assignment). Deliberately a separate, narrow
+  // topic-hotspot targeted assignment, and Phase 81's small-group draft —
+  // which is gated on the same resolveTopicInterventionTargets answer as the
+  // hotspot one, not on the semantic cohort). Deliberately a separate, narrow
   // prop rather than inferred from initialTopic/initialTargetStudentIds
   // being present — AssignmentDetailScreen's own (Phase 30/31) follow-up
   // CTA sends those same params for a completely different reason (reacting
