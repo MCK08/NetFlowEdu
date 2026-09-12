@@ -13,6 +13,7 @@ import {
   serverTimestamp,
   startAfter,
   Timestamp,
+  updateDoc,
   where,
 } from "firebase/firestore";
 
@@ -22,6 +23,12 @@ import {
   parseChoiceFeedbackFromUnknown,
   sanitizeChoiceFeedback,
 } from "@features/questions/services/choiceFeedback";
+import {
+  buildQuestionUpdatePatch,
+  QuestionRevisionPayload,
+  sanitizeQuestionRevision,
+} from "@features/questions/services/questionRevision";
+import { getCurrentUser } from "@services/firebase/auth";
 import { db } from "@services/firebase/config";
 import { ChoiceLabel, Question, QuestionChoices, QuestionPosterRole, QuestionVisibility } from "@/types/question";
 
@@ -138,6 +145,99 @@ function toQuestion(id: string, data: DocumentData): Question {
 // engine can't safely distinguish "never existed" from "exists but you
 // can't see it" without leaking existence, so both surface that way. The
 // caller (questionDetailService) maps both outcomes to Turkish messages.
+// Phase 86 — the ONLY question update path.
+//
+// WHY THIS IS NOT A GENERIC PATCH
+//
+// A function that accepted `Partial<Question>` and spread it into updateDoc
+// would be one careless call site away from writing ownerId, classId or a
+// counter. firestore.rules would reject that write — and the failure would
+// surface as a confusing permission error on an innocent-looking edit. This
+// function instead takes a revision whose TYPE cannot express those fields,
+// re-runs the canonical sanitisers on it, and writes an explicit list of five
+// keys. There is no spread anywhere in it.
+//
+// WHY OWNERSHIP IS CHECKED HERE TOO
+//
+// The rules are the authority and would refuse a non-owner regardless. The
+// service still reads the document and compares ownerId to the signed-in user
+// first, so the caller gets a clear "not-owner" instead of a rejected write,
+// and so a screen reached by a hand-typed route cannot even attempt one.
+//
+// WHAT THIS NEVER TOUCHES
+//
+// studyEvents, studyItems, semanticDefinitions, cohorts, evidence, timelines —
+// nothing but this one question document, and nothing in it but authoring
+// fields. A revision is future-facing: the next learner meets the revised
+// question, and every outcome already recorded stays recorded as it was.
+//
+// CONCURRENCY, honestly: Question carries no updatedAt and no version, so two
+// owners' devices editing the same question are last-write-wins on the five
+// fields below. Not hidden behind a precondition this schema does not have.
+
+export type QuestionUpdateErrorCode = "unauthenticated" | "not-found" | "not-owner";
+
+export class QuestionUpdateError extends Error {
+  constructor(public readonly code: QuestionUpdateErrorCode) {
+    super(`question update refused: ${code}`);
+    this.name = "QuestionUpdateError";
+  }
+}
+
+/** Revises one question the signed-in user owns. Returns the question as it
+ *  now reads back from Firestore.
+ *
+ *  Exactly one read (ownership), exactly one write (the patch), then one read
+ *  to return canonical state — never a listener, never another collection. */
+export async function updateQuestion(
+  questionId: string,
+  payload: QuestionRevisionPayload,
+): Promise<Question> {
+  const user = getCurrentUser();
+  if (!user) throw new QuestionUpdateError("unauthenticated");
+
+  const ref = doc(db, "questions", questionId);
+  const snapshot = await getDoc(ref);
+  if (!snapshot.exists()) throw new QuestionUpdateError("not-found");
+  const current = toQuestion(snapshot.id, snapshot.data());
+  if (current.ownerId !== user.uid) throw new QuestionUpdateError("not-owner");
+
+  // Sanitised again on the way in, exactly as createQuestion does, so a
+  // caller that hands over an un-sanitised payload still cannot persist a note
+  // on the correct answer, a note on an absent option, or an over-long hint.
+  const clean = sanitizeQuestionRevision({
+    description: payload.description,
+    choices: payload.choices ?? {},
+    correctChoice: payload.correctChoice,
+    feedback: Object.fromEntries(
+      Object.entries(payload.choiceFeedback ?? {}).map(([label, entry]) => [
+        label,
+        {
+          text: entry.text,
+          semanticDefinitionId: entry.semanticDefinitionId,
+          semanticLabel: entry.semanticLabel,
+          conceptKey: entry.conceptKey,
+        },
+      ]),
+    ),
+    hints: payload.hints,
+  });
+
+  // Spread into a fresh object literal ONLY so updateDoc's overload resolves;
+  // the shape is the allowlist and nothing else (asserted by unit test).
+  const patch = buildQuestionUpdatePatch(clean);
+  await updateDoc(ref, {
+    description: patch.description,
+    choices: patch.choices,
+    correctChoice: patch.correctChoice,
+    choiceFeedback: patch.choiceFeedback,
+    hints: patch.hints,
+  });
+
+  const updated = await getDoc(ref);
+  return toQuestion(updated.id, updated.data() ?? {});
+}
+
 export async function getQuestionById(questionId: string): Promise<Question | null> {
   const snapshot = await getDoc(doc(db, "questions", questionId));
   if (!snapshot.exists()) return null;

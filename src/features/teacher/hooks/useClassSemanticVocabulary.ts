@@ -4,7 +4,7 @@ import {
   SemanticDefinition,
   SemanticDefinitionInput,
 } from "@features/questions/services/semanticDefinition";
-import { getClassQuestionsPage } from "@services/questions/questions";
+import { getClassQuestionsPage, getQuestionById } from "@services/questions/questions";
 import {
   createSemanticDefinition,
   getClassSemanticDefinitions,
@@ -186,6 +186,26 @@ export function useClassSemanticVocabulary(classId: string | undefined) {
     [classId],
   );
 
+  /** Phase 86 — re-read ONE question after the revision screen returns.
+   *
+   *  One document read, replaced in place. The inventory is not re-walked and
+   *  the skeleton does not flash: coverage and the Phase 85 question evidence
+   *  are derived from `questions`, so the studio reflects the saved revision
+   *  (a moved mapping, a changed correct answer) from this single read. A
+   *  question that no longer resolves is left as loaded — nothing here deletes. */
+  const reloadQuestion = useCallback(async (questionId: string) => {
+    try {
+      const fresh = await getQuestionById(questionId);
+      if (!fresh) return;
+      setQuestions((current) =>
+        current.map((question) => (question.id === questionId ? fresh : question)),
+      );
+    } catch {
+      // A failed refresh keeps the last loaded state; the next full load will
+      // catch up. Nothing is written and nothing is shown as an error here.
+    }
+  }, []);
+
   /** The loaded questions by id, so the detail pane can name the questions a
    *  label is used in without a second read. */
   const questionsById = useMemo(() => {
@@ -200,6 +220,7 @@ export function useClassSemanticVocabulary(classId: string | undefined) {
     isLoading,
     error,
     refresh: load,
+    reloadQuestion,
     rename,
     setArchived,
     create,

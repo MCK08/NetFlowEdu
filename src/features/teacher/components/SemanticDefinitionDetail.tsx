@@ -65,6 +65,9 @@ interface SemanticDefinitionDetailProps {
   onRetryEvidence: () => void;
   onOpenStudent: (studentUid: string) => void;
   onOpenClassPattern?: () => void;
+  /** Phase 86 — opens the owner-only revision screen for one of the questions
+   *  in the Phase 85 section. Offered on the viewer's own rows only. */
+  onEditQuestion?: (questionId: string) => void;
   onRename: (definitionId: string, label: string, description: string | null) => Promise<boolean>;
   onSetArchived: (definitionId: string, archived: boolean) => Promise<void>;
   /** The class questions this screen already loaded, so a usage list costs no
@@ -89,6 +92,7 @@ export const SemanticDefinitionDetail = memo(function SemanticDefinitionDetail({
   onRetryEvidence,
   onOpenStudent,
   onOpenClassPattern,
+  onEditQuestion,
 }: SemanticDefinitionDetailProps) {
   useThemeSubscription();
   const { definition } = entry;
@@ -297,7 +301,7 @@ export const SemanticDefinitionDetail = memo(function SemanticDefinitionDetail({
                 Shown whenever the definition is mapped onto a question: the
                 mapping itself comes from the question inventory, so it is
                 meaningful even before any learning evidence exists. */}
-            <SemanticQuestionStudioSection list={questionEvidence} />
+            <SemanticQuestionStudioSection list={questionEvidence} onEditQuestion={onEditQuestion} />
 
             <View style={styles.actions}>
               <Pressable

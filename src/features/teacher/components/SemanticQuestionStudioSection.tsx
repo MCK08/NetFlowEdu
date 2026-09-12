@@ -11,6 +11,8 @@ import { useThemeSubscription } from "@theme/ThemeProvider";
 import { typography } from "@theme/typography";
 import { joinSpokenLabel } from "@utils/spokenLabel";
 
+import { REVISION_TRUST_NOTE } from "@features/questions/services/questionRevision";
+
 import {
   authorabilityLabel,
   authorabilityNote,
@@ -42,21 +44,32 @@ import {
 // what a wrong option is for. The numbers are counts of records; the judgement
 // is the author's.
 //
-// WHY THERE IS NO EDIT BUTTON
+// WHERE THE EDIT BUTTON IS, AND IS NOT (Phase 86)
 //
-// This repository has no question-update service, no edit route and no editor
-// screen — the composer is an image-first create flow. Rendering a disabled
-// "Düzenle" would promise a capability that does not exist, so the section
-// reports ownership factually and says once, plainly, that revision is not
-// available yet. See the phase document for the full audit.
+// A row the viewer authored offers "Soruyu düzenle", which opens the owner-only
+// revision screen. A row someone else authored offers nothing — not a disabled
+// button, not a hidden one — because firestore.rules make `questions` update
+// `isOwner(resource.data.ownerId)` and nothing else, and this surface reports
+// that boundary rather than widening it. `authorability` is computed from the
+// question's ownerId against the signed-in uid (Phase 85), and the screen, the
+// service and the rules each refuse a non-owner again.
 
 interface SemanticQuestionStudioSectionProps {
   list: SemanticQuestionEvidenceList;
   /** Collapsed by default — the definition detail above it is already dense. */
   defaultOpen?: boolean;
+  /** Phase 86 — opens the revision screen. Offered only on rows the viewer
+   *  authored; absent, the section is read-only for every row. */
+  onEditQuestion?: (questionId: string) => void;
 }
 
-const QuestionRow = memo(function QuestionRow({ row }: { row: SemanticQuestionEvidence }) {
+const QuestionRow = memo(function QuestionRow({
+  row,
+  onEdit,
+}: {
+  row: SemanticQuestionEvidence;
+  onEdit?: (questionId: string) => void;
+}) {
   useThemeSubscription();
   const [isOpen, setIsOpen] = useState(false);
   const toggle = useCallback(() => setIsOpen((current) => !current), []);
@@ -158,6 +171,21 @@ const QuestionRow = memo(function QuestionRow({ row }: { row: SemanticQuestionEv
             />
             <Text style={styles.fact}>{note ?? ownership}</Text>
           </View>
+
+          {/* Phase 86 — offered only to the author. The other-author row keeps
+              its explanation above and gets no control at all. */}
+          {row.authorability === "own" && onEdit ? (
+            <Pressable
+              onPress={() => onEdit(row.questionId)}
+              style={styles.editAction}
+              accessibilityRole="button"
+              accessibilityLabel="Soruyu düzenle"
+              accessibilityHint="Sorunun güncel halini değiştirir; önceki öğrenme kayıtları değişmez"
+            >
+              <Ionicons name="create-outline" size={iconSize.sm} color={colors.primary} />
+              <Text style={styles.editActionLabel}>Soruyu düzenle</Text>
+            </Pressable>
+          ) : null}
         </View>
       ) : null}
     </View>
@@ -167,6 +195,7 @@ const QuestionRow = memo(function QuestionRow({ row }: { row: SemanticQuestionEv
 export const SemanticQuestionStudioSection = memo(function SemanticQuestionStudioSection({
   list,
   defaultOpen = false,
+  onEditQuestion,
 }: SemanticQuestionStudioSectionProps) {
   useThemeSubscription();
   const [isOpen, setIsOpen] = useState(defaultOpen);
@@ -227,7 +256,7 @@ export const SemanticQuestionStudioSection = memo(function SemanticQuestionStudi
           <Text style={styles.note}>{QUESTION_SECTION_NOTE}</Text>
 
           {visible.map((row) => (
-            <QuestionRow key={row.questionId} row={row} />
+            <QuestionRow key={row.questionId} row={row} onEdit={onEditQuestion} />
           ))}
 
           {hidden > 0 || showAll ? (
@@ -246,12 +275,9 @@ export const SemanticQuestionStudioSection = memo(function SemanticQuestionStudi
             </Pressable>
           ) : null}
 
-          {/* The honest structural limit, stated once rather than as a dead
-              button on every row. */}
-          <Text style={styles.note}>
-            Soru düzenleme bu sürümde henüz yok. Bir soruyu değiştirmek istediğinde yeni bir soru
-            hazırlayabilirsin; önceki öğrenme kayıtları her durumda olduğu gibi kalır.
-          </Text>
+          {/* Phase 86 — the one promise revision makes, stated once for the
+              whole list rather than repeated on every row. */}
+          <Text style={styles.note}>{REVISION_TRUST_NOTE}</Text>
         </View>
       ) : null}
     </View>
@@ -391,6 +417,17 @@ const styles = themedStyles(() => ({
     ...typography.caption,
     color: colors.textSecondary,
     flex: 1,
+  },
+  editAction: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: spacing.xxs,
+    minHeight: minTouchTarget,
+    alignSelf: "flex-start" as const,
+  },
+  editActionLabel: {
+    ...typography.bodyStrong,
+    color: colors.primary,
   },
   showAll: {
     minHeight: minTouchTarget,

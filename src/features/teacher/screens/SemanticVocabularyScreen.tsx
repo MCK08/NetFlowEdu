@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
-import { useCallback, useMemo, useState } from "react";
+import { router, useFocusEffect } from "expo-router";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, Text, useWindowDimensions, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -76,7 +76,7 @@ export function SemanticVocabularyScreen({ classId }: SemanticVocabularyScreenPr
   const { firebaseUser } = useAuth();
   const isWide = width >= WIDE_BREAKPOINT;
 
-  const { vocabulary, questionsById, isLoading, error, refresh, rename, setArchived } =
+  const { vocabulary, questionsById, isLoading, error, refresh, reloadQuestion, rename, setArchived } =
     useClassSemanticVocabulary(classId);
 
   const [search, setSearch] = useState("");
@@ -316,6 +316,30 @@ export function SemanticVocabularyScreen({ classId }: SemanticVocabularyScreenPr
     router.push({ pathname: "/(teacher)/class/[classId]/performance", params: { classId } });
   }
 
+  // Phase 86 — the owner-only revision screen. The id of the question opened
+  // is remembered so that, on return, exactly that one document is re-read
+  // and the studio (mapping, coverage, evidence rows) reflects the saved
+  // revision. Cancel costs the same single read; nothing is written by it.
+  const pendingReloadRef = useRef<string | null>(null);
+  const openQuestionEditor = useCallback(
+    (questionId: string) => {
+      pendingReloadRef.current = questionId;
+      router.push({
+        pathname: "/(teacher)/class/[classId]/question/[questionId]/edit",
+        params: { classId, questionId },
+      });
+    },
+    [classId],
+  );
+  useFocusEffect(
+    useCallback(() => {
+      const questionId = pendingReloadRef.current;
+      if (!questionId) return;
+      pendingReloadRef.current = null;
+      void reloadQuestion(questionId);
+    }, [reloadQuestion]),
+  );
+
   const detail = selected ? (
     <SemanticDefinitionDetail
       entry={selected}
@@ -332,6 +356,7 @@ export function SemanticVocabularyScreen({ classId }: SemanticVocabularyScreenPr
       onRetryEvidence={retryEvidence}
       onOpenStudent={openStudent}
       onOpenClassPattern={openClassPattern}
+      onEditQuestion={openQuestionEditor}
     />
   ) : (
     <View style={styles.detailPlaceholder}>
