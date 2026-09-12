@@ -5094,3 +5094,259 @@ describe("firestore.rules — classes/{classId}/semanticDefinitions/{definitionI
     });
   });
 });
+
+// Phase 85 — who may revise a question.
+//
+// The whole Question Revision Studio rests on one line of this ruleset:
+// `allow update: if isOwner(resource.data.ownerId)`. A class contains
+// questions authored by the teacher AND by student members (Phase 9.1), so
+// "the teacher owns the class" is NOT "the teacher owns its questions". These
+// tests pin that boundary in both directions, and pin the fields an owner's
+// own edit may never smuggle a change into.
+//
+// Nothing here widens a permission. Every assertion documents behaviour the
+// ruleset already had before this phase.
+describe("firestore.rules — questions/{questionId} revision authorization (Phase 85)", () => {
+  let testEnv: RulesTestEnvironment;
+
+  const CLASS_ID = "class-1";
+  const TEACHER = "teacher-1";
+  const OTHER_TEACHER = "teacher-2";
+  const STUDENT = "student-1";
+  const OUTSIDER = "student-9";
+
+  beforeAll(async () => {
+    testEnv = await initializeTestEnvironment({
+      projectId: PROJECT_ID,
+      firestore: { rules: fs.readFileSync("firestore.rules", "utf8"), host: "127.0.0.1", port: 8080 },
+    });
+  });
+
+  afterAll(async () => testEnv.cleanup());
+  afterEach(async () => testEnv.clearFirestore());
+
+  function teacherDb(uid = TEACHER, organizationId: string | null = "org-1") {
+    return testEnv.authenticatedContext(uid, { role: "teacher", organizationId }).firestore();
+  }
+
+  function studentDb(uid = STUDENT) {
+    return testEnv.authenticatedContext(uid, { role: "student", organizationId: null }).firestore();
+  }
+
+  async function seedClassAndMembers() {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      const db = context.firestore();
+      await setDoc(doc(db, "classes", CLASS_ID), classDoc());
+      await setDoc(doc(db, "classes", CLASS_ID, "members", TEACHER), classMemberDoc({ uid: TEACHER, role: "teacher" }));
+      await setDoc(doc(db, "classes", CLASS_ID, "members", STUDENT), classMemberDoc({ uid: STUDENT, role: "student" }));
+    });
+  }
+
+  /** A class question with a Phase 77/80 semantic mapping on a wrong option. */
+  function classQuestion(overrides: Record<string, unknown> = {}) {
+    return {
+      ownerId: TEACHER,
+      organizationId: "org-1",
+      visibility: "class",
+      classId: CLASS_ID,
+      posterRole: "teacher",
+      subject: "Matematik",
+      topic: "Denklemler",
+      description: "Denklemde terimi karşı tarafa geçirme",
+      imageUrl: null,
+      questionType: "multiple_choice",
+      choices: { A: "doğru", B: "yanlış" },
+      correctChoice: "A",
+      hints: [],
+      choiceFeedback: {
+        B: {
+          text: "Taraf değiştirirken işaret değişir.",
+          semanticDefinitionId: "def-a",
+          semanticLabel: "İşaret aktarımı",
+        },
+      },
+      likeCount: 0,
+      commentCount: 0,
+      answerCount: 0,
+      createdAt: 1,
+      ...overrides,
+    };
+  }
+
+  async function seedQuestion(id: string, data: Record<string, unknown>) {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "questions", id), data);
+    });
+  }
+
+  const questionRef = (db: ReturnType<typeof teacherDb>, id = "q1") => doc(db, "questions", id);
+
+  describe("who may revise", () => {
+    it("A1 allows the teacher to revise their OWN class question", async () => {
+      await seedClassAndMembers();
+      await seedQuestion("q1", classQuestion());
+      await assertSucceeds(
+        updateDoc(questionRef(teacherDb()), {
+          description: "Denklemde terimi karşı tarafa geçirme (gözden geçirildi)",
+        }),
+      );
+    });
+
+    it("A2 DENIES the teacher revising a STUDENT-authored class question", async () => {
+      // The class is theirs; the question is not. Owning the classroom is not
+      // owning its authors' work.
+      await seedClassAndMembers();
+      await seedQuestion("q1", classQuestion({ ownerId: STUDENT, posterRole: "student" }));
+      await assertFails(updateDoc(questionRef(teacherDb()), { description: "Öğretmen düzenlemesi" }));
+    });
+
+    it("A3 allows a student to revise their OWN class question", async () => {
+      await seedClassAndMembers();
+      await seedQuestion("q1", classQuestion({ ownerId: STUDENT, posterRole: "student" }));
+      await assertSucceeds(
+        updateDoc(questionRef(studentDb()), { description: "Kendi sorumu düzelttim" }),
+      );
+    });
+
+    it("A4 denies a student revising the teacher's question", async () => {
+      await seedClassAndMembers();
+      await seedQuestion("q1", classQuestion());
+      await assertFails(updateDoc(questionRef(studentDb()), { description: "Öğrenci düzenlemesi" }));
+    });
+
+    it("A5 denies an outsider, and an unauthenticated caller", async () => {
+      await seedClassAndMembers();
+      await seedQuestion("q1", classQuestion());
+      await assertFails(updateDoc(questionRef(studentDb(OUTSIDER)), { description: "Yabancı" }));
+      await assertFails(
+        updateDoc(doc(testEnv.unauthenticatedContext().firestore(), "questions", "q1"), {
+          description: "Anonim",
+        }),
+      );
+    });
+
+    it("denies a DIFFERENT teacher revising this class's question", async () => {
+      await seedClassAndMembers();
+      await seedQuestion("q1", classQuestion());
+      await assertFails(
+        updateDoc(questionRef(teacherDb(OTHER_TEACHER, "org-2")), { description: "Başka öğretmen" }),
+      );
+    });
+  });
+
+  describe("immutable fields an owner's own edit may not smuggle", () => {
+    it("A6 denies changing ownerId", async () => {
+      await seedClassAndMembers();
+      await seedQuestion("q1", classQuestion());
+      await assertFails(updateDoc(questionRef(teacherDb()), { ownerId: STUDENT }));
+    });
+
+    it("A7 denies changing classId", async () => {
+      await seedClassAndMembers();
+      await seedQuestion("q1", classQuestion());
+      await assertFails(updateDoc(questionRef(teacherDb()), { classId: "class-2" }));
+    });
+
+    it("denies changing visibility", async () => {
+      await seedClassAndMembers();
+      await seedQuestion("q1", classQuestion());
+      await assertFails(updateDoc(questionRef(teacherDb()), { visibility: "public" }));
+    });
+
+    it("denies changing posterRole", async () => {
+      await seedClassAndMembers();
+      await seedQuestion("q1", classQuestion());
+      await assertFails(updateDoc(questionRef(teacherDb()), { posterRole: "student" }));
+    });
+
+    it("denies inflating the engagement counters", async () => {
+      await seedClassAndMembers();
+      await seedQuestion("q1", classQuestion());
+      await assertFails(updateDoc(questionRef(teacherDb()), { likeCount: 99 }));
+      await assertFails(updateDoc(questionRef(teacherDb()), { answerCount: 99 }));
+      await assertFails(updateDoc(questionRef(teacherDb()), { commentCount: 99 }));
+    });
+  });
+
+  describe("what an owner's revision may change", () => {
+    it("allows revising the authored feedback on a mapped wrong choice", async () => {
+      await seedClassAndMembers();
+      await seedQuestion("q1", classQuestion());
+      await assertSucceeds(
+        updateDoc(questionRef(teacherDb()), {
+          choiceFeedback: {
+            B: {
+              text: "Eşitliğin diğer tarafına geçerken işaret değişir.",
+              semanticDefinitionId: "def-a",
+              semanticLabel: "İşaret aktarımı",
+            },
+          },
+        }),
+      );
+    });
+
+    it("allows REMAPPING a wrong choice to a different shared definition", async () => {
+      // Future attempts would carry def-b. Nothing about this touches the
+      // studyEvents that already recorded def-a.
+      await seedClassAndMembers();
+      await seedQuestion("q1", classQuestion());
+      await assertSucceeds(
+        updateDoc(questionRef(teacherDb()), {
+          choiceFeedback: {
+            B: {
+              text: "Taraf değiştirirken işaret değişir.",
+              semanticDefinitionId: "def-b",
+              semanticLabel: "Negatif işaret aktarımı",
+            },
+          },
+        }),
+      );
+    });
+
+    it("allows revising the choices and the correct answer", async () => {
+      await seedClassAndMembers();
+      await seedQuestion("q1", classQuestion());
+      await assertSucceeds(
+        updateDoc(questionRef(teacherDb()), {
+          choices: { A: "doğru", B: "düzeltilmiş yanlış" },
+          correctChoice: "B",
+          choiceFeedback: null,
+        }),
+      );
+    });
+
+    // choiceFeedbackWithinBounds caps the NUMBER of mapped options at five —
+    // one per choice label. Per-entry text trimming is choiceFeedback.ts's job
+    // on both the write and the read, exactly as the hints rule documents for
+    // itself; rules can bound a map's size but cannot iterate it.
+    it("still enforces the choiceFeedback map size on an update", async () => {
+      await seedClassAndMembers();
+      await seedQuestion("q1", classQuestion());
+      const entry = { text: "Taraf değiştirirken işaret değişir.", semanticDefinitionId: "def-a" };
+      await assertFails(
+        updateDoc(questionRef(teacherDb()), {
+          choiceFeedback: { A: entry, B: entry, C: entry, D: entry, E: entry, F: entry },
+        }),
+      );
+    });
+
+    it("allows the full five mapped options on an update", async () => {
+      await seedClassAndMembers();
+      await seedQuestion("q1", classQuestion());
+      const entry = { text: "Taraf değiştirirken işaret değişir.", semanticDefinitionId: "def-a" };
+      await assertSucceeds(
+        updateDoc(questionRef(teacherDb()), {
+          choiceFeedback: { A: entry, B: entry, C: entry, D: entry, E: entry },
+        }),
+      );
+    });
+
+    it("still enforces the hints bounds on an update", async () => {
+      await seedClassAndMembers();
+      await seedQuestion("q1", classQuestion());
+      await assertFails(
+        updateDoc(questionRef(teacherDb()), { hints: ["a", "b", "c", "d", "e", "f", "g", "h"] }),
+      );
+    });
+  });
+});

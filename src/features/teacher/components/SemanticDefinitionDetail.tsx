@@ -21,6 +21,8 @@ import { SemanticDefinitionEvidence } from "../services/semanticDefinitionEviden
 import { EvidenceLoadState, SemanticDefinitionEvidenceSection } from "./SemanticDefinitionEvidenceSection";
 import { SemanticDefinitionTimelineSection } from "./SemanticDefinitionTimelineSection";
 import { SemanticDefinitionTimeline } from "../services/semanticDefinitionTimeline";
+import { SemanticQuestionStudioSection } from "./SemanticQuestionStudioSection";
+import { SemanticQuestionEvidenceList } from "../services/semanticQuestionEvidence";
 import {
   ARCHIVED_EXPLANATION,
   coverageStatusLabel,
@@ -55,6 +57,9 @@ interface SemanticDefinitionDetailProps {
   /** Phase 84 — how that same evidence unfolded, derived from the identical
    *  already-loaded events. Rendered under the summary, collapsed by default. */
   timeline: SemanticDefinitionTimeline;
+  /** Phase 85 — the questions carrying this definition, joined from the same
+   *  already-loaded inventory and evidence. */
+  questionEvidence: SemanticQuestionEvidenceList;
   evidenceLoadState: EvidenceLoadState;
   examinedStudentCount: number;
   onRetryEvidence: () => void;
@@ -78,6 +83,7 @@ export const SemanticDefinitionDetail = memo(function SemanticDefinitionDetail({
   onClose,
   evidence,
   timeline,
+  questionEvidence,
   evidenceLoadState,
   examinedStudentCount,
   onRetryEvidence,
@@ -286,6 +292,12 @@ export const SemanticDefinitionDetail = memo(function SemanticDefinitionDetail({
                 onOpenStudent={onOpenStudent}
               />
             ) : null}
+
+            {/* Phase 85 — the author's own material, from the meaning's side.
+                Shown whenever the definition is mapped onto a question: the
+                mapping itself comes from the question inventory, so it is
+                meaningful even before any learning evidence exists. */}
+            <SemanticQuestionStudioSection list={questionEvidence} />
 
             <View style={styles.actions}>
               <Pressable

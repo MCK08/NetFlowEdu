@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState } from "react";
 import { Pressable, ScrollView, Text, useWindowDimensions, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { useAuth } from "@features/authentication";
 import { Chip } from "@components/ui/Chip";
 import { EmptyState } from "@components/ui/EmptyState";
 import { LoadingSkeleton } from "@components/ui/LoadingSkeleton";
@@ -26,6 +27,7 @@ import {
   buildSemanticDefinitionTimeline,
   scopedIdentityForDefinition,
 } from "../services/semanticDefinitionTimeline";
+import { buildSemanticQuestionEvidence } from "../services/semanticQuestionEvidence";
 import { useClassStudentRoster } from "../hooks/useClassStudentRoster";
 import {
   buildSemanticDefinitionEvidenceIndex,
@@ -71,6 +73,7 @@ interface SemanticVocabularyScreenProps {
 export function SemanticVocabularyScreen({ classId }: SemanticVocabularyScreenProps) {
   useThemeSubscription();
   const { width } = useWindowDimensions();
+  const { firebaseUser } = useAuth();
   const isWide = width >= WIDE_BREAKPOINT;
 
   const { vocabulary, questionsById, isLoading, error, refresh, rename, setArchived } =
@@ -279,6 +282,26 @@ export function SemanticVocabularyScreen({ classId }: SemanticVocabularyScreenPr
     [classId, selected, classEvidence.evidence],
   );
 
+  // Phase 85 — the question side of the selected definition, joined from the
+  // Phase 82 question inventory and the Phase 83 class evidence this route
+  // already holds. No read is performed here and none is triggered by it.
+  const selectedQuestionEvidence = useMemo(
+    () =>
+      buildSemanticQuestionEvidence({
+        classId,
+        scoped: scopedIdentityForDefinition({
+          classId,
+          definitionId: selected?.definition.id ?? "",
+          subject: selected?.definition.subject ?? "",
+          topic: selected?.definition.topic ?? "",
+        }),
+        questions: [...questionsById.values()],
+        students: classEvidence.evidence,
+        viewerUid: firebaseUser?.uid,
+      }),
+    [classId, selected, questionsById, classEvidence.evidence, firebaseUser?.uid],
+  );
+
   function openStudent(studentUid: string) {
     const name = roster.students.find((s) => s.studentUid === studentUid)?.displayName ?? "";
     router.push({
@@ -303,6 +326,7 @@ export function SemanticVocabularyScreen({ classId }: SemanticVocabularyScreenPr
       onClose={isWide ? undefined : clearSelection}
       evidence={selectedEvidence}
       timeline={selectedTimeline}
+      questionEvidence={selectedQuestionEvidence}
       evidenceLoadState={evidenceLoadState}
       examinedStudentCount={evidenceIndex.examinedStudentCount}
       onRetryEvidence={retryEvidence}
