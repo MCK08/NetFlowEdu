@@ -19,6 +19,8 @@ import { Question } from "@/types/question";
 
 import { SemanticDefinitionEvidence } from "../services/semanticDefinitionEvidence";
 import { EvidenceLoadState, SemanticDefinitionEvidenceSection } from "./SemanticDefinitionEvidenceSection";
+import { SemanticDefinitionTimelineSection } from "./SemanticDefinitionTimelineSection";
+import { SemanticDefinitionTimeline } from "../services/semanticDefinitionTimeline";
 import {
   ARCHIVED_EXPLANATION,
   coverageStatusLabel,
@@ -50,6 +52,9 @@ interface SemanticDefinitionDetailProps {
   // detail stays presentational and the class evidence index is loaded once
   // for the whole route, never per definition.
   evidence: SemanticDefinitionEvidence;
+  /** Phase 84 — how that same evidence unfolded, derived from the identical
+   *  already-loaded events. Rendered under the summary, collapsed by default. */
+  timeline: SemanticDefinitionTimeline;
   evidenceLoadState: EvidenceLoadState;
   examinedStudentCount: number;
   onRetryEvidence: () => void;
@@ -72,6 +77,7 @@ export const SemanticDefinitionDetail = memo(function SemanticDefinitionDetail({
   questionsById,
   onClose,
   evidence,
+  timeline,
   evidenceLoadState,
   examinedStudentCount,
   onRetryEvidence,
@@ -269,6 +275,17 @@ export const SemanticDefinitionDetail = memo(function SemanticDefinitionDetail({
               onOpenStudent={onOpenStudent}
               onOpenClassPattern={onOpenClassPattern}
             />
+
+            {/* Phase 84 — the chronology behind the summary above. Only once
+                the evidence itself is ready: a history rendered beside a
+                still-loading summary would look like two different answers. */}
+            {evidenceLoadState === "ready" ? (
+              <SemanticDefinitionTimelineSection
+                timeline={timeline}
+                questionsById={questionsById}
+                onOpenStudent={onOpenStudent}
+              />
+            ) : null}
 
             <View style={styles.actions}>
               <Pressable

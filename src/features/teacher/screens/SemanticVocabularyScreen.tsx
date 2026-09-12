@@ -22,6 +22,10 @@ import { SemanticDefinitionDetail } from "../components/SemanticDefinitionDetail
 import { SemanticDefinitionRow } from "../components/SemanticDefinitionRow";
 import { useClassSemanticVocabulary } from "../hooks/useClassSemanticVocabulary";
 import { useClassSemanticEvidence } from "../hooks/useClassSemanticEvidence";
+import {
+  buildSemanticDefinitionTimeline,
+  scopedIdentityForDefinition,
+} from "../services/semanticDefinitionTimeline";
 import { useClassStudentRoster } from "../hooks/useClassStudentRoster";
 import {
   buildSemanticDefinitionEvidenceIndex,
@@ -257,6 +261,24 @@ export function SemanticVocabularyScreen({ classId }: SemanticVocabularyScreenPr
     [evidenceIndex, selected],
   );
 
+  // Phase 84 — the chronology for the selected definition, derived from the
+  // SAME class evidence Phase 83 already loaded. Selecting or switching a
+  // definition recomputes this in memory; it triggers no roster query, no
+  // student-event query and no question read.
+  const selectedTimeline = useMemo(
+    () =>
+      buildSemanticDefinitionTimeline({
+        scoped: scopedIdentityForDefinition({
+          classId,
+          definitionId: selected?.definition.id ?? "",
+          subject: selected?.definition.subject ?? "",
+          topic: selected?.definition.topic ?? "",
+        }),
+        students: classEvidence.evidence,
+      }),
+    [classId, selected, classEvidence.evidence],
+  );
+
   function openStudent(studentUid: string) {
     const name = roster.students.find((s) => s.studentUid === studentUid)?.displayName ?? "";
     router.push({
@@ -280,6 +302,7 @@ export function SemanticVocabularyScreen({ classId }: SemanticVocabularyScreenPr
       questionsById={questionsById}
       onClose={isWide ? undefined : clearSelection}
       evidence={selectedEvidence}
+      timeline={selectedTimeline}
       evidenceLoadState={evidenceLoadState}
       examinedStudentCount={evidenceIndex.examinedStudentCount}
       onRetryEvidence={retryEvidence}

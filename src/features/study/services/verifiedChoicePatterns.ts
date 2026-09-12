@@ -200,17 +200,55 @@ function qualifies(event: LearningEvent): boolean {
  *     are the same idea, treating them as one would be a guess. Phase 70's
  *     concept identity is reused rather than a second normalizer invented. */
 function identityOf(event: LearningEvent): string {
-  const { identity } = event.semanticChoice!;
+  return scopedKey({
+    identity: event.semanticChoice!.identity,
+    subject: event.subject.trim(),
+    topic: event.topic.trim(),
+  });
+}
+
+/** One meaning, in one concept scope — the four-part thing Phase 78 groups by
+ *  and Phase 79 measures recovery against. Named and exported in Phase 84 so a
+ *  caller can ASK about one identity rather than re-deriving the comparison. */
+export interface ScopedSemanticIdentity {
+  identity: SemanticIdentity;
+  subject: string;
+  topic: string;
+}
+
+/** The single place the grouping key is spelled out.
+ *
+ *  Phase 80 — the KIND leads. A class id and a user uid are different id
+ *  spaces with no guarantee against collision, and without this a shared
+ *  meaning and a private one could in principle land on the same string. */
+function scopedKey(scoped: ScopedSemanticIdentity): string {
   return [
-    // Phase 80 — the KIND leads. A class id and a user uid are different id
-    // spaces with no guarantee against collision, and without this a shared
-    // meaning and a private one could in principle land on the same string.
-    identity.namespaceKind,
-    identity.namespaceId.trim(),
-    identity.semanticId.trim(),
-    event.subject.trim(),
-    event.topic.trim(),
+    scoped.identity.namespaceKind,
+    scoped.identity.namespaceId.trim(),
+    scoped.identity.semanticId.trim(),
+    scoped.subject.trim(),
+    scoped.topic.trim(),
   ].join("\u0000");
+}
+
+/** The scope one already-built pattern belongs to. */
+export function scopedIdentityOfPattern(pattern: VerifiedChoicePattern): ScopedSemanticIdentity {
+  return { identity: pattern.identity, subject: pattern.subject, topic: pattern.topic };
+}
+
+/** Whether this event is a SELECTION of exactly this scoped meaning.
+ *
+ *  Phase 84 — the same two checks `buildVerifiedChoicePatterns` already makes
+ *  when it buckets an event, asked about one identity instead of all of them.
+ *  It routes through the same `qualifies` gate and the same `scopedKey`, so a
+ *  chronology built from it can never disagree with the counts built from
+ *  them. */
+export function eventSelectsScopedIdentity(
+  event: LearningEvent,
+  scoped: ScopedSemanticIdentity,
+): boolean {
+  if (!qualifies(event)) return false;
+  return identityOf(event) === scopedKey(scoped);
 }
 
 /** Whether one event shows this exact identity being OFFERED and passed over.
@@ -231,9 +269,9 @@ function identityOf(event: LearningEvent): string {
  *
  *  The last clause is why `selectedChoice` is stored: it is the difference
  *  between "chose otherwise" and "was never asked". */
-function declinesIdentity(
+export function eventDeclinesScopedIdentity(
   event: LearningEvent,
-  scoped: { identity: SemanticIdentity; subject: string; topic: string },
+  scoped: ScopedSemanticIdentity,
 ): boolean {
   const offered = event.semanticOpportunities;
   if (!offered) return false;
@@ -264,7 +302,7 @@ function declinesIdentity(
  *  Evidence earned before a relapse can never be presented as current. */
 function resolveRecovery(
   events: readonly LearningEvent[],
-  scoped: { identity: SemanticIdentity; subject: string; topic: string },
+  scoped: ScopedSemanticIdentity,
   since: number,
 ): ChoiceRecoverySignal | null {
   let declinedOpportunityCount = 0;
@@ -276,7 +314,7 @@ function resolveRecovery(
     // against itself.
     if (event.occurredAt <= since) continue;
     if (!event.questionId) continue;
-    if (!declinesIdentity(event, scoped)) continue;
+    if (!eventDeclinesScopedIdentity(event, scoped)) continue;
 
     declinedOpportunityCount += 1;
     questions.add(event.questionId);
