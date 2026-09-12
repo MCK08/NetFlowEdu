@@ -5,10 +5,10 @@ import { getClassSourcedStudyItems } from "@features/study/services/studyService
 import { resolveQuestionMetadata } from "@features/study/services/studyMetadataCache";
 import { mapStudyErrorToMessage } from "@features/study/services/studyErrorMapper";
 import { shouldApplyStaleResponse } from "@features/study/services/staleResponseGuard";
-import { ClassMember } from "@/types/class";
 import { Question } from "@/types/question";
 
 import { mapWithConcurrency } from "../services/boundedConcurrency";
+import { dedupeMembersByUid } from "../services/classRoster";
 import { buildClassTopicHotspots, ClassTopicHotspot } from "../services/classTopicInsights";
 import { buildClassTrend } from "../services/classTrend";
 import {
@@ -79,10 +79,6 @@ export function useClassPerformance(classId: string | undefined) {
 
     try {
       const members = await getClassMembers(classId);
-      // Defensive: classes/{classId}/members is keyed by uid, so a true
-      // duplicate document is structurally impossible — this only guards
-      // against the (still possible) case of the same uid appearing twice
-      // across paginated/merged reads in a future change to getClassMembers.
       const students = dedupeMembersByUid(members.filter((member) => member.role === "student"));
 
       const itemsByStudent = await mapWithConcurrency(students, STUDENT_FETCH_CONCURRENCY, (student) =>
@@ -186,15 +182,4 @@ export function useClassPerformance(classId: string | undefined) {
     error,
     refresh: load,
   };
-}
-
-function dedupeMembersByUid(members: readonly ClassMember[]): ClassMember[] {
-  const seen = new Set<string>();
-  const result: ClassMember[] = [];
-  for (const member of members) {
-    if (seen.has(member.uid)) continue;
-    seen.add(member.uid);
-    result.push(member);
-  }
-  return result;
 }

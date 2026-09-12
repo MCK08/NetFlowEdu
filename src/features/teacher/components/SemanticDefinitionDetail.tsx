@@ -17,6 +17,8 @@ import { typography } from "@theme/typography";
 import { joinSpokenLabel } from "@utils/spokenLabel";
 import { Question } from "@/types/question";
 
+import { SemanticDefinitionEvidence } from "../services/semanticDefinitionEvidence";
+import { EvidenceLoadState, SemanticDefinitionEvidenceSection } from "./SemanticDefinitionEvidenceSection";
 import {
   ARCHIVED_EXPLANATION,
   coverageStatusLabel,
@@ -43,6 +45,16 @@ import {
 interface SemanticDefinitionDetailProps {
   entry: SemanticDefinitionCoverage;
   isBounded: boolean;
+  // Phase 83 — the verified learning evidence around this definition, rendered
+  // between the authored usage and the actions. Supplied by the screen so the
+  // detail stays presentational and the class evidence index is loaded once
+  // for the whole route, never per definition.
+  evidence: SemanticDefinitionEvidence;
+  evidenceLoadState: EvidenceLoadState;
+  examinedStudentCount: number;
+  onRetryEvidence: () => void;
+  onOpenStudent: (studentUid: string) => void;
+  onOpenClassPattern?: () => void;
   onRename: (definitionId: string, label: string, description: string | null) => Promise<boolean>;
   onSetArchived: (definitionId: string, archived: boolean) => Promise<void>;
   /** The class questions this screen already loaded, so a usage list costs no
@@ -59,6 +71,12 @@ export const SemanticDefinitionDetail = memo(function SemanticDefinitionDetail({
   onSetArchived,
   questionsById,
   onClose,
+  evidence,
+  evidenceLoadState,
+  examinedStudentCount,
+  onRetryEvidence,
+  onOpenStudent,
+  onOpenClassPattern,
 }: SemanticDefinitionDetailProps) {
   useThemeSubscription();
   const { definition } = entry;
@@ -237,6 +255,20 @@ export const SemanticDefinitionDetail = memo(function SemanticDefinitionDetail({
                 })}
               </View>
             ) : null}
+
+            {/* Phase 83 — what this definition has actually shown up as in
+                real learning. Placed after the authored usage and before the
+                management actions: identity and context first, then evidence,
+                then what a teacher can do. */}
+            <SemanticDefinitionEvidenceSection
+              evidence={evidence}
+              coverageQuestionCount={entry.questionCount}
+              loadState={evidenceLoadState}
+              examinedStudentCount={examinedStudentCount}
+              onRetry={onRetryEvidence}
+              onOpenStudent={onOpenStudent}
+              onOpenClassPattern={onOpenClassPattern}
+            />
 
             <View style={styles.actions}>
               <Pressable

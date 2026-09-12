@@ -126,16 +126,59 @@ export interface ClassSemanticCohortSummary {
   isEmpty: boolean;
 }
 
-interface Accumulator {
+/** Phase 83 — one qualifying student's evidence for one shared meaning,
+ *  BEFORE any class-level decision has been made about it.
+ *
+ *  Exactly the Phase 78 verdict, carried: nothing here is re-derived, and there
+ *  is no Phase 43 field because eligibility is a cohort-level question that
+ *  this shared stage never asks. */
+export interface SharedSemanticStudentEvidence {
+  studentUid: string;
+  displayName: string;
+  occurrenceCount: number;
+  distinctQuestionCount: number;
+  lastSeenAt: number;
+  /** Phase 79 — this student currently shows declined-opportunity evidence. */
+  hasRecoverySignal: boolean;
+  /** The questions behind this student's own pattern, most recent first. */
+  questionIds: string[];
+}
+
+/** Phase 83 — every qualifying student for one shared definition, grouped and
+ *  nothing else: no minimum count, no cap, no intervention intersection.
+ *
+ *  This is the stage Phase 81 (cohorts) and Phase 83 (definition evidence) both
+ *  read from, so the two surfaces cannot disagree about who qualified, on which
+ *  questions, or with what recovery state — they are literally reading the same
+ *  object. */
+export interface SharedSemanticEvidenceGroup {
+  /** Internal only — carries the class id and the definition id. */
   id: string;
   definitionId: string;
   subject: string;
   topic: string;
+  /** The newest stored label snapshot anywhere in the group. */
   label: string;
-  labelAt: number;
   lastSeenAt: number;
-  members: ClassSemanticCohortMember[];
-  questions: Set<string>;
+  /** Insertion order — the caller decides how to sort. */
+  members: SharedSemanticStudentEvidence[];
+  /** UNION across members. Two students who both repeated on the same question
+   *  contribute one question, not two. */
+  questionIds: Set<string>;
+}
+
+export interface SharedSemanticEvidenceIndex {
+  /** Keyed by the SCOPED pattern id — definition + subject + topic — never by
+   *  definition id alone. The same definition met in two different topics is
+   *  two groups, exactly as Phase 81 refuses to merge them; a definition nobody
+   *  qualified for is simply absent. */
+  groups: Map<string, SharedSemanticEvidenceGroup>;
+  /** Students who qualified individually for at least one SHARED meaning. */
+  qualifyingStudentUids: Set<string>;
+}
+
+interface Accumulator extends SharedSemanticEvidenceGroup {
+  labelAt: number;
 }
 
 /** Whether one student's pattern may take part in a CLASS cohort.
@@ -157,6 +200,81 @@ function participates(pattern: VerifiedChoicePattern, classId: string): boolean 
   if (pattern.identity.namespaceId !== classId) return false;
   if (!pattern.label) return false;
   return true;
+}
+
+/** Phase 83 — the shared FIRST STAGE of every class-level semantic surface.
+ *
+ *  Qualifies each student alone through the canonical Phase 78/79 classifier,
+ *  keeps only class-scoped patterns (see `participates`), and groups the
+ *  survivors by definition. It applies NO minimum student count, NO display
+ *  cap and NO Phase 43 intersection — those are decisions a caller makes about
+ *  a group, not facts about the evidence, and keeping them out of this stage is
+ *  what lets Phase 81's cohorts and Phase 83's definition trails be two views
+ *  of one truth instead of two implementations that can drift.
+ *
+ *  Extracted from buildClassSemanticCohorts rather than rewritten: that
+ *  function now calls this and applies its own threshold on top, and its output
+ *  is unchanged. Pure, and deterministic regardless of event order: groups are
+ *  keyed, question breadth is a set, and every timestamp is a max. */
+export function groupSharedSemanticEvidence(params: {
+  classId: string;
+  students: readonly ClassSemanticStudentEvidence[];
+}): SharedSemanticEvidenceIndex {
+  const groups = new Map<string, Accumulator>();
+  const qualifyingStudentUids = new Set<string>();
+
+  for (const student of params.students) {
+    // The canonical classifier, uncapped: the display limit above it is about
+    // one student's reflective list and must not decide class membership.
+    const memory = buildVerifiedChoicePatterns({
+      events: student.events,
+      maxPatterns: Number.POSITIVE_INFINITY,
+    });
+
+    for (const pattern of memory.patterns) {
+      if (!participates(pattern, params.classId)) continue;
+      qualifyingStudentUids.add(student.studentUid);
+
+      let group = groups.get(pattern.id);
+      if (!group) {
+        group = {
+          id: pattern.id,
+          definitionId: pattern.identity.semanticId,
+          subject: pattern.subject,
+          topic: pattern.topic,
+          label: pattern.label!,
+          labelAt: pattern.lastSeenAt,
+          lastSeenAt: pattern.lastSeenAt,
+          members: [],
+          questionIds: new Set(),
+        };
+        groups.set(pattern.id, group);
+      }
+
+      // The wording that was current most recently anywhere in the class —
+      // the same rule one student's own pattern already applies to a renamed
+      // definition, lifted to the group.
+      if (pattern.lastSeenAt >= group.labelAt) {
+        group.label = pattern.label!;
+        group.labelAt = pattern.lastSeenAt;
+      }
+      if (pattern.lastSeenAt > group.lastSeenAt) group.lastSeenAt = pattern.lastSeenAt;
+
+      for (const questionId of pattern.questionIds) group.questionIds.add(questionId);
+
+      group.members.push({
+        studentUid: student.studentUid,
+        displayName: student.displayName,
+        occurrenceCount: pattern.occurrenceCount,
+        distinctQuestionCount: pattern.distinctQuestionCount,
+        lastSeenAt: pattern.lastSeenAt,
+        hasRecoverySignal: pattern.recovery !== null,
+        questionIds: [...pattern.questionIds],
+      });
+    }
+  }
+
+  return { groups, qualifyingStudentUids };
 }
 
 /** The class's shared semantic cohorts.
@@ -191,63 +309,10 @@ export function buildClassSemanticCohorts(params: {
    *  the lookup is by id, so there is no way for that to happen. */
   currentLabels?: ReadonlyMap<string, string>;
 }): ClassSemanticCohortSummary {
-  const groups = new Map<string, Accumulator>();
-  const qualifyingStudents = new Set<string>();
-
-  for (const student of params.students) {
-    // The canonical classifier, uncapped: the display limit above it is about
-    // one student's reflective list and must not decide class membership.
-    const memory = buildVerifiedChoicePatterns({
-      events: student.events,
-      maxPatterns: Number.POSITIVE_INFINITY,
-    });
-
-    for (const pattern of memory.patterns) {
-      if (!participates(pattern, params.classId)) continue;
-      qualifyingStudents.add(student.studentUid);
-
-      let group = groups.get(pattern.id);
-      if (!group) {
-        group = {
-          id: pattern.id,
-          definitionId: pattern.identity.semanticId,
-          subject: pattern.subject,
-          topic: pattern.topic,
-          label: pattern.label!,
-          labelAt: pattern.lastSeenAt,
-          lastSeenAt: pattern.lastSeenAt,
-          members: [],
-          questions: new Set(),
-        };
-        groups.set(pattern.id, group);
-      }
-
-      // The wording that was current most recently anywhere in the class —
-      // the same rule one student's own pattern already applies to a renamed
-      // definition, lifted to the group.
-      if (pattern.lastSeenAt >= group.labelAt) {
-        group.label = pattern.label!;
-        group.labelAt = pattern.lastSeenAt;
-      }
-      if (pattern.lastSeenAt > group.lastSeenAt) group.lastSeenAt = pattern.lastSeenAt;
-
-      for (const questionId of pattern.questionIds) group.questions.add(questionId);
-
-      group.members.push({
-        studentUid: student.studentUid,
-        displayName: student.displayName,
-        occurrenceCount: pattern.occurrenceCount,
-        distinctQuestionCount: pattern.distinctQuestionCount,
-        lastSeenAt: pattern.lastSeenAt,
-        hasRecoverySignal: pattern.recovery !== null,
-        // Filled in below, once the cohort's subject/topic are settled.
-        isActionReady: false,
-      });
-    }
-  }
+  const index = groupSharedSemanticEvidence({ classId: params.classId, students: params.students });
 
   const cohorts: ClassSemanticCohort[] = [];
-  for (const group of groups.values()) {
+  for (const group of index.groups.values()) {
     if (group.members.length < MIN_COHORT_STUDENTS) continue;
 
     // Phase 43, unmodified and unconsulted until now. It answers a question
@@ -258,8 +323,13 @@ export function buildClassSemanticCohorts(params: {
       resolveTopicInterventionTargets(params.interventionCandidates, group.subject, group.topic),
     );
 
-    const members = group.members.map((member) => ({
-      ...member,
+    const members: ClassSemanticCohortMember[] = group.members.map((member) => ({
+      studentUid: member.studentUid,
+      displayName: member.displayName,
+      occurrenceCount: member.occurrenceCount,
+      distinctQuestionCount: member.distinctQuestionCount,
+      lastSeenAt: member.lastSeenAt,
+      hasRecoverySignal: member.hasRecoverySignal,
       isActionReady: targetable.has(member.studentUid),
     }));
 
@@ -288,7 +358,7 @@ export function buildClassSemanticCohorts(params: {
       qualifyingStudentCount: members.length,
       activeRepeatedStudentIds: members.filter((m) => !m.hasRecoverySignal).map((m) => m.studentUid),
       recoverySignalStudentIds: members.filter((m) => m.hasRecoverySignal).map((m) => m.studentUid),
-      distinctQuestionCount: group.questions.size,
+      distinctQuestionCount: group.questionIds.size,
       lastSeenAt: group.lastSeenAt,
       // Sorted so the same class state always produces the same recipient
       // list — the convention resolveTopicInterventionTargets already follows
@@ -318,7 +388,7 @@ export function buildClassSemanticCohorts(params: {
   const visible = cohorts.slice(0, MAX_VISIBLE_SEMANTIC_COHORTS);
   return {
     cohorts: visible,
-    qualifyingStudentCount: qualifyingStudents.size,
+    qualifyingStudentCount: index.qualifyingStudentUids.size,
     isEmpty: visible.length === 0,
   };
 }

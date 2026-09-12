@@ -21,6 +21,14 @@ import { typography } from "@theme/typography";
 import { SemanticDefinitionDetail } from "../components/SemanticDefinitionDetail";
 import { SemanticDefinitionRow } from "../components/SemanticDefinitionRow";
 import { useClassSemanticVocabulary } from "../hooks/useClassSemanticVocabulary";
+import { useClassSemanticEvidence } from "../hooks/useClassSemanticEvidence";
+import { useClassStudentRoster } from "../hooks/useClassStudentRoster";
+import {
+  buildSemanticDefinitionEvidenceIndex,
+  emptyDefinitionEvidence,
+  evidenceForDefinition,
+} from "../services/semanticDefinitionEvidence";
+import { EvidenceLoadState } from "../components/SemanticDefinitionEvidenceSection";
 import {
   ARCHIVED_EXPLANATION,
   boundedInventoryNote,
@@ -82,6 +90,37 @@ export function SemanticVocabularyScreen({ classId }: SemanticVocabularyScreenPr
     () => filterCoverage(vocabulary.archived, filter),
     [vocabulary.archived, filter],
   );
+
+  // Phase 83 — the class evidence index, loaded LAZILY and ONCE.
+  //
+  // The library and its question coverage render first, exactly as Phase 82
+  // shipped them; nothing about the class roster or any student's events is
+  // read until a definition is actually selected. From that moment the roster
+  // (one query) and the bounded per-student event fan-out run once for this
+  // mount, and every later definition switch is a lookup into the index in
+  // memory — zero further reads. See useClassSemanticEvidence for the cost.
+  const wantsEvidence = selectedId !== null;
+  const roster = useClassStudentRoster(classId, wantsEvidence);
+  const classEvidence = useClassSemanticEvidence({
+    classId,
+    students: roster.students,
+    enabled: wantsEvidence && roster.hasLoaded,
+  });
+  const evidenceIndex = useMemo(
+    () => buildSemanticDefinitionEvidenceIndex({ classId, students: classEvidence.evidence }),
+    [classId, classEvidence.evidence],
+  );
+  const evidenceLoadState: EvidenceLoadState = !wantsEvidence
+    ? "idle"
+    : roster.hasError || classEvidence.hasError
+      ? "error"
+      : roster.isLoading || classEvidence.isLoading || !classEvidence.hasLoaded
+        ? "loading"
+        : "ready";
+  const retryEvidence = useCallback(() => {
+    if (roster.hasError) roster.refresh();
+    else classEvidence.refresh();
+  }, [roster, classEvidence]);
 
   // Resolved from the live vocabulary rather than held as a copy, so a rename
   // or an archive is reflected here the moment the hook's state updates.
@@ -208,6 +247,30 @@ export function SemanticVocabularyScreen({ classId }: SemanticVocabularyScreenPr
     </ScrollView>
   );
 
+  // Looked up by the definition's OPAQUE id and its own scope — never by label,
+  // so two definitions that read the same never share a trail.
+  const selectedEvidence = useMemo(
+    () =>
+      selected
+        ? evidenceForDefinition(evidenceIndex, selected.definition)
+        : emptyDefinitionEvidence({ id: "", subject: "", topic: "" }),
+    [evidenceIndex, selected],
+  );
+
+  function openStudent(studentUid: string) {
+    const name = roster.students.find((s) => s.studentUid === studentUid)?.displayName ?? "";
+    router.push({
+      pathname: "/(teacher)/class/[classId]/student/[studentId]",
+      params: { classId, studentId: studentUid, studentName: name },
+    });
+  }
+
+  // The existing Class Performance route, where Phase 81's cohort section
+  // lives. No cohort deep-link exists today, and none is invented here.
+  function openClassPattern() {
+    router.push({ pathname: "/(teacher)/class/[classId]/performance", params: { classId } });
+  }
+
   const detail = selected ? (
     <SemanticDefinitionDetail
       entry={selected}
@@ -216,6 +279,12 @@ export function SemanticVocabularyScreen({ classId }: SemanticVocabularyScreenPr
       onSetArchived={setArchived}
       questionsById={questionsById}
       onClose={isWide ? undefined : clearSelection}
+      evidence={selectedEvidence}
+      evidenceLoadState={evidenceLoadState}
+      examinedStudentCount={evidenceIndex.examinedStudentCount}
+      onRetryEvidence={retryEvidence}
+      onOpenStudent={openStudent}
+      onOpenClassPattern={openClassPattern}
     />
   ) : (
     <View style={styles.detailPlaceholder}>
