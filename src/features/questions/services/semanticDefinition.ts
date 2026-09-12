@@ -201,11 +201,23 @@ export function findDuplicateLabel(
   subject: string,
   topic: string,
 ): SemanticDefinition | null {
-  const wanted = label.trim().toLocaleLowerCase("tr");
+  const wanted = normalizeLabelForComparison(label);
   if (!wanted) return null;
   return (
     selectableDefinitions(definitions, subject, topic).find(
-      (definition) => definition.label.toLocaleLowerCase("tr") === wanted,
+      (definition) => normalizeLabelForComparison(definition.label) === wanted,
     ) ?? null
   );
+}
+
+/** The only comparison two labels ever get, extracted so the composer's
+ *  duplicate warning and the vocabulary manager's cannot drift apart.
+ *
+ *  Trim and Turkish-aware case folding, and nothing else. It is deliberately
+ *  too crude to be mistaken for a similarity judgement: anything smarter would
+ *  start deciding that two labels MEAN the same thing, which is the one
+ *  inference this whole design exists to refuse. It is used to WARN, never to
+ *  match, merge or identify. */
+export function normalizeLabelForComparison(label: string): string {
+  return label.trim().toLocaleLowerCase("tr");
 }

@@ -12,6 +12,8 @@ import {
 
 import {
   MAX_CLASS_SEMANTIC_DEFINITIONS,
+  MAX_SEMANTIC_DESCRIPTION_LENGTH,
+  MAX_SEMANTIC_LABEL_LENGTH,
   parseSemanticDefinition,
   sanitizeSemanticDefinition,
   SemanticDefinition,
@@ -112,12 +114,54 @@ export async function createSemanticDefinition(params: {
   };
 }
 
-/** Retires a definition from new selection.
+/** Phase 82 — edits the two DISPLAY fields, and only those.
+ *
+ *  Renaming changes what the label says, never what it identifies. The document
+ *  id is untouched, so every question that references it and every event that
+ *  recorded it keep pointing at exactly the same meaning — which is the entire
+ *  reason identity was made an opaque id rather than the label in the first
+ *  place.
+ *
+ *  There is deliberately no backfill. Questions store a `semanticLabel`
+ *  snapshot and events store their own, and rewriting those would be a bulk
+ *  mutation of historical records to make a display string agree with the
+ *  present. Current-label display is a READ concern (see the vocabulary hook
+ *  and the cohort section, which resolve id -> current definition and fall back
+ *  to the snapshot), so nothing has to be rewritten for a rename to be visible.
+ *
+ *  `subject`, `topic`, `classId`, `createdBy` and `createdAt` are not accepted
+ *  here at all — the update rule pins them to their stored values, so a partial
+ *  update is both the smallest write and the only shape the rules allow. */
+export async function updateSemanticDefinitionDetails(params: {
+  classId: string;
+  definitionId: string;
+  label: string;
+  description: string | null;
+}): Promise<boolean> {
+  const label = params.label.trim();
+  if (!label) return false;
+  const description = params.description?.trim() ?? "";
+
+  await updateDoc(doc(definitionsRef(params.classId), params.definitionId), {
+    label: label.slice(0, MAX_SEMANTIC_LABEL_LENGTH),
+    description:
+      description.length > 0 ? description.slice(0, MAX_SEMANTIC_DESCRIPTION_LENGTH) : null,
+    updatedAt: serverTimestamp(),
+  });
+  return true;
+}
+
+/** Retires a definition from new selection, or restores it.
  *
  *  Archiving, never deleting. Questions reference these by id and events record
  *  that id forever; deleting one would leave both pointing at nothing, and
  *  would silently break a student's historical pattern rather than tidy it up.
- *  The rules deny delete outright for the same reason. */
+ *  The rules deny delete outright for the same reason.
+ *
+ *  Reversible in both directions, and that is a property of the rule rather
+ *  than a convenience added here: the update rule requires only
+ *  `archived is bool`, so restoring is the same single write with the same
+ *  document id. Nothing about a round trip creates a new identity. */
 export async function setSemanticDefinitionArchived(
   classId: string,
   definitionId: string,

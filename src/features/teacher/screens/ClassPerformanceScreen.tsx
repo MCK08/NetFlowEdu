@@ -178,10 +178,15 @@ export function ClassPerformanceScreen({ classId }: ClassPerformanceScreenProps)
     // new fetch mechanism.
     onUploaded: refresh,
   });
-  // Phase 80 — loaded only while the composer is open (see the hook's own
-  // note on why it is one-shot rather than a listener).
+  // Phase 80 loaded this only while the composer was open, because the composer
+  // was its only consumer. Phase 82 added a second one that needs it on first
+  // paint: a cohort must show what its definition is called NOW, and resolving
+  // that after the section has already rendered would flash the old name.
+  //
+  // It stays ONE bounded read (MAX_CLASS_SEMANTIC_DEFINITIONS), shared by both
+  // consumers, on a screen that already performs one query per student member.
   const { definitions: semanticDefinitions, create: createSemanticDefinition } =
-    useClassSemanticDefinitions(classId, composer.pickedImageUri !== null);
+    useClassSemanticDefinitions(classId, true);
 
   const handleCreateSemanticDefinition = useCallback(
     (input: SemanticDefinitionInput) =>
@@ -355,6 +360,16 @@ export function ClassPerformanceScreen({ classId }: ClassPerformanceScreenProps)
     [cards],
   );
 
+  // Phase 82 — the class's shared vocabulary, so a cohort shows what its
+  // definition is called NOW rather than what it was called when the events
+  // were recorded. One bounded read, already loaded on this screen for the
+  // question composer, and reused rather than fetched a second time.
+  const currentDefinitionLabels = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const definition of semanticDefinitions) map.set(definition.id, definition.label);
+    return map;
+  }, [semanticDefinitions]);
+
   // Phase 81 — the class's shared semantic cohorts. The only NEW read cost on
   // this screen: one bounded studyEvents query per student member. See the
   // hook's own doc comment for why that fan-out was preferred to a
@@ -367,7 +382,15 @@ export function ClassPerformanceScreen({ classId }: ClassPerformanceScreenProps)
     classId,
     students: semanticRoster,
     interventionCandidates,
+    currentLabels: currentDefinitionLabels,
   });
+
+  function openSemanticVocabulary() {
+    router.push({
+      pathname: "/(teacher)/class/[classId]/semantic-vocabulary",
+      params: { classId },
+    });
+  }
 
   // Phase 81 — opens the EXISTING composer, prefilled, and writes nothing.
   //
@@ -510,6 +533,7 @@ export function ClassPerformanceScreen({ classId }: ClassPerformanceScreenProps)
                 hasError={cohortsFailed}
                 onOpenStudent={openStudent}
                 onDraftSmallGroup={openSmallGroupDraft}
+                onManageVocabulary={openSemanticVocabulary}
               />
 
               {/* CLASS HEALTH */}

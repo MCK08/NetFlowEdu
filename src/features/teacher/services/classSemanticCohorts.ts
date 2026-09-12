@@ -83,10 +83,21 @@ export interface ClassSemanticCohort {
   /** Internal only. Carries the class id and the definition id, so it is a
    *  React key and never a rendered string. */
   id: string;
+  /** The canonical Phase 80 definition this cohort is about.
+   *
+   *  Carried so a caller can resolve the definition's CURRENT label without
+   *  taking the id apart from `id`, and never used for grouping — membership is
+   *  decided by the full identity above, of which this is one component. */
+  definitionId: string;
   subject: string;
   topic: string;
   /** The shared definition's authored label. Never generated, never a
-   *  conceptKey, never an id — a cohort without one is not built at all. */
+   *  conceptKey, never an id — a cohort without one is not built at all.
+   *
+   *  Phase 82 — this is the label to DISPLAY, which is the definition's current
+   *  one when the caller supplied the vocabulary, and the newest event snapshot
+   *  otherwise. Either way it is a display string: renaming a definition changes
+   *  what this reads and changes nothing about which events grouped together. */
   label: string;
   /** Qualifying members, ordered for reading. */
   members: ClassSemanticCohortMember[];
@@ -117,6 +128,7 @@ export interface ClassSemanticCohortSummary {
 
 interface Accumulator {
   id: string;
+  definitionId: string;
   subject: string;
   topic: string;
   label: string;
@@ -165,6 +177,19 @@ export function buildClassSemanticCohorts(params: {
    *  resolver rather than reading a learning state here is what keeps this
    *  file from becoming a second opinion on who is targetable. */
   interventionCandidates: readonly InterventionCandidate[];
+  /** Phase 82 — definitionId to its CURRENT label, when the caller has the
+   *  class vocabulary loaded.
+   *
+   *  Display only, and applied at the very end so nothing upstream can be
+   *  influenced by it. Grouping, thresholds, recovery and the action-ready
+   *  intersection are all settled before this map is consulted; a renamed
+   *  definition therefore produces exactly the same cohort with different
+   *  wording, which is the entire point of identity being an opaque id.
+   *
+   *  Omitted or missing an entry means the stored snapshot stands. The snapshot
+   *  is never replaced by a same-looking label from a DIFFERENT definition —
+   *  the lookup is by id, so there is no way for that to happen. */
+  currentLabels?: ReadonlyMap<string, string>;
 }): ClassSemanticCohortSummary {
   const groups = new Map<string, Accumulator>();
   const qualifyingStudents = new Set<string>();
@@ -185,6 +210,7 @@ export function buildClassSemanticCohorts(params: {
       if (!group) {
         group = {
           id: pattern.id,
+          definitionId: pattern.identity.semanticId,
           subject: pattern.subject,
           topic: pattern.topic,
           label: pattern.label!,
@@ -250,9 +276,14 @@ export function buildClassSemanticCohorts(params: {
 
     cohorts.push({
       id: group.id,
+      // Every group here passed `participates`, so the identity is class-scoped
+      // and this component is a definition id rather than a conceptKey.
+      definitionId: group.definitionId,
       subject: group.subject,
       topic: group.topic,
-      label: group.label,
+      // Current wording when the vocabulary is available, the newest snapshot
+      // otherwise. Looked up by id and never by label.
+      label: params.currentLabels?.get(group.definitionId) ?? group.label,
       members,
       qualifyingStudentCount: members.length,
       activeRepeatedStudentIds: members.filter((m) => !m.hasRecoverySignal).map((m) => m.studentUid),

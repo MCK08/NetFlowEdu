@@ -557,6 +557,83 @@ describe("ordering and bounds", () => {
   });
 });
 
+// Phase 82 — the label a cohort DISPLAYS may be refreshed from the current
+// vocabulary. None of it may touch identity, membership or counts.
+describe("current label resolution", () => {
+  const twoQualifying = () => [
+    student("a", qualifyingShared()),
+    student("b", qualifyingShared()),
+  ];
+
+  function withLabels(labels: Map<string, string> | undefined) {
+    return buildClassSemanticCohorts({
+      classId: CLASS,
+      students: twoQualifying(),
+      interventionCandidates: [],
+      currentLabels: labels,
+    });
+  }
+
+  it("X1 shows the current label when it matches the snapshot", () => {
+    const cohort = withLabels(new Map([["def-shared", "İşaret aktarımı"]])).cohorts[0]!;
+    expect(cohort.label).toBe("İşaret aktarımı");
+  });
+
+  it("X2 shows the RENAMED label while identity, membership and counts stand", () => {
+    const before = withLabels(undefined).cohorts[0]!;
+    const after = withLabels(new Map([["def-shared", "Negatif işaret aktarımı"]])).cohorts[0]!;
+
+    expect(after.label).toBe("Negatif işaret aktarımı");
+    // Everything that is not the display string is untouched.
+    expect(after.id).toBe(before.id);
+    expect(after.definitionId).toBe(before.definitionId);
+    expect(after.qualifyingStudentCount).toBe(before.qualifyingStudentCount);
+    expect(after.distinctQuestionCount).toBe(before.distinctQuestionCount);
+    expect(after.members.map((m) => m.studentUid)).toEqual(before.members.map((m) => m.studentUid));
+    expect(after.lastSeenAt).toBe(before.lastSeenAt);
+  });
+
+  it("X3 falls back to the stored snapshot when the definition cannot be resolved", () => {
+    const cohort = withLabels(new Map([["some-other-definition", "Alakasız"]])).cohorts[0]!;
+    expect(cohort.label).toBe("İşaret aktarımı");
+  });
+
+  it("X4 never borrows a same-looking label from a DIFFERENT definition", () => {
+    // The decoy carries the identical visible label. Resolution is by id, so a
+    // rename of the decoy cannot reach this cohort.
+    const cohort = withLabels(new Map([["def-decoy", "Tamamen başka bir ad"]])).cohorts[0]!;
+    expect(cohort.label).toBe("İşaret aktarımı");
+  });
+
+  it("renaming does not merge two same-label cohorts", () => {
+    const summary = buildClassSemanticCohorts({
+      classId: CLASS,
+      students: [
+        student("a", qualifyingShared({ definitionId: "def-one" })),
+        student("b", qualifyingShared({ definitionId: "def-one" })),
+        student("c", qualifyingShared({ definitionId: "def-two" })),
+        student("d", qualifyingShared({ definitionId: "def-two" })),
+      ],
+      interventionCandidates: [],
+      // Both renamed to the SAME text.
+      currentLabels: new Map([
+        ["def-one", "Ortak ad"],
+        ["def-two", "Ortak ad"],
+      ]),
+    });
+    expect(summary.cohorts).toHaveLength(2);
+    expect(summary.cohorts.every((c) => c.label === "Ortak ad")).toBe(true);
+    expect(new Set(summary.cohorts.map((c) => c.definitionId)).size).toBe(2);
+  });
+
+  it("exposes the definition id without it reaching any copy function", () => {
+    const cohort = withLabels(undefined).cohorts[0]!;
+    expect(cohort.definitionId).toBe("def-shared");
+    const visible = `${cohortEvidenceLine(cohort)} ${cohortFact(cohort)}`;
+    expect(visible).not.toContain("def-shared");
+  });
+});
+
 describe("copy", () => {
   const cohort = build(
     [

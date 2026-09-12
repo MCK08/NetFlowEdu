@@ -4977,6 +4977,106 @@ describe("firestore.rules — classes/{classId}/semanticDefinitions/{definitionI
         updateDoc(defRef(teacherDb()), { label: "a".repeat(61), updatedAt: serverTimestamp() }),
       );
     });
+
+    // Phase 82 — the mutations the vocabulary manager actually performs.
+    it("allows the teacher to rename and re-describe in one write", async () => {
+      await seedClass();
+      await seedDefinition();
+      await assertSucceeds(
+        updateDoc(defRef(teacherDb()), {
+          label: "Negatif işaret aktarımı",
+          description: "Terim taraf değiştirirken işaret korunuyor.",
+          updatedAt: serverTimestamp(),
+        }),
+      );
+    });
+
+    it("allows clearing the description back to null", async () => {
+      await seedClass();
+      await seedDefinition({ description: "Eski not" });
+      await assertSucceeds(
+        updateDoc(defRef(teacherDb()), { description: null, updatedAt: serverTimestamp() }),
+      );
+    });
+
+    it("denies an overlong description on update", async () => {
+      await seedClass();
+      await seedDefinition();
+      await assertFails(
+        updateDoc(defRef(teacherDb()), {
+          description: "a".repeat(201),
+          updatedAt: serverTimestamp(),
+        }),
+      );
+    });
+
+    it("denies emptying the label", async () => {
+      await seedClass();
+      await seedDefinition();
+      await assertFails(
+        updateDoc(defRef(teacherDb()), { label: "", updatedAt: serverTimestamp() }),
+      );
+    });
+
+    // Unarchiving is the same single write with the same document id. The rule
+    // asks only that `archived` be a bool, so a definition can come back
+    // without ever becoming a different meaning.
+    it("allows the teacher to UNARCHIVE", async () => {
+      await seedClass();
+      await seedDefinition({ archived: true });
+      await assertSucceeds(
+        updateDoc(defRef(teacherDb()), { archived: false, updatedAt: serverTimestamp() }),
+      );
+    });
+
+    it("denies a student unarchiving", async () => {
+      await seedClass();
+      await seedDefinition({ archived: true });
+      await assertFails(
+        updateDoc(defRef(studentDb()), { archived: false, updatedAt: serverTimestamp() }),
+      );
+    });
+
+    it("denies a student renaming", async () => {
+      await seedClass();
+      await seedDefinition();
+      await assertFails(
+        updateDoc(defRef(studentDb()), { label: "Öğrenci adı", updatedAt: serverTimestamp() }),
+      );
+    });
+
+    it("denies an outsider updating", async () => {
+      await seedClass();
+      await seedDefinition();
+      await assertFails(
+        updateDoc(defRef(studentDb(OUTSIDER)), { label: "Yabancı", updatedAt: serverTimestamp() }),
+      );
+    });
+
+    it("denies a DIFFERENT teacher renaming this class's vocabulary", async () => {
+      await seedClass();
+      await seedDefinition();
+      await assertFails(
+        updateDoc(defRef(teacherDb(OTHER_TEACHER)), {
+          label: "Başka öğretmen",
+          updatedAt: serverTimestamp(),
+        }),
+      );
+    });
+
+    it("denies a stale updatedAt — every edit is stamped by the server", async () => {
+      await seedClass();
+      await seedDefinition();
+      await assertFails(updateDoc(defRef(teacherDb()), { label: "Yeni ad", updatedAt: 1 }));
+    });
+
+    it("denies changing createdAt", async () => {
+      await seedClass();
+      await seedDefinition();
+      await assertFails(
+        updateDoc(defRef(teacherDb()), { createdAt: 999, updatedAt: serverTimestamp() }),
+      );
+    });
   });
 
   // Questions reference these by id and studyEvents record that id forever.

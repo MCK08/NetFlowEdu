@@ -55,8 +55,12 @@ export function useClassSemanticCohorts(params: {
   students: readonly { studentUid: string; displayName: string }[];
   /** Phase 43's own candidate shape, passed through untouched. */
   interventionCandidates: readonly InterventionCandidate[];
+  /** Phase 82 — definitionId to its CURRENT label, when the caller has the
+   *  class vocabulary. Display only: it reaches the builder after every
+   *  grouping decision is already made. */
+  currentLabels?: ReadonlyMap<string, string>;
 }) {
-  const { classId, students, interventionCandidates } = params;
+  const { classId, students, interventionCandidates, currentLabels } = params;
 
   const [evidence, setEvidence] = useState<ClassSemanticStudentEvidence[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -144,8 +148,9 @@ export function useClassSemanticCohorts(params: {
         classId: classId ?? "",
         students: evidence,
         interventionCandidates,
+        currentLabels,
       }),
-    [classId, evidence, interventionCandidates],
+    [classId, evidence, interventionCandidates, currentLabels],
   );
 
   return { summary, isLoading, hasError, refresh: load };

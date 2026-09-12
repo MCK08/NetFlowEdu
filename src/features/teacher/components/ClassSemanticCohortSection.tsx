@@ -56,6 +56,11 @@ interface ClassSemanticCohortSectionProps {
   hasError: boolean;
   onOpenStudent: (studentUid: string) => void;
   onDraftSmallGroup: (cohort: ClassSemanticCohort) => void;
+  /** Phase 82 — opens the class's shared vocabulary. Placed on this section's
+   *  header because this is where a teacher first meets the labels as something
+   *  with consequences, and therefore where they are most likely to want to
+   *  tidy one up. */
+  onManageVocabulary: () => void;
 }
 
 // How many markers the rail shows before it collapses the rest into a count.
@@ -309,6 +314,7 @@ export const ClassSemanticCohortSection = memo(function ClassSemanticCohortSecti
   hasError,
   onOpenStudent,
   onDraftSmallGroup,
+  onManageVocabulary,
 }: ClassSemanticCohortSectionProps) {
   useThemeSubscription();
 
@@ -320,7 +326,10 @@ export const ClassSemanticCohortSection = memo(function ClassSemanticCohortSecti
   if (hasError) {
     return (
       <View style={styles.section}>
-        <SectionHeader title="Ortak Öğrenme Örüntüleri" />
+        <SectionHeader
+          title="Ortak Öğrenme Örüntüleri"
+          action={{ label: "Etiketleri yönet", onPress: onManageVocabulary }}
+        />
         <View style={styles.stateBox}>
           <EmptyState
             icon="cloud-offline-outline"
@@ -336,7 +345,10 @@ export const ClassSemanticCohortSection = memo(function ClassSemanticCohortSecti
     const copy = cohortAbsenceCopy(summary);
     return (
       <View style={styles.section}>
-        <SectionHeader title="Ortak Öğrenme Örüntüleri" />
+        <SectionHeader
+          title="Ortak Öğrenme Örüntüleri"
+          action={{ label: "Etiketleri yönet", onPress: onManageVocabulary }}
+        />
         <View style={styles.stateBox}>
           <EmptyState icon="git-merge-outline" title={copy.title} description={copy.description} />
         </View>
@@ -346,7 +358,10 @@ export const ClassSemanticCohortSection = memo(function ClassSemanticCohortSecti
 
   return (
     <View style={styles.section}>
-      <SectionHeader title="Ortak Öğrenme Örüntüleri" />
+      <SectionHeader
+        title="Ortak Öğrenme Örüntüleri"
+        action={{ label: "Etiketleri yönet", onPress: onManageVocabulary }}
+      />
       {summary.cohorts.map((cohort) => (
         <CohortCard
           key={cohort.id}
