@@ -2624,13 +2624,24 @@ describe("firestore.rules — questions/{questionId} student publishing (Phase 9
     );
   });
 
-  // ---- delete: own question, or own class's teacher, or org admin --------
+  // ---- delete: denied to every client (Phase 90) --------------------------
+  //
+  // These four tests used to split into "allowed" and "denied" along owner /
+  // class-teacher / other-teacher lines. Phase 90 collapses that: no client may
+  // delete a question at all, so the two "denies …" cases below now pass for a
+  // broader reason than their names give, and the two "lets …" cases invert.
+  //
+  // The capability had no product path — Phase 90 searched for a delete button,
+  // a client service, a Cloud Function, an admin or moderation surface and a
+  // ROADMAP entry, and found none — and it was the one place a class teacher
+  // could destroy a student's authored work, which every ownership decision
+  // from Phase 86 onward refuses.
 
-  it("lets a student delete their own class question", async () => {
+  it("denies a student deleting their own class question (Phase 90)", async () => {
     await seedClassWithMembers();
     await seedQuestion("q1", studentClassQuestionDoc());
     const student = studentContext("student-1");
-    await assertSucceeds(deleteDoc(doc(student.firestore(), "questions", "q1")));
+    await assertFails(deleteDoc(doc(student.firestore(), "questions", "q1")));
   });
 
   it("denies a student deleting another student's question", async () => {
@@ -2641,11 +2652,20 @@ describe("firestore.rules — questions/{questionId} student publishing (Phase 9
     await assertFails(deleteDoc(doc(otherStudent.firestore(), "questions", "q1")));
   });
 
-  it("lets the class's OWN teacher delete a student's question in that class", async () => {
+  it("denies the class's OWN teacher deleting a student's question (Phase 90)", async () => {
+    // The asymmetry this closes: Phase 86-89 all refuse a teacher EDITING a
+    // student's question, while this rule let them delete it outright.
     await seedClassWithMembers();
     await seedQuestion("q1", studentClassQuestionDoc());
     const teacher = teacherContext("teacher-1");
-    await assertSucceeds(deleteDoc(doc(teacher.firestore(), "questions", "q1")));
+    await assertFails(deleteDoc(doc(teacher.firestore(), "questions", "q1")));
+  });
+
+  it("denies a teacher deleting their OWN question too (Phase 90)", async () => {
+    await seedClass("class-1", classDoc());
+    await seedQuestion("q1", classQuestionDoc({ ownerId: "teacher-1", classId: "class-1", organizationId: "org-1" }));
+    const teacher = teacherContext("teacher-1");
+    await assertFails(deleteDoc(doc(teacher.firestore(), "questions", "q1")));
   });
 
   // Regression test for the scope-tightening this phase makes: before
@@ -5307,16 +5327,32 @@ describe("firestore.rules — questions/{questionId} revision authorization (Pha
       await assertSucceeds(getDoc(questionRef(teacherDb())));
     });
 
-    it("R10 still lets the owner delete their own question", async () => {
+    // Phase 88 wrote these to prove it had not touched delete while moving
+    // update server-side; Phase 89 kept them while moving create. Phase 90
+    // closes delete as well, so they invert — the three kept side by side are
+    // the record of how a client's write rights to this collection narrowed to
+    // nothing across three phases.
+    it("R10 now denies the owner deleting their own question (Phase 90)", async () => {
       await seedClassAndMembers();
       await seedQuestion("q1", classQuestion());
-      await assertSucceeds(deleteDoc(questionRef(teacherDb())));
+      await assertFails(deleteDoc(questionRef(teacherDb())));
     });
 
-    it("R10 still lets the class teacher delete a student's class question", async () => {
+    it("R10 now denies the class teacher deleting a student's class question (Phase 90)", async () => {
       await seedClassAndMembers();
       await seedQuestion("q1", classQuestion({ ownerId: STUDENT, posterRole: "student" }));
-      await assertSucceeds(deleteDoc(questionRef(teacherDb())));
+      await assertFails(deleteDoc(questionRef(teacherDb())));
+    });
+
+    it("R11 the question document survives every client write verb", async () => {
+      // create, update and delete are all denied; read is not. Together that is
+      // the whole Phase 88-90 claim, asserted in one place.
+      await seedClassAndMembers();
+      await seedQuestion("q1", classQuestion());
+      await assertFails(setDoc(questionRef(teacherDb(), "brand-new"), { ...classQuestion(), createdAt: serverTimestamp() }));
+      await assertFails(updateDoc(questionRef(teacherDb()), { description: "değişti" }));
+      await assertFails(deleteDoc(questionRef(teacherDb())));
+      await assertSucceeds(getDoc(questionRef(teacherDb())));
     });
   });
 });

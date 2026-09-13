@@ -35,6 +35,11 @@ service cloud.firestore {
       return isRole('platform_admin');
     }
 
+    // Phase 90 — isOrgAdmin no longer gates anything. Its only call site was
+    // the question delete rule, which now denies every client. It is kept
+    // rather than removed because the role itself still exists (see
+    // adminSetUserRole) and a future org-admin capability would reach for this
+    // exact helper; nothing calls it today.
     function isOrgAdmin() {
       return isRole('organization_admin');
     }
@@ -323,18 +328,46 @@ service cloud.firestore {
       // commentCounters, all Admin SDK, all unaffected by this.
       allow update: if false;
 
-      // Owner can always delete their own (student or teacher). Org admin,
-      // as before, can delete anything in their org. A teacher can delete
-      // any question WITHIN THEIR OWN CLASS (Phase 9.1 — narrower than the
-      // pre-Phase-9.1 rule, which let ANY teacher delete ANY class's
-      // question; that was never intentionally granted, just never scoped).
-      // For non-class (private/public) visibility, behavior is byte-for-byte
-      // unchanged: any teacher may still delete, exactly as before.
-      allow delete: if isOwner(resource.data.ownerId)
-                    || isOrgAdmin()
-                    || (resource.data.visibility == 'class'
-                        && classData(resource.data.classId).teacherId == uid())
-                    || (resource.data.visibility != 'class' && isTeacher());
+      // Phase 90 — no client may delete a question either. With create (Phase
+      // 89) and update (Phase 88) already server-only, this closes the
+      // lifecycle: a question's existence is decided entirely on the server.
+      //
+      // WHAT THIS REMOVES, AND WHY THAT IS NOT A REGRESSION
+      //
+      // The rule above granted deletion to the owner, to an org admin, to a
+      // class's own teacher, and — for private/public questions — to any
+      // teacher at all. Phase 90 searched the entire repository for something
+      // that used it and found NOTHING: no delete button on any question
+      // surface, no client service, no Cloud Function, no admin or moderation
+      // path, and no ROADMAP intent. The only destructive affordances in the
+      // product are comment deletion and class-member removal. This was a
+      // rules capability with no product path, the same shape as the Phase 9.1
+      // student-edit capability Phase 88 retired.
+      //
+      // It was also the one place a class teacher could destroy a student's
+      // authored work. Phases 86 through 89 all refuse exactly that — a class
+      // contains questions authored by its students, and owning the classroom
+      // is not owning their work — so leaving it here contradicted every other
+      // ownership decision in the question lifecycle.
+      //
+      // WHAT DELETION WOULD COST IF IT WERE ADDED
+      //
+      // Measured against the emulator rather than guessed at. Hard deletion is
+      // evidence-SAFE: studyEvents stay byte-identical, studyItems are
+      // untouched, a savedQuestions bookmark survives on its own denormalized
+      // snapshot, semanticDefinitions are untouched, and both recordStudyOutcome
+      // and updateQuestionRevision refuse a missing question with a clean
+      // not-found rather than recreating it. The study system already treats a
+      // question that no longer resolves as "gone" by design (Phases 22/28/68).
+      //
+      // What it does leave behind is orphans: questionComments and
+      // questionLikes rows, the Storage image, and a dangling id inside any
+      // assignment's questionIds. None of that is fixed by a rule, which is
+      // precisely why removal belongs behind a server gateway whenever the
+      // product actually wants it — built then, with its UI, the way Phase 89
+      // built creation. Admin SDK paths are unaffected and can still remove a
+      // question today.
+      allow delete: if false;
     }
 
     // ---- organizations/{organizationId} ---------------------------------
