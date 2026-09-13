@@ -86,6 +86,79 @@ The following are implemented in this repo but must be deployed explicitly (`fir
 
 Firestore index builds can take time on a populated database — check the Firebase Console's Indexes tab after deploying before relying on the new queries in production.
 
+## 6c. Answer Moderation Prerequisite (Cloud Vision)
+
+An answer is an IMAGE — a photo or a drawing, with no text field — so nothing
+about it can be judged without looking at the picture. `submitAnswerForModeration`
+therefore publishes an answer only after Google Cloud Vision has cleared the
+image (SafeSearch) and the OCR text it extracts has cleared the same
+deterministic Turkish layer that guards comments.
+
+### What you must enable
+
+**Enable `vision.googleapis.com` on the Firebase project.**
+
+There is no API key, no secret and no npm dependency to configure. The Cloud
+Function mints its own token from its runtime service account, so nothing needs
+to be stored in `.env`, in Secret Manager, or in this repository. Enabling the
+API on the project is the entire requirement.
+
+```bash
+gcloud services enable vision.googleapis.com --project <your-project-id>
+```
+
+Verify with `gcloud services list --enabled --project <your-project-id>` — it
+prints service names only, no credentials.
+
+### What happens if you do not
+
+The pipeline is **fail-closed and stays fail-closed**. A missing API, an outage,
+a timeout and a malformed response all resolve to the same internal
+`unavailable` signal, and there is no path through `callProvider` that returns
+"clean" on error. Nothing is auto-approved, ever.
+
+What happens instead is that the submission is stored as `manual_review`, the
+author is shown "Cevabın inceleniyor.", and **no answer document is created** —
+so the question's `answerCount` does not move and the question owner is not
+notified.
+
+### The operational consequence, stated plainly
+
+**`manual_review` is currently a terminal state.** As of Phase 96 the repository
+contains no reviewer callable, no review queue, no moderation UI and no role
+designated for content review, and no client may patch a submission's status
+(verified: teacher, author and outsider all receive `403`). A submission that
+lands in `manual_review` stays there, and the answer is never published.
+
+This matters even with Vision correctly enabled, because `manual_review` is not
+only a misconfiguration outcome. `decideImageModeration` routes to it in three
+distinct situations:
+
+| Reason | When |
+|---|---|
+| `provider_unavailable` | the API is disabled, or the call errored or timed out |
+| `no_ocr_provider` | Vision answered, but no OCR text was available — handwriting is exactly what image classifiers miss |
+| `uncertain` | Vision or the OCR text layer returned "review" — its intended verdict for ambiguous content |
+
+The third is normal, healthy operation. So **enabling Vision reduces how often
+answers stall; it does not eliminate it.** Until a review path exists, some
+proportion of legitimate answers will not publish.
+
+Deciding who may review — and building that path — is a product decision, not a
+deployment step. It is recorded in
+`PHASE96_VERIFIED_ANSWER_PUBLICATION_OPERABILITY.md`.
+
+### Local development and the emulator
+
+The emulator has no access to `vision.googleapis.com`, so every locally
+submitted answer resolves to `manual_review` and no answer is published. This is
+correct behaviour, not a broken setup, and there is deliberately **no
+emulator-only auto-approve branch** — a bypass keyed on an emulator environment
+variable is exactly the kind of thing that reaches production.
+
+To exercise publication logic locally, inject a provider test double at the
+`resolveProviders` seam rather than weakening the pipeline.
+
 ## 7. Native Config Files (later phases)
 
 When building native binaries, download `google-services.json` (Android) and `GoogleService-Info.plist` (iOS) from the Firebase Console and place them at the project root. Both are gitignored — never commit them.
