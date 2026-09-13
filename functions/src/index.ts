@@ -19,6 +19,9 @@ export {
   toggleAnswerLike,
   onQuestionCommentCreate,
   onQuestionCommentDelete,
+  // Phase 93 — the authoritative comment delete. Create has been server-only
+  // since Phase 17; this is the other half of the same lifecycle.
+  deleteQuestionComment,
 } from "./social";
 export {
   createClass,

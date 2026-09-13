@@ -712,7 +712,29 @@ service cloud.firestore {
       allow create: if false;
 
       allow update: if false;
-      allow delete: if isOwner(resource.data.ownerId);
+
+      // Phase 93 — comment deletion moved to the `deleteQuestionComment`
+      // callable, so no client may delete one directly, including its author.
+      //
+      // WHAT THIS IS AND IS NOT
+      //
+      // It is NOT a removal of the author's right to delete their own comment —
+      // that is a real product feature (the trash affordance on one's own
+      // comment in CommentItem) and it still works; it now runs through a
+      // server gateway that reads the stored document to decide, the same way
+      // create has since Phase 17. The two ends of one lifecycle answered to two
+      // different authorities until now.
+      //
+      // It is also NOT a widening. Phase 93 probed the rule this replaces with
+      // real tokens first: another student, the question's OWN owner and an
+      // outsider were already refused, and the callable refuses them too. Owning
+      // a question does not make someone the moderator of the conversation under
+      // it, and teaching the class does not either.
+      //
+      // commentCount is unaffected: onQuestionCommentDelete fires on the
+      // callable's Admin SDK delete exactly as it did on the client's, so the
+      // counter keeps one side-effect owner rather than two.
+      allow delete: if false;
     }
 
     // ---- moderationSubmissions/{submissionId} ----------------------------

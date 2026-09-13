@@ -1,7 +1,5 @@
 import {
   collection,
-  deleteDoc,
-  doc,
   DocumentData,
   onSnapshot,
   orderBy,
@@ -11,7 +9,10 @@ import {
   where,
 } from "firebase/firestore";
 
-import { db } from "@services/firebase/config";
+import { httpsCallable, FunctionsError } from "firebase/functions";
+
+import { db, functions } from "@services/firebase/config";
+import { CommentDeleteError, CommentDeleteErrorCode } from "./commentDeleteError";
 import { QuestionComment } from "@/types/comment";
 
 // Phase 17: there is deliberately no createComment here any more.
@@ -24,8 +25,34 @@ import { QuestionComment } from "@/types/comment";
 // person to wire up. See src/features/social/comments/services/
 // commentSubmission.ts for the replacement.
 
+/** Removes one comment the signed-in user wrote, through the authoritative
+ *  server gateway.
+ *
+ *  Phase 93 — this performs NO Firestore write, and could not: the rules refuse
+ *  a client delete outright. The server reads the stored comment to decide who
+ *  may remove it, exactly as create has done since Phase 17.
+ *
+ *  A comment that is already gone is a SUCCESS, not an error. That is what
+ *  makes a retry after a lost response safe — the user asked for it gone, and
+ *  it is gone. */
 export async function deleteComment(commentId: string): Promise<void> {
-  await deleteDoc(doc(db, "questionComments", commentId));
+  const callable = httpsCallable<{ commentId: string }, { deleted: boolean }>(
+    functions,
+    "deleteQuestionComment",
+  );
+  try {
+    await callable({ commentId });
+  } catch (error) {
+    throw new CommentDeleteError(mapCommentDeleteError(error));
+  }
+}
+
+function mapCommentDeleteError(error: unknown): CommentDeleteErrorCode {
+  const code = (error as FunctionsError | undefined)?.code;
+  if (code === "functions/unauthenticated") return "unauthenticated";
+  if (code === "functions/permission-denied") return "not-author";
+  if (code === "functions/invalid-argument") return "invalid-comment";
+  return "unavailable";
 }
 
 function toComment(id: string, data: DocumentData): QuestionComment {

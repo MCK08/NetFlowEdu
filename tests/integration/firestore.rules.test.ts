@@ -1152,11 +1152,35 @@ describe("firestore.rules — questionComments/{commentId}", () => {
   });
 
   // Step 22 #17: user may delete own comment.
-  it("allows a user to delete their own comment", async () => {
+  // Phase 93 — the author's delete right is NOT removed; it moved to the
+  // `deleteQuestionComment` callable, which reads the stored comment to decide.
+  // The trash affordance on one's own comment still works. What is gone is the
+  // client's ability to reach the document directly, which is what made create
+  // (server-only since Phase 17) and delete answer to two different
+  // authorities. See deleteQuestionComment.emulator.test.ts "D2 lets the
+  // comment's author delete it".
+  it("denies even the author a DIRECT delete of their own comment (Phase 93)", async () => {
     await seedQuestion("q1", publicQuestionDoc({ ownerId: "student-1" }));
     await seedComment("c1", commentDoc({ questionId: "q1", ownerId: "student-1" }));
     const student = studentContext("student-1");
-    await assertSucceeds(deleteDoc(doc(student.firestore(), "questionComments", "c1")));
+    await assertFails(deleteDoc(doc(student.firestore(), "questionComments", "c1")));
+  });
+
+  it("R the comment document survives every client write verb (Phase 93)", async () => {
+    // create, update and delete are all denied now; read is not. Together that
+    // is the whole comment-lifecycle claim, asserted in one place.
+    await seedQuestion("q1", publicQuestionDoc({ ownerId: "student-1" }));
+    await seedComment("c1", commentDoc({ questionId: "q1", ownerId: "student-1" }));
+    const student = studentContext("student-1");
+    await assertFails(
+      setDoc(doc(student.firestore(), "questionComments", "c2"), {
+        ...commentDoc({ questionId: "q1", ownerId: "student-1" }),
+        createdAt: serverTimestamp(),
+      }),
+    );
+    await assertFails(updateDoc(doc(student.firestore(), "questionComments", "c1"), { text: "değişti" }));
+    await assertFails(deleteDoc(doc(student.firestore(), "questionComments", "c1")));
+    await assertSucceeds(getDoc(doc(student.firestore(), "questionComments", "c1")));
   });
 
   // Step 22 #18: user may not delete another user's comment.

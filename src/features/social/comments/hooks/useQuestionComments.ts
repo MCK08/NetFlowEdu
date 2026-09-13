@@ -2,6 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { Alert, Keyboard } from "react-native";
 
 import { deleteComment, subscribeToQuestionComments } from "@services/questions/comments";
+import {
+  CommentDeleteError,
+  commentDeleteMessage,
+} from "@services/questions/commentDeleteError";
 import { QuestionComment } from "@/types/comment";
 
 import {
@@ -108,8 +112,17 @@ export function useQuestionComments({ questionId, uid }: UseQuestionCommentsOpti
   async function remove(commentId: string) {
     try {
       await deleteComment(commentId);
-    } catch {
-      Alert.alert("Yorum silinemedi.", "Lütfen tekrar deneyin.");
+    } catch (error) {
+      // Phase 93 — the server now refuses for distinguishable reasons, so say
+      // which one. A comment that was already gone is not an error at all: the
+      // service treats it as success, so a retry after a lost response closes
+      // quietly instead of claiming a failure.
+      Alert.alert(
+        "Yorum silinemedi.",
+        error instanceof CommentDeleteError
+          ? commentDeleteMessage(error.code)
+          : commentDeleteMessage("unavailable"),
+      );
     }
   }
 
