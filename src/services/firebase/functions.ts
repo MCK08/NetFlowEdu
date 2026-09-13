@@ -79,12 +79,17 @@ export async function toggleQuestionLike(
 }
 
 // Same pattern for answers — see functions/src/social/toggleAnswerLike.ts.
-export async function toggleAnswerLike(answerId: string): Promise<ToggleLikeResult> {
-  const callable = httpsCallable<{ answerId: string }, ToggleLikeResult>(
+// Phase 92 — `liked` is the state the caller wants to end in, matching the
+// question path. Omitting it keeps the original toggle behaviour.
+export async function toggleAnswerLike(
+  answerId: string,
+  liked?: boolean,
+): Promise<ToggleLikeResult> {
+  const callable = httpsCallable<{ answerId: string; liked?: boolean }, ToggleLikeResult>(
     functions,
     "toggleAnswerLike",
   );
-  const result = await callable({ answerId });
+  const result = await callable(liked === undefined ? { answerId } : { answerId, liked });
   return result.data;
 }
 

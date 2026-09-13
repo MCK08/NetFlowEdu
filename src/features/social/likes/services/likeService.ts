@@ -26,19 +26,24 @@ export async function getMyLikeState(
   return snapshot.exists();
 }
 
-// `liked` is the state the caller wants to end in. Phase 91 added it for
-// questions after proving the plain toggle inverts on retry: a client that
-// re-sends after a lost response un-likes what it just liked, and two devices
-// meaning "like" can settle on NOT liked. Passing the desired state makes the
-// same request idempotent.
+// `liked` is the state the caller wants to end in, for BOTH target types.
 //
-// Answers still use the toggle form. That is not an oversight and not a claim
-// of safety — answer likes were outside this phase's subject, and the same
-// shape of gap remains there, documented rather than quietly half-fixed.
+// Phase 91 added it for questions after proving a plain toggle inverts on
+// retry: a client that re-sends after a lost response un-likes what it just
+// liked, and two devices meaning "like" can settle on NOT liked. Phase 92
+// reproduced the identical defect on answers — including the answer owner's
+// like notification being created by the first call and deleted by the retry —
+// and closed it the same way.
+//
+// Both callables still accept the field as optional and fall back to toggling,
+// so a client build that predates this keeps working; this dispatcher always
+// sends it.
 export async function toggleLike(
   targetType: LikeTargetType,
   targetId: string,
   liked?: boolean,
 ): Promise<{ liked: boolean; likeCount: number }> {
-  return targetType === "question" ? toggleQuestionLike(targetId, liked) : toggleAnswerLike(targetId);
+  return targetType === "question"
+    ? toggleQuestionLike(targetId, liked)
+    : toggleAnswerLike(targetId, liked);
 }

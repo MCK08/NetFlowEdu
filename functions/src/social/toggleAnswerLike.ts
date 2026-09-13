@@ -13,6 +13,24 @@ import {
 
 interface ToggleAnswerLikeRequest {
   answerId: string;
+  /** Phase 92 — the state the caller WANTS to end in.
+   *
+   *  Phase 91 gave question likes this field after proving a plain toggle's
+   *  result depends on how many times it is called rather than on what the user
+   *  meant, and named this callable as carrying the identical defect. Phase 92
+   *  reproduced it here before changing anything: a retried LIKE returned
+   *  `true` then `false` and dropped the count back to 0, two devices both
+   *  meaning "like" settled on NOT liked, a retried UNLIKE re-liked, and the
+   *  answer owner's like notification was created by the first call and
+   *  DELETED by the retry.
+   *
+   *  The deterministic document id already prevented duplicate likes and count
+   *  drift. It could not prevent inversion, because inversion is what a toggle
+   *  is.
+   *
+   *  Optional on purpose: omitting it keeps the original toggle behaviour, so a
+   *  client build that predates this field keeps working unchanged. */
+  liked?: boolean;
 }
 
 interface ToggleAnswerLikeResult {
@@ -65,6 +83,16 @@ export const toggleAnswerLike = onCall<ToggleAnswerLikeRequest>(
       const likeSnap = await tx.get(likeRef);
       const alreadyLiked = likeSnap.exists;
       const currentCount = typeof answer.likeCount === "number" ? answer.likeCount : 0;
+
+      // A desired state that already holds is a no-op, not a flip — and not an
+      // error either: the first call succeeded, so reporting failure on the
+      // retry would be a lie the client would have to undo. Returning here also
+      // means the no-op never reaches the owner-role read or the notification
+      // planning below, so a retry writes nothing and notifies nobody.
+      const desired = request.data?.liked;
+      if (typeof desired === "boolean" && desired === alreadyLiked) {
+        return { liked: alreadyLiked, likeCount: currentCount };
+      }
 
       if (alreadyLiked) {
         // ---- READ PHASE (every read must precede every write) ----
