@@ -1,0 +1,1 @@
+export { updateQuestionRevision } from "./updateQuestionRevision";

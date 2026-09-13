@@ -41,7 +41,16 @@ import { Question } from "@/types/question";
 // save calls updateQuestion, once, guarded by the same SubmitLock the composers
 // use so a double tap cannot produce two updates.
 //
-// STALE DRAFTS (Phase 87)
+// WHERE THE RULES ACTUALLY LIVE (Phase 88)
+//
+// The ownership comparison below is a courtesy: it decides whether to render a
+// form, not whether a write may happen. Since Phase 88 the authoritative checks
+// — owner, staleness, sanitisation, semantic scope — all run inside the
+// `updateQuestionRevision` callable, and firestore.rules deny client updates to
+// questions outright. A hand-typed route, a patched client, or a direct SDK
+// call all meet the same server.
+//
+// STALE DRAFTS (Phase 87, now server-enforced)
 //
 // The authoring fingerprint of the question as loaded is held alongside it and
 // sent with the save. If the document's authoring state moved in between — the
@@ -172,12 +181,18 @@ export function useQuestionRevision(params: { classId: string | undefined; quest
           setSaveError(null);
           return null;
         }
+        // Each server refusal keeps its own sentence. Collapsing them would
+        // leave a teacher retrying a save that can never succeed.
         setSaveError(
           error.code === "not-owner"
             ? "Bu soruyu yalnızca yazarı düzenleyebilir."
             : error.code === "not-found"
               ? "Soru artık bulunamıyor."
-              : "Kaydetmek için oturum açmış olman gerekir.",
+              : error.code === "invalid-revision"
+                ? "Bu düzenleme kaydedilemedi. Şıkları, doğru cevabı ve seçtiğin ortak etiketi kontrol et."
+                : error.code === "unavailable"
+                  ? "Kaydedilemedi. Bağlantını kontrol edip tekrar dene."
+                  : "Kaydetmek için oturum açmış olman gerekir.",
         );
       } else {
         setSaveError("Kaydedilemedi. Bağlantını kontrol edip tekrar dene.");

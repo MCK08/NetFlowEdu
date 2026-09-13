@@ -2638,11 +2638,19 @@ describe("firestore.rules — questions/{questionId} student publishing (Phase 9
     });
   }
 
-  it("lets a student edit their own class question's subject/description", async () => {
+  // Phase 9.1 asserted this SUCCEEDED; Phase 88 closed it deliberately.
+  //
+  // Worth being precise about what changed: this was a rules capability with no
+  // product path behind it. No client code ever issued this write — the Phase 86
+  // revision editor renders subject, topic and grade as read-only, and the audit
+  // for Phase 88 found exactly two client writes to questions/{id} (create, and
+  // the revision that has now moved server-side). So nothing a student could
+  // actually do in the app regressed; a door nothing walked through was shut.
+  it("no longer lets a student directly edit their own class question (Phase 88)", async () => {
     await seedClassWithMembers();
     await seedQuestion("q1", studentClassQuestionDoc());
     const student = studentContext("student-1");
-    await assertSucceeds(
+    await assertFails(
       updateDoc(doc(student.firestore(), "questions", "q1"), { subject: "Fizik" }),
     );
   });
@@ -5095,18 +5103,20 @@ describe("firestore.rules — classes/{classId}/semanticDefinitions/{definitionI
   });
 });
 
-// Phase 85 — who may revise a question.
+// Phase 85/88 — who may revise a question, and through what.
 //
-// The whole Question Revision Studio rests on one line of this ruleset:
-// `allow update: if isOwner(resource.data.ownerId)`. A class contains
-// questions authored by the teacher AND by student members (Phase 9.1), so
-// "the teacher owns the class" is NOT "the teacher owns its questions". These
-// tests pin that boundary in both directions, and pin the fields an owner's
-// own edit may never smuggle a change into.
+// Phase 85 pinned `allow update: if isOwner(...)`: a class contains questions
+// authored by the teacher AND by its student members, so owning the classroom
+// was never owning their work.
 //
-// Nothing here widens a permission. Every assertion documents behaviour the
-// ruleset already had before this phase.
-describe("firestore.rules — questions/{questionId} revision authorization (Phase 85)", () => {
+// Phase 88 moved revision to the `updateQuestionRevision` callable and closed
+// the direct-write door entirely — `allow update: if false`. An owner may still
+// revise their question; they may no longer reach the document directly and
+// skip the server's ownership re-check, stale-draft comparison, sanitisers and
+// semantic-scope validation. These tests pin the NEW contract: every client
+// update is denied, create/read/delete are untouched, and the counters remain
+// server-only.
+describe("firestore.rules — questions/{questionId} revision authorization (Phase 85/88)", () => {
   let testEnv: RulesTestEnvironment;
 
   const CLASS_ID = "class-1";
@@ -5182,10 +5192,12 @@ describe("firestore.rules — questions/{questionId} revision authorization (Pha
   const questionRef = (db: ReturnType<typeof teacherDb>, id = "q1") => doc(db, "questions", id);
 
   describe("who may revise", () => {
-    it("A1 allows the teacher to revise their OWN class question", async () => {
+    it("R1/R2 DENIES the teacher a direct update of their OWN class question", async () => {
+      // Phase 88: revision goes through the callable. This is the exact write
+      // Phase 87 proved could bypass every product-level check.
       await seedClassAndMembers();
       await seedQuestion("q1", classQuestion());
-      await assertSucceeds(
+      await assertFails(
         updateDoc(questionRef(teacherDb()), {
           description: "Denklemde terimi karşı tarafa geçirme (gözden geçirildi)",
         }),
@@ -5200,10 +5212,11 @@ describe("firestore.rules — questions/{questionId} revision authorization (Pha
       await assertFails(updateDoc(questionRef(teacherDb()), { description: "Öğretmen düzenlemesi" }));
     });
 
-    it("A3 allows a student to revise their OWN class question", async () => {
+    it("R3 DENIES a student a direct update of their OWN class question", async () => {
+      // The gateway applies to every owner, not only to teachers.
       await seedClassAndMembers();
       await seedQuestion("q1", classQuestion({ ownerId: STUDENT, posterRole: "student" }));
-      await assertSucceeds(
+      await assertFails(
         updateDoc(questionRef(studentDb()), { description: "Kendi sorumu düzelttim" }),
       );
     });
@@ -5268,85 +5281,87 @@ describe("firestore.rules — questions/{questionId} revision authorization (Pha
     });
   });
 
-  describe("what an owner's revision may change", () => {
-    it("allows revising the authored feedback on a mapped wrong choice", async () => {
-      await seedClassAndMembers();
-      await seedQuestion("q1", classQuestion());
-      await assertSucceeds(
-        updateDoc(questionRef(teacherDb()), {
-          choiceFeedback: {
-            B: {
-              text: "Eşitliğin diğer tarafına geçerken işaret değişir.",
-              semanticDefinitionId: "def-a",
-              semanticLabel: "İşaret aktarımı",
-            },
+  // Phase 88 — these previously proved WHICH fields an owner's direct update
+  // could change. That door is closed, so what they now prove is that it is
+  // closed for every one of those fields, and that the rest of the contract
+  // (create, read, delete, counters) is untouched.
+  describe("no direct client update survives, whatever it touches", () => {
+    const attempts: [string, Record<string, unknown>][] = [
+      ["the authored feedback on a mapped wrong choice", {
+        choiceFeedback: {
+          B: {
+            text: "Eşitliğin diğer tarafına geçerken işaret değişir.",
+            semanticDefinitionId: "def-a",
+            semanticLabel: "İşaret aktarımı",
           },
-        }),
-      );
-    });
+        },
+      }],
+      ["a semantic remap to another definition", {
+        choiceFeedback: {
+          B: { text: "Taraf değiştirirken işaret değişir.", semanticDefinitionId: "def-b" },
+        },
+      }],
+      ["the choices and the correct answer", {
+        choices: { A: "doğru", B: "düzeltilmiş yanlış" },
+        correctChoice: "B",
+        choiceFeedback: null,
+      }],
+      ["the hints", { hints: ["Sabiti karşı tarafa geçir."] }],
+      ["the question text", { description: "Yeni soru metni" }],
+    ];
 
-    it("allows REMAPPING a wrong choice to a different shared definition", async () => {
-      // Future attempts would carry def-b. Nothing about this touches the
-      // studyEvents that already recorded def-a.
+    for (const [what, patch] of attempts) {
+      it(`denies the owner changing ${what}`, async () => {
+        await seedClassAndMembers();
+        await seedQuestion("q1", classQuestion());
+        await assertFails(updateDoc(questionRef(teacherDb()), patch));
+      });
+    }
+  });
+
+  // R7/R8 — the gateway is about UPDATE. Creation is untouched, and a phase
+  // that silently broke question authoring would be worse than the gap it fixed.
+  describe("create is untouched (R7/R8)", () => {
+    it("R7 still allows the class teacher to create a question", async () => {
       await seedClassAndMembers();
-      await seedQuestion("q1", classQuestion());
       await assertSucceeds(
-        updateDoc(questionRef(teacherDb()), {
-          choiceFeedback: {
-            B: {
-              text: "Taraf değiştirirken işaret değişir.",
-              semanticDefinitionId: "def-b",
-              semanticLabel: "Negatif işaret aktarımı",
-            },
-          },
+        setDoc(questionRef(teacherDb(), "new-teacher-q"), {
+          ...classQuestion(),
+          createdAt: serverTimestamp(),
         }),
       );
     });
 
-    it("allows revising the choices and the correct answer", async () => {
+    it("R8 still allows a student member to create a class question", async () => {
       await seedClassAndMembers();
-      await seedQuestion("q1", classQuestion());
       await assertSucceeds(
-        updateDoc(questionRef(teacherDb()), {
-          choices: { A: "doğru", B: "düzeltilmiş yanlış" },
-          correctChoice: "B",
-          choiceFeedback: null,
+        setDoc(questionRef(studentDb(), "new-student-q"), {
+          ...classQuestion({ ownerId: STUDENT, posterRole: "student" }),
+          createdAt: serverTimestamp(),
         }),
       );
     });
+  });
 
-    // choiceFeedbackWithinBounds caps the NUMBER of mapped options at five —
-    // one per choice label. Per-entry text trimming is choiceFeedback.ts's job
-    // on both the write and the read, exactly as the hints rule documents for
-    // itself; rules can bound a map's size but cannot iterate it.
-    it("still enforces the choiceFeedback map size on an update", async () => {
+  // R9/R10 — reads and the delete contract are untouched.
+  describe("read and delete are untouched (R9/R10)", () => {
+    it("R9 still lets a class member read the question", async () => {
       await seedClassAndMembers();
       await seedQuestion("q1", classQuestion());
-      const entry = { text: "Taraf değiştirirken işaret değişir.", semanticDefinitionId: "def-a" };
-      await assertFails(
-        updateDoc(questionRef(teacherDb()), {
-          choiceFeedback: { A: entry, B: entry, C: entry, D: entry, E: entry, F: entry },
-        }),
-      );
+      await assertSucceeds(getDoc(questionRef(studentDb())));
+      await assertSucceeds(getDoc(questionRef(teacherDb())));
     });
 
-    it("allows the full five mapped options on an update", async () => {
+    it("R10 still lets the owner delete their own question", async () => {
       await seedClassAndMembers();
       await seedQuestion("q1", classQuestion());
-      const entry = { text: "Taraf değiştirirken işaret değişir.", semanticDefinitionId: "def-a" };
-      await assertSucceeds(
-        updateDoc(questionRef(teacherDb()), {
-          choiceFeedback: { A: entry, B: entry, C: entry, D: entry, E: entry },
-        }),
-      );
+      await assertSucceeds(deleteDoc(questionRef(teacherDb())));
     });
 
-    it("still enforces the hints bounds on an update", async () => {
+    it("R10 still lets the class teacher delete a student's class question", async () => {
       await seedClassAndMembers();
-      await seedQuestion("q1", classQuestion());
-      await assertFails(
-        updateDoc(questionRef(teacherDb()), { hints: ["a", "b", "c", "d", "e", "f", "g", "h"] }),
-      );
+      await seedQuestion("q1", classQuestion({ ownerId: STUDENT, posterRole: "student" }));
+      await assertSucceeds(deleteDoc(questionRef(teacherDb())));
     });
   });
 });

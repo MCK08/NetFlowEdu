@@ -14,8 +14,8 @@ import {
   startAfter,
   Timestamp,
   where,
-  runTransaction,
 } from "firebase/firestore";
+import { httpsCallable, FunctionsError } from "firebase/functions";
 
 import { parseChoicesFromUnknown, parseCorrectChoiceFromUnknown } from "@features/questions/services/multipleChoice";
 import { parseHintsFromUnknown, sanitizeHints } from "@features/questions/services/questionHints";
@@ -24,14 +24,10 @@ import {
   sanitizeChoiceFeedback,
 } from "@features/questions/services/choiceFeedback";
 import {
-  buildQuestionUpdatePatch,
-  hasQuestionRevisionConflict,
-  questionAuthoringRevision,
   QuestionRevisionPayload,
-  sanitizeQuestionRevision,
 } from "@features/questions/services/questionRevision";
 import { getCurrentUser } from "@services/firebase/auth";
-import { db } from "@services/firebase/config";
+import { db, functions } from "@services/firebase/config";
 import { ChoiceLabel, Question, QuestionChoices, QuestionPosterRole, QuestionVisibility } from "@/types/question";
 
 export interface CreateQuestionInput {
@@ -173,18 +169,20 @@ function toQuestion(id: string, data: DocumentData): Question {
 // fields. A revision is future-facing: the next learner meets the revised
 // question, and every outcome already recorded stays recorded as it was.
 //
-// CONCURRENCY (Phase 87): Question still carries no updatedAt and no version —
-// no field was added and nothing was migrated. Instead the caller passes the
-// authoring fingerprint it loaded, and the whole check happens INSIDE one
-// transaction: read, verify owner, re-derive the fingerprint from what the
-// document says right now, compare, and only then write. Read-then-compare
-// followed by a separate update would leave a window between the comparison and
-// the write; a transaction closes it.
+// CONCURRENCY AND ENFORCEMENT (Phase 88): the checks did not change, but where
+// they run did. Phase 87 ran ownership, staleness and sanitisation inside a
+// CLIENT transaction, which protected this path and nothing else — Phase 87
+// proved an owner could PATCH the document directly and skip all three. So this
+// function is now a thin wrapper over the `updateQuestionRevision` callable,
+// and firestore.rules deny client updates to questions outright.
 //
-// The fingerprint covers only the five authoring fields below. A counter moving
-// because a learner answered, or a shared definition being renamed elsewhere,
-// changes nothing in that projection and therefore never reads as a competing
-// edit.
+// Nothing below decides anything. The server re-derives the fingerprint from
+// the document at commit time, re-runs every sanitiser, and validates any newly
+// referenced shared definition. The client still sanitises for UX, never as the
+// authority.
+//
+// Question still carries no updatedAt and no version: no field was added and
+// nothing was migrated.
 
 export type QuestionUpdateErrorCode =
   | "unauthenticated"
@@ -193,7 +191,18 @@ export type QuestionUpdateErrorCode =
   /** Phase 87 — the authoring state moved since this editor loaded it. Its own
    *  product state: not a permission problem, not a network problem, and not a
    *  validation problem, so it is never collapsed into one of those. */
-  | "revision-conflict";
+  | "revision-conflict"
+  /** Phase 88 — the server refused the payload itself: too few options, no
+   *  correct answer, or a shared definition that is missing, out of scope or
+   *  archived. Distinct from a conflict, which is about timing, not content. */
+  | "invalid-revision"
+  /** Phase 88 — the gateway could not be reached or failed unexpectedly. */
+  | "unavailable";
+
+/** Mirrors REVISION_CONFLICT_REASON in
+ *  functions/src/questions/updateQuestionRevision.ts. Matched on rather than
+ *  the message so translating the copy cannot break conflict detection. */
+export const REVISION_CONFLICT_REASON = "revision-conflict";
 
 export class QuestionUpdateError extends Error {
   constructor(public readonly code: QuestionUpdateErrorCode) {
@@ -202,17 +211,15 @@ export class QuestionUpdateError extends Error {
   }
 }
 
-/** Revises one question the signed-in user owns. Returns the question as it
- *  now reads back from Firestore.
+/** Revises one question the signed-in user owns, through the authoritative
+ *  server gateway. Returns the question as it now reads back from Firestore.
  *
- *  One transactional read + one transactional write, then one read to return
- *  canonical state — never a listener, never another collection.
+ *  One callable invocation. The server performs the transaction; this client
+ *  performs no question write at all, and could not: the rules refuse it.
  *
- *  `expectedRevision` is Phase 87's optimistic-concurrency token: the
- *  fingerprint of the authoring state the caller loaded. Supply it and a save
- *  built on stale state is refused instead of silently overwriting a newer one.
- *  Omit it and the previous last-write-wins behaviour is unchanged, which is
- *  what keeps every existing caller working. */
+ *  `expectedRevision` is the fingerprint of the authoring state this editor
+ *  loaded. The server compares it against the document at commit time and
+ *  refuses a stale draft rather than letting it overwrite a newer save. */
 export async function updateQuestion(
   questionId: string,
   payload: QuestionRevisionPayload,
@@ -220,63 +227,52 @@ export async function updateQuestion(
 ): Promise<Question> {
   const user = getCurrentUser();
   if (!user) throw new QuestionUpdateError("unauthenticated");
+  if (!options?.expectedRevision) {
+    // Not a fallback to last-write-wins: without a fingerprint there is nothing
+    // for the server to compare, so the call is refused here rather than
+    // silently becoming an unguarded overwrite.
+    throw new QuestionUpdateError("revision-conflict");
+  }
 
-  const ref = doc(db, "questions", questionId);
+  const callable = httpsCallable<
+    { questionId: string; expectedRevision: string; revision: QuestionRevisionPayload },
+    { revision: string }
+  >(functions, "updateQuestionRevision");
 
-  // Everything that decides whether this write is allowed happens inside the
-  // transaction, against the document as it is AT COMMIT TIME.
-  await runTransaction(db, async (transaction) => {
-    const snapshot = await transaction.get(ref);
-    if (!snapshot.exists()) throw new QuestionUpdateError("not-found");
-
-    const current = toQuestion(snapshot.id, snapshot.data());
-    // The rules are the authority and would refuse a non-owner regardless; this
-    // gives the caller a clear answer instead of a rejected write. A matching
-    // fingerprint grants nothing — ownership is checked first and separately.
-    if (current.ownerId !== user.uid) throw new QuestionUpdateError("not-owner");
-
-    if (
-      options?.expectedRevision !== undefined &&
-      hasQuestionRevisionConflict(options.expectedRevision, questionAuthoringRevision(current))
-    ) {
-      throw new QuestionUpdateError("revision-conflict");
-    }
-
-    // Sanitised again on the way in, exactly as createQuestion does, so a
-    // caller that hands over an un-sanitised payload still cannot persist a note
-    // on the correct answer, a note on an absent option, or an over-long hint.
-    const clean = sanitizeQuestionRevision({
-      description: payload.description,
-      choices: payload.choices ?? {},
-      correctChoice: payload.correctChoice,
-      feedback: Object.fromEntries(
-        Object.entries(payload.choiceFeedback ?? {}).map(([label, entry]) => [
-          label,
-          {
-            text: entry.text,
-            semanticDefinitionId: entry.semanticDefinitionId,
-            semanticLabel: entry.semanticLabel,
-            conceptKey: entry.conceptKey,
-          },
-        ]),
-      ),
-      hints: payload.hints,
+  try {
+    await callable({
+      questionId,
+      expectedRevision: options.expectedRevision,
+      // Only the five authoring fields exist on this type, so there is no shape
+      // in which a caller could smuggle ownerId, classId or a counter — and the
+      // server reads only those five regardless.
+      revision: payload,
     });
+  } catch (error) {
+    throw new QuestionUpdateError(mapCallableError(error));
+  }
 
-    // Spread into a fresh object literal ONLY so update's overload resolves;
-    // the shape is the allowlist and nothing else (asserted by unit test).
-    const patch = buildQuestionUpdatePatch(clean);
-    transaction.update(ref, {
-      description: patch.description,
-      choices: patch.choices,
-      correctChoice: patch.correctChoice,
-      choiceFeedback: patch.choiceFeedback,
-      hints: patch.hints,
-    });
-  });
+  const updated = await getDoc(doc(db, "questions", questionId));
+  if (!updated.exists()) throw new QuestionUpdateError("not-found");
+  return toQuestion(updated.id, updated.data());
+}
 
-  const updated = await getDoc(ref);
-  return toQuestion(updated.id, updated.data() ?? {});
+/** Maps the callable's typed failure onto this service's own error model.
+ *
+ *  A stale draft must stay distinguishable from a refusal and from a network
+ *  problem, so the conflict is matched on the marker the server puts in
+ *  `details` rather than on a message a translation could change. */
+function mapCallableError(error: unknown): QuestionUpdateErrorCode {
+  const code = (error as FunctionsError | undefined)?.code;
+  const details = (error as FunctionsError | undefined)?.details as
+    | { reason?: string }
+    | undefined;
+  if (details?.reason === REVISION_CONFLICT_REASON) return "revision-conflict";
+  if (code === "functions/unauthenticated") return "unauthenticated";
+  if (code === "functions/not-found") return "not-found";
+  if (code === "functions/permission-denied") return "not-owner";
+  if (code === "functions/invalid-argument") return "invalid-revision";
+  return "unavailable";
 }
 
 export async function getQuestionById(questionId: string): Promise<Question | null> {

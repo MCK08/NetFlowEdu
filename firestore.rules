@@ -315,16 +315,30 @@ service cloud.firestore {
       // freeze list in Phase 9.1 alongside the fields themselves, so an
       // owner's own edit (e.g. correcting subject/description) can never
       // also smuggle in a posterRole change.
-      allow update: if isOwner(resource.data.ownerId)
-                    && hintsWithinBounds(request.resource.data)
-                    && choiceFeedbackWithinBounds(request.resource.data)
-                    && request.resource.data.ownerId == resource.data.ownerId
-                    && request.resource.data.visibility == resource.data.visibility
-                    && request.resource.data.classId == resource.data.classId
-                    && request.resource.data.posterRole == resource.data.posterRole
-                    && request.resource.data.answerCount == resource.data.answerCount
-                    && request.resource.data.likeCount == resource.data.likeCount
-                    && request.resource.data.commentCount == resource.data.commentCount;
+      // Phase 88 — no client may update a question, including its owner.
+      //
+      // WHY THIS IS NOT A PERMISSION REMOVAL
+      //
+      // An owner may still revise their question; they do it through the
+      // `updateQuestionRevision` callable, which runs on the Admin SDK and is
+      // therefore unaffected by this line. What they may no longer do is reach
+      // the document directly and skip what that callable enforces: the
+      // ownership re-check, the stale-draft comparison, the Phase 72/77/80
+      // sanitisers, and the scope/archive validation on a newly referenced
+      // shared definition. Phase 87 built those checks but could only apply
+      // them to its own code path, and proved an owner could PATCH around
+      // them — this is the half that closes.
+      //
+      // WHY `false` IS THE NARROWEST RULE, NOT THE BLUNTEST
+      //
+      // A full audit of every client write to `questions/{id}` found exactly
+      // two: `addDoc` (create, below/above) and the revision transaction that
+      // has now moved server-side. There is no third legitimate client update
+      // to preserve, so a narrower rule would only be narrower in appearance.
+      // The three engagement counters were never client-writable either — they
+      // are maintained by onAnswerCreate, toggleQuestionLike and
+      // commentCounters, all Admin SDK, all unaffected by this.
+      allow update: if false;
 
       // Owner can always delete their own (student or teacher). Org admin,
       // as before, can delete anything in their org. A teacher can delete

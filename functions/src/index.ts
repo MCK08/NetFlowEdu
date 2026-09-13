@@ -36,5 +36,8 @@ export {
 export { markAllNotificationsRead, markNotificationRead } from "./notifications";
 export { recordStudyOutcome, setStudyDailyGoal, removeStudyItem } from "./study";
 export { submitQuestionCommentForModeration, submitAnswerForModeration } from "./moderation";
+// Phase 88 — the authoritative question-revision gateway. Client writes to a
+// question's authoring fields are denied by firestore.rules; this is the path.
+export { updateQuestionRevision } from "./questions";
 
-// Later phases will export from ./questions and ./review.
+// Later phases will export from ./review.
