@@ -172,15 +172,71 @@ export function sanitizeQuestionRevision(draft: QuestionRevisionDraft): Question
   };
 }
 
+/** Phase 87 — the MUTABLE AUTHORING PROJECTION: the question reduced to exactly
+ *  the five fields `updateQuestion` is allowed to write, in canonical form.
+ *
+ *  Deliberately routed through the same draft-then-sanitise path a real edit
+ *  takes, rather than reading the five raw document fields. Two questions that
+ *  would persist identically therefore project identically, and a document that
+ *  happens to hold an un-sanitised legacy shape projects to what saving it
+ *  would actually store — which is the only comparison a concurrency check can
+ *  honestly make.
+ *
+ *  Everything else about the document is excluded ON PURPOSE: ownerId, classId,
+ *  visibility, posterRole, subject, topic, gradeLevel, imageUrl, createdAt and
+ *  the three engagement counters. None of them is editable here, so a change to
+ *  one must never look like a competing edit. */
+export function projectQuestionAuthoringState(question: Question): QuestionRevisionPayload {
+  return sanitizeQuestionRevision(createQuestionRevisionDraft(question));
+}
+
+/** A deterministic, key-order-independent rendering of the authoring
+ *  projection.
+ *
+ *  Object key order is not part of a question's meaning, and Firestore makes no
+ *  promise about it, so a naive JSON.stringify could report a conflict between
+ *  two byte-identical questions. Every object is emitted with sorted keys and
+ *  arrays keep their own order, which IS meaningful for hints. */
+function canonicalize(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    const sorted: Record<string, unknown> = {};
+    for (const key of Object.keys(record).sort()) sorted[key] = canonicalize(record[key]);
+    return sorted;
+  }
+  return value;
+}
+
+export function canonicalizeQuestionAuthoringState(payload: QuestionRevisionPayload): string {
+  return JSON.stringify(canonicalize(payload));
+}
+
+/** Phase 87 — the optimistic-concurrency token for one question's authoring
+ *  state.
+ *
+ *  A PRODUCT token, not a security one: it exists so a stale editor cannot
+ *  silently overwrite a newer save, and it makes no cryptographic claim. It is
+ *  never persisted, never migrated, never shown to a teacher, and carries no
+ *  authority — firestore.rules remain the only thing deciding who may write. */
+export function questionAuthoringRevision(question: Question): string {
+  return canonicalizeQuestionAuthoringState(projectQuestionAuthoringState(question));
+}
+
+/** Whether the authoring state moved under a stale editor. */
+export function hasQuestionRevisionConflict(expected: string, current: string): boolean {
+  return expected !== current;
+}
+
 /** Whether saving `draft` would change anything about `question`.
  *
  *  Compared on the SANITISED payload, not the raw draft, so trailing
  *  whitespace, a blank hint box or a note on an option that was never filled
  *  in do not count as edits — they would not reach the document either. */
 export function isRevisionDirty(question: Question, draft: QuestionRevisionDraft): boolean {
-  const next = sanitizeQuestionRevision(draft);
-  const current = sanitizeQuestionRevision(createQuestionRevisionDraft(question));
-  return JSON.stringify(next) !== JSON.stringify(current);
+  const next = canonicalizeQuestionAuthoringState(sanitizeQuestionRevision(draft));
+  const current = canonicalizeQuestionAuthoringState(projectQuestionAuthoringState(question));
+  return next !== current;
 }
 
 /** Which options may carry a note: the present ones that are not the correct
@@ -238,6 +294,16 @@ export function buildQuestionUpdatePatch(payload: QuestionRevisionPayload): Ques
  *  makes and the one it refuses to make. */
 export const REVISION_TRUST_NOTE =
   "Bu düzenleme yeni yanıtlar için geçerlidir. Önceki öğrenme kayıtları değişmez.";
+
+/** Phase 87 — what a teacher reads when their draft has been overtaken.
+ *
+ *  A synchronisation fact, said without blame and without jargon: no status
+ *  code, no "conflict" as a technical term, no mention of transactions or
+ *  fingerprints. It says what happened, what was prevented, and what to do. */
+export const CONFLICT_TITLE = "Bu soru başka bir oturumda güncellendi";
+
+export const CONFLICT_BODY =
+  "Değişikliklerinin daha yeni içeriğin üzerine yazılmasını önledik. Buradaki taslağın duruyor; devam etmek için güncel sürümü yükle.";
 
 /** Added when the shared meaning behind an option was changed or removed. */
 export const REMAP_TRUST_NOTE =

@@ -6,6 +6,7 @@ import {
   createQuestionRevisionDraft,
   isRevisionDirty,
   isSemanticMappingChanged,
+  questionAuthoringRevision,
   QuestionRevisionDraft,
   sanitizeQuestionRevision,
   validateQuestionRevision,
@@ -39,6 +40,19 @@ import { Question } from "@/types/question";
 // Every keystroke lands in local state. Cancel discards it. Only an explicit
 // save calls updateQuestion, once, guarded by the same SubmitLock the composers
 // use so a double tap cannot produce two updates.
+//
+// STALE DRAFTS (Phase 87)
+//
+// The authoring fingerprint of the question as loaded is held alongside it and
+// sent with the save. If the document's authoring state moved in between — the
+// same owner saving from another device or tab — the service refuses and this
+// hook enters a conflict state that BLOCKS saving without touching the draft.
+// The teacher keeps what they typed and chooses when to load the newer version.
+//
+// There is deliberately no merge and no force. Question authoring fields
+// interact — a correct answer decides which notes may exist, and a note carries
+// a semantic mapping — so stitching two drafts together could produce a state
+// neither author wrote.
 
 export type QuestionRevisionStatus =
   | "loading"
@@ -59,6 +73,10 @@ export function useQuestionRevision(params: { classId: string | undefined; quest
   const [status, setStatus] = useState<QuestionRevisionStatus>("loading");
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  /** The authoring fingerprint of the question this editor was opened on.
+   *  Internal: never rendered, never spoken, never persisted. */
+  const [expectedRevision, setExpectedRevision] = useState<string | null>(null);
+  const [hasConflict, setHasConflict] = useState(false);
 
   const requestIdRef = useRef(0);
   const submitLock = useSubmitLock();
@@ -90,6 +108,9 @@ export function useQuestionRevision(params: { classId: string | undefined; quest
       setQuestion(loaded);
       setDefinitions(vocabulary);
       setDraft(createQuestionRevisionDraft(loaded));
+      setExpectedRevision(questionAuthoringRevision(loaded));
+      setHasConflict(false);
+      setSaveError(null);
       setStatus("ready");
     } catch {
       if (!shouldApplyStaleResponse(requestId, requestIdRef.current)) return;
@@ -105,6 +126,9 @@ export function useQuestionRevision(params: { classId: string | undefined; quest
   const updateDraft = useCallback((next: (draft: QuestionRevisionDraft) => QuestionRevisionDraft) => {
     setSaveError(null);
     setDraft((current) => (current ? next(current) : current));
+    // Deliberately does NOT clear `hasConflict`. Editing further does not make
+    // the draft any less stale, and letting a keystroke dismiss the notice
+    // would re-open exactly the silent-overwrite window this phase closes.
   }, []);
 
   const validationError = useMemo(() => (draft ? validateQuestionRevision(draft) : null), [draft]);
@@ -118,6 +142,9 @@ export function useQuestionRevision(params: { classId: string | undefined; quest
    *  written (locked, invalid, unchanged, or refused). */
   const save = useCallback(async (): Promise<Question | null> => {
     if (!question || !draft || status !== "ready") return null;
+    // A stale draft cannot be saved at all until the teacher loads the newer
+    // version. There is no force path.
+    if (hasConflict) return null;
     if (validationError) {
       setSaveError(validationError);
       return null;
@@ -126,14 +153,25 @@ export function useQuestionRevision(params: { classId: string | undefined; quest
     setStatus("saving");
     setSaveError(null);
     try {
-      const updated = await updateQuestion(question.id, sanitizeQuestionRevision(draft));
+      const updated = await updateQuestion(question.id, sanitizeQuestionRevision(draft), {
+        expectedRevision: expectedRevision ?? undefined,
+      });
       setQuestion(updated);
       setDraft(createQuestionRevisionDraft(updated));
+      // The saved state is the new baseline, so a second edit in the same
+      // sitting is measured against what was just written.
+      setExpectedRevision(questionAuthoringRevision(updated));
       setStatus("saved");
       return updated;
     } catch (error) {
       setStatus("ready");
       if (error instanceof QuestionUpdateError) {
+        if (error.code === "revision-conflict") {
+          // The draft is kept exactly as typed. Only Save is blocked.
+          setHasConflict(true);
+          setSaveError(null);
+          return null;
+        }
         setSaveError(
           error.code === "not-owner"
             ? "Bu soruyu yalnızca yazarı düzenleyebilir."
@@ -148,7 +186,7 @@ export function useQuestionRevision(params: { classId: string | undefined; quest
     } finally {
       submitLock.release();
     }
-  }, [draft, question, status, submitLock, validationError]);
+  }, [draft, expectedRevision, hasConflict, question, status, submitLock, validationError]);
 
   return {
     status,
@@ -163,5 +201,11 @@ export function useQuestionRevision(params: { classId: string | undefined; quest
     mappingChanged,
     save,
     retry: load,
+    /** Phase 87 — true while this editor holds a draft built on superseded
+     *  authoring state. Save stays blocked until `reloadLatest` runs. */
+    hasConflict,
+    /** Discards the stale draft for the current document, refreshes the
+     *  fingerprint and clears the conflict. Reads; never writes. */
+    reloadLatest: load,
   };
 }

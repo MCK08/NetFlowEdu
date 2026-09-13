@@ -24,12 +24,15 @@ import {
   hintDraftBoxes,
   MAX_QUESTION_DESCRIPTION_LENGTH,
   REMAP_TRUST_NOTE,
+  CONFLICT_BODY,
+  CONFLICT_TITLE,
   REVISION_TRUST_NOTE,
 } from "@features/questions/services/questionRevision";
 import { colors } from "@theme/colors";
 import { contentWidth } from "@theme/layout";
 import { radius } from "@theme/radius";
 import { iconSize, inputFontSize, minTouchTarget } from "@theme/sizes";
+import { joinSpokenLabel } from "@utils/spokenLabel";
 import { spacing } from "@theme/spacing";
 import { themedStyles } from "@theme/themeRuntime";
 import { useThemeSubscription } from "@theme/ThemeProvider";
@@ -82,6 +85,7 @@ export function QuestionRevisionScreen({ classId, questionId }: QuestionRevision
     saveError,
     isDirty,
     mappingChanged,
+    hasConflict,
   } = revision;
 
   // Hint boxes are padded once per loaded question so an author sees the
@@ -179,7 +183,9 @@ export function QuestionRevisionScreen({ classId, questionId }: QuestionRevision
   const eligible = feedbackEligibleLabels(draft);
   const hasAnyChoice = CHOICE_LABELS.some((label) => Boolean(draft.choices[label]?.trim()));
   const isSaving = status === "saving";
-  const canSave = isDirty && !validationError && !isSaving;
+  // Phase 87 — a stale draft cannot be saved at all. There is no force path:
+  // the only way forward is loading the newer version and deciding again.
+  const canSave = isDirty && !validationError && !isSaving && !hasConflict;
 
   return (
     <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
@@ -367,6 +373,42 @@ export function QuestionRevisionScreen({ classId, questionId }: QuestionRevision
             </View>
           ) : null}
 
+          {/* Phase 87 — the authoring state moved under this draft.
+              A synchronisation fact, not an error and not anyone's mistake, so
+              it reads as a contained notice rather than a red failure. The
+              draft above stays exactly as typed; only Save is blocked. */}
+          {hasConflict ? (
+            <View
+              style={styles.conflict}
+              accessible
+              accessibilityLiveRegion="polite"
+              accessibilityLabel={joinSpokenLabel([
+                CONFLICT_TITLE,
+                CONFLICT_BODY,
+                "Kaydetme şimdilik kapalı.",
+              ])}
+            >
+              <Ionicons name="git-branch-outline" size={iconSize.sm} color={colors.textPrimary} />
+              <View style={styles.conflictBody}>
+                <Text style={styles.conflictTitle}>{CONFLICT_TITLE}</Text>
+                <Text style={styles.trustText}>{CONFLICT_BODY}</Text>
+                <Pressable
+                  onPress={() => {
+                    setHintBoxes(null);
+                    void revision.reloadLatest();
+                  }}
+                  style={styles.conflictAction}
+                  accessibilityRole="button"
+                  accessibilityLabel="Güncel sürümü yükle"
+                  accessibilityHint="Buradaki taslağın güncel içerikle değiştirilir"
+                >
+                  <Ionicons name="refresh-outline" size={iconSize.xs} color={colors.primary} />
+                  <Text style={styles.conflictActionLabel}>Güncel sürümü yükle</Text>
+                </Pressable>
+              </View>
+            </View>
+          ) : null}
+
           {validationError || saveError ? (
             <Text style={styles.error} accessibilityLiveRegion="polite">
               {saveError ?? validationError}
@@ -445,6 +487,27 @@ const styles = themedStyles(() => ({
     padding: spacing.sm,
   },
   trustText: { ...typography.caption, color: colors.textPrimary, flex: 1 },
+  // Contained, calm, and built from the same tokens as the trust note above —
+  // a synchronisation notice, never a red alarm.
+  conflict: {
+    flexDirection: "row" as const,
+    alignItems: "flex-start" as const,
+    gap: spacing.xs,
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.sm,
+  },
+  conflictBody: { flex: 1, gap: spacing.xxs },
+  conflictTitle: { ...typography.bodyStrong, color: colors.textPrimary },
+  conflictAction: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: spacing.xxs,
+    minHeight: minTouchTarget,
+  },
+  conflictActionLabel: { ...typography.bodyStrong, color: colors.primary },
   contextBlock: { gap: 2 },
   contextLine: { ...typography.bodyStrong, color: colors.textPrimary },
   contextNote: { ...typography.caption, color: colors.textTertiary },

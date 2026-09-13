@@ -13,8 +13,8 @@ import {
   serverTimestamp,
   startAfter,
   Timestamp,
-  updateDoc,
   where,
+  runTransaction,
 } from "firebase/firestore";
 
 import { parseChoicesFromUnknown, parseCorrectChoiceFromUnknown } from "@features/questions/services/multipleChoice";
@@ -25,6 +25,8 @@ import {
 } from "@features/questions/services/choiceFeedback";
 import {
   buildQuestionUpdatePatch,
+  hasQuestionRevisionConflict,
+  questionAuthoringRevision,
   QuestionRevisionPayload,
   sanitizeQuestionRevision,
 } from "@features/questions/services/questionRevision";
@@ -149,7 +151,7 @@ function toQuestion(id: string, data: DocumentData): Question {
 //
 // WHY THIS IS NOT A GENERIC PATCH
 //
-// A function that accepted `Partial<Question>` and spread it into updateDoc
+// A function that accepted `Partial<Question>` and spread it into the write
 // would be one careless call site away from writing ownerId, classId or a
 // counter. firestore.rules would reject that write — and the failure would
 // surface as a confusing permission error on an innocent-looking edit. This
@@ -171,11 +173,27 @@ function toQuestion(id: string, data: DocumentData): Question {
 // fields. A revision is future-facing: the next learner meets the revised
 // question, and every outcome already recorded stays recorded as it was.
 //
-// CONCURRENCY, honestly: Question carries no updatedAt and no version, so two
-// owners' devices editing the same question are last-write-wins on the five
-// fields below. Not hidden behind a precondition this schema does not have.
+// CONCURRENCY (Phase 87): Question still carries no updatedAt and no version —
+// no field was added and nothing was migrated. Instead the caller passes the
+// authoring fingerprint it loaded, and the whole check happens INSIDE one
+// transaction: read, verify owner, re-derive the fingerprint from what the
+// document says right now, compare, and only then write. Read-then-compare
+// followed by a separate update would leave a window between the comparison and
+// the write; a transaction closes it.
+//
+// The fingerprint covers only the five authoring fields below. A counter moving
+// because a learner answered, or a shared definition being renamed elsewhere,
+// changes nothing in that projection and therefore never reads as a competing
+// edit.
 
-export type QuestionUpdateErrorCode = "unauthenticated" | "not-found" | "not-owner";
+export type QuestionUpdateErrorCode =
+  | "unauthenticated"
+  | "not-found"
+  | "not-owner"
+  /** Phase 87 — the authoring state moved since this editor loaded it. Its own
+   *  product state: not a permission problem, not a network problem, and not a
+   *  validation problem, so it is never collapsed into one of those. */
+  | "revision-conflict";
 
 export class QuestionUpdateError extends Error {
   constructor(public readonly code: QuestionUpdateErrorCode) {
@@ -187,51 +205,74 @@ export class QuestionUpdateError extends Error {
 /** Revises one question the signed-in user owns. Returns the question as it
  *  now reads back from Firestore.
  *
- *  Exactly one read (ownership), exactly one write (the patch), then one read
- *  to return canonical state — never a listener, never another collection. */
+ *  One transactional read + one transactional write, then one read to return
+ *  canonical state — never a listener, never another collection.
+ *
+ *  `expectedRevision` is Phase 87's optimistic-concurrency token: the
+ *  fingerprint of the authoring state the caller loaded. Supply it and a save
+ *  built on stale state is refused instead of silently overwriting a newer one.
+ *  Omit it and the previous last-write-wins behaviour is unchanged, which is
+ *  what keeps every existing caller working. */
 export async function updateQuestion(
   questionId: string,
   payload: QuestionRevisionPayload,
+  options?: { expectedRevision?: string },
 ): Promise<Question> {
   const user = getCurrentUser();
   if (!user) throw new QuestionUpdateError("unauthenticated");
 
   const ref = doc(db, "questions", questionId);
-  const snapshot = await getDoc(ref);
-  if (!snapshot.exists()) throw new QuestionUpdateError("not-found");
-  const current = toQuestion(snapshot.id, snapshot.data());
-  if (current.ownerId !== user.uid) throw new QuestionUpdateError("not-owner");
 
-  // Sanitised again on the way in, exactly as createQuestion does, so a
-  // caller that hands over an un-sanitised payload still cannot persist a note
-  // on the correct answer, a note on an absent option, or an over-long hint.
-  const clean = sanitizeQuestionRevision({
-    description: payload.description,
-    choices: payload.choices ?? {},
-    correctChoice: payload.correctChoice,
-    feedback: Object.fromEntries(
-      Object.entries(payload.choiceFeedback ?? {}).map(([label, entry]) => [
-        label,
-        {
-          text: entry.text,
-          semanticDefinitionId: entry.semanticDefinitionId,
-          semanticLabel: entry.semanticLabel,
-          conceptKey: entry.conceptKey,
-        },
-      ]),
-    ),
-    hints: payload.hints,
-  });
+  // Everything that decides whether this write is allowed happens inside the
+  // transaction, against the document as it is AT COMMIT TIME.
+  await runTransaction(db, async (transaction) => {
+    const snapshot = await transaction.get(ref);
+    if (!snapshot.exists()) throw new QuestionUpdateError("not-found");
 
-  // Spread into a fresh object literal ONLY so updateDoc's overload resolves;
-  // the shape is the allowlist and nothing else (asserted by unit test).
-  const patch = buildQuestionUpdatePatch(clean);
-  await updateDoc(ref, {
-    description: patch.description,
-    choices: patch.choices,
-    correctChoice: patch.correctChoice,
-    choiceFeedback: patch.choiceFeedback,
-    hints: patch.hints,
+    const current = toQuestion(snapshot.id, snapshot.data());
+    // The rules are the authority and would refuse a non-owner regardless; this
+    // gives the caller a clear answer instead of a rejected write. A matching
+    // fingerprint grants nothing — ownership is checked first and separately.
+    if (current.ownerId !== user.uid) throw new QuestionUpdateError("not-owner");
+
+    if (
+      options?.expectedRevision !== undefined &&
+      hasQuestionRevisionConflict(options.expectedRevision, questionAuthoringRevision(current))
+    ) {
+      throw new QuestionUpdateError("revision-conflict");
+    }
+
+    // Sanitised again on the way in, exactly as createQuestion does, so a
+    // caller that hands over an un-sanitised payload still cannot persist a note
+    // on the correct answer, a note on an absent option, or an over-long hint.
+    const clean = sanitizeQuestionRevision({
+      description: payload.description,
+      choices: payload.choices ?? {},
+      correctChoice: payload.correctChoice,
+      feedback: Object.fromEntries(
+        Object.entries(payload.choiceFeedback ?? {}).map(([label, entry]) => [
+          label,
+          {
+            text: entry.text,
+            semanticDefinitionId: entry.semanticDefinitionId,
+            semanticLabel: entry.semanticLabel,
+            conceptKey: entry.conceptKey,
+          },
+        ]),
+      ),
+      hints: payload.hints,
+    });
+
+    // Spread into a fresh object literal ONLY so update's overload resolves;
+    // the shape is the allowlist and nothing else (asserted by unit test).
+    const patch = buildQuestionUpdatePatch(clean);
+    transaction.update(ref, {
+      description: patch.description,
+      choices: patch.choices,
+      correctChoice: patch.correctChoice,
+      choiceFeedback: patch.choiceFeedback,
+      hints: patch.hints,
+    });
   });
 
   const updated = await getDoc(ref);
