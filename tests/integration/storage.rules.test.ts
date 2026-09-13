@@ -210,6 +210,35 @@ describe("storage.rules — moderation/pending/{ownerId}/{submissionId}/{fileNam
   });
 });
 
+describe("storage.rules — moderation/review/{submissionId}/{fileName} (Phase 97)", () => {
+  // The class teacher's review copy. The ONLY way in is the download token the
+  // review callable mints for the authorized teacher; no client identity —
+  // not the author, not the teacher, not a classmate — may read or write it.
+  const SUBMISSION_ID = `${OWNER_UID}_op-abcdefgh`;
+  const REVIEW_PATH = `moderation/review/${SUBMISSION_ID}/upload.jpg`;
+
+  beforeEach(async () => {
+    await seedApproved(REVIEW_PATH);
+  });
+
+  it.each([
+    ["the author", OWNER_UID],
+    ["a teacher", "teacher-uid"],
+    ["a classmate", "classmate-uid"],
+  ])("denies %s reading a review copy directly", async (_label, uid) => {
+    await assertFails(storageFor(uid).ref(REVIEW_PATH).getDownloadURL());
+  });
+
+  it("denies an unauthenticated read", async () => {
+    await assertFails(storageFor(null).ref(REVIEW_PATH).getDownloadURL());
+  });
+
+  it("denies every client write", async () => {
+    await assertFails(put(storageFor(OWNER_UID).ref(REVIEW_PATH)));
+    await assertFails(put(storageFor("teacher-uid").ref(REVIEW_PATH)));
+  });
+});
+
 describe("storage.rules — questions/{accessLevel}/{ownerId}/{fileName}", () => {
   const PRIVATE_QUESTION_PATH = `questions/private/${OWNER_UID}/q1.jpg`;
   const PUBLIC_QUESTION_PATH = `questions/public/${OWNER_UID}/q1.jpg`;

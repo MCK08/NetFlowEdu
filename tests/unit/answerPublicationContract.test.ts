@@ -17,14 +17,13 @@ import {
 // turned into an outcome, and the tempting bug — treating unavailable as clean
 // so answers stop stalling — would look like a fix.
 //
-// THE OPERABILITY HALF: manual_review is currently TERMINAL. Phase 96 proved it
-// at runtime — no reviewer callable is deployed, and a teacher, the author and
-// an outsider all receive 403 patching a submission's status. That is not a
-// defect in these tests' eyes; it is a product decision that has not been made
-// (see PHASE96_VERIFIED_ANSWER_PUBLICATION_OPERABILITY.md). What these tests do
-// is make sure the day it changes, it changes deliberately: if a reviewer path
-// appears, the last block fails and whoever added it has to come here and say
-// so.
+// THE OPERABILITY HALF: Phase 96 proved manual_review was TERMINAL — no
+// reviewer callable, and a teacher, the author and an outsider all 403 patching
+// a submission's status — and pinned that absence so the day it changed, it
+// changed deliberately. Phase 97 made the product decision: the submission's
+// canonical class teacher reviews, and no one else. The second block now pins
+// THAT decision — who, through which path, sharing which finalizer — so a
+// wider reviewer cannot arrive by accident either.
 //
 // Modelled on answerCountContract.test.ts and firestoreIndexes.test.ts — some
 // invariants live in the absence of code, and absences are what review forgets
@@ -108,7 +107,7 @@ describe("a provider that cannot answer never publishes", () => {
   });
 });
 
-describe("manual_review is terminal until a product decision says otherwise", () => {
+describe("manual_review is resolved by the class teacher, and only by them (Phase 97)", () => {
   const FUNCTIONS_SRC = path.join(__dirname, "..", "..", "functions", "src");
 
   function readAll(dir: string): { file: string; text: string }[] {
@@ -126,36 +125,91 @@ describe("manual_review is terminal until a product decision says otherwise", ()
 
   const sources = readAll(FUNCTIONS_SRC).map((s) => ({ ...s, text: code(s.text) }));
   const rel = (file: string) => path.relative(path.join(__dirname, "..", ".."), file);
+  const review = fs.readFileSync(path.join(FUNCTIONS_SRC, "review", "answerReview.ts"), "utf8");
 
-  it("nothing outside the pure state module performs a moderation transition", () => {
-    // If this fails, a review path has arrived. Before shipping it, decide and
-    // write down: WHO may review (no moderation role exists today — the enum is
-    // student / teacher / organization_admin / platform_admin), whether an
-    // author may review their own submission, and whether approval reuses the
-    // SAME publication logic as the automated path rather than a second one.
+  it("exactly one module outside the state machine performs a moderation transition: the review path", () => {
+    // Phase 96 pinned this list as empty. Phase 97 made the product decision
+    // it was waiting for — the class's canonical teacher reviews — and this is
+    // the one place the decision is applied. A second caller means a second
+    // reviewer, which must come back here and say who.
     const callers = sources.filter(
       (s) => /applyTransition\(/.test(s.text) && !s.file.endsWith("moderationStates.ts"),
     );
-    expect(callers.map((s) => rel(s.file)).filter((f) => !f.endsWith("index.ts"))).toEqual([]);
+    expect(callers.map((s) => rel(s.file)).filter((f) => !f.endsWith("index.ts"))).toEqual([
+      "functions/src/review/answerReview.ts",
+    ]);
   });
 
-  it("no reviewer callable is exported", () => {
+  it("the reviewer is the canonical class teacher, resolved from classes/{classId}.teacherId", () => {
+    expect(review).toContain('collection("classes").doc(classId)');
+    expect(review).toContain("teacherId !== callerUid");
+    // No role check anywhere in the review path: not teacher-the-role, not
+    // organization_admin, not platform_admin.
+    expect(code(review)).not.toMatch(/organization_admin|platform_admin|isOrgAdmin|isPlatformAdmin/);
+  });
+
+  it("self-review is refused even for the class teacher", () => {
+    expect(review).toContain("authorId === callerUid");
+  });
+
+  it("only manual_review is human-reviewable", () => {
+    expect(review).toContain('HUMAN_REVIEWABLE_STATES: readonly ModerationState[] = ["manual_review"]');
+  });
+
+  it("the review callables are exported and nothing accepts a reviewer, author, class or status from the client", () => {
     const index = fs.readFileSync(path.join(FUNCTIONS_SRC, "index.ts"), "utf8");
-    for (const name of ["reviewAnswerSubmission", "reviewSubmission", "approveAnswer",
-      "rejectAnswer", "moderateAnswer", "withdrawContent"]) {
-      expect(index).not.toContain(name);
+    for (const name of ["listAnswerReviewQueue", "getAnswerReviewDetail", "reviewAnswerSubmission"]) {
+      expect(index).toContain(name);
+    }
+    for (const forbidden of ["data?.reviewerId", "data?.authorId", "data?.status", "data?.ownerId", "data?.storagePath", "data?.questionId"]) {
+      expect(review).not.toContain(forbidden);
     }
   });
 
+  it("manual approval and automated approval share ONE finalizer", () => {
+    const submit = code(fs.readFileSync(path.join(FUNCTIONS_SRC, "moderation", "submitAnswer.ts"), "utf8"));
+    const manual = code(review);
+    for (const fn of ["publishApprovedAnswerObject(", "finalizeApprovedAnswer("]) {
+      expect(submit).toContain(fn);
+      expect(manual).toContain(fn);
+    }
+    // Neither path spells the answer document itself any more.
+    expect(submit).not.toContain("likeCount: 0");
+    expect(manual).not.toContain("likeCount: 0");
+    // (createQuestion spells a QUESTION's likeCount; only the answer's is at issue.)
+    const finalizer = sources
+      .filter((s) => /moderation|review/.test(rel(s.file)) && /likeCount: 0/.test(s.text))
+      .map((s) => rel(s.file));
+    expect(finalizer).toEqual(["functions/src/moderation/answerFinalization.ts"]);
+  });
+
+  it("the review path never touches counters, notifications or learning evidence", () => {
+    const manual = code(review);
+    expect(manual).not.toMatch(/answerCount|FieldValue\.increment|prepareNotification|commitNotification/);
+    expect(manual).not.toMatch(/studyEvents|studyItems|semanticDefinitions/);
+  });
+
   it("moderation submissions remain server-only for clients", () => {
-    // A reviewer must never patch status directly; if a review path is built it
-    // has to be a callable, as the rule's own comment already anticipates.
+    // A reviewer never patches status directly; the decision is a callable.
     const rules = fs.readFileSync(path.join(__dirname, "..", "..", "firestore.rules"), "utf8");
     const block = rules.slice(
       rules.indexOf("match /moderationSubmissions/{submissionId}"),
       rules.indexOf("match /moderationSubmissions/{submissionId}") + 1200,
     );
     expect(block).toContain("allow write: if false;");
+  });
+
+  it("the review queue query has its composite index", () => {
+    const indexes = JSON.parse(
+      fs.readFileSync(path.join(__dirname, "..", "..", "firestore.indexes.json"), "utf8"),
+    ) as { indexes: { collectionGroup: string; fields: { fieldPath: string; order?: string }[] }[] };
+    const match = indexes.indexes.find(
+      (i) =>
+        i.collectionGroup === "moderationSubmissions" &&
+        i.fields.map((f) => `${f.fieldPath}:${f.order}`).join(",") ===
+          "classId:ASCENDING,targetType:ASCENDING,status:ASCENDING,createdAt:ASCENDING",
+    );
+    expect(match).toBeDefined();
   });
 });
 

@@ -6,10 +6,10 @@ import { randomUUID } from "node:crypto";
 
 import { canReadQuestion } from "../social/questionAccess";
 import { isValidOperationId } from "../study/operationId";
+import { finalizeApprovedAnswer, publishApprovedAnswerObject } from "./answerFinalization";
 import {
   AnswerMethod,
   buildApprovedAnswerPath,
-  buildDownloadUrl,
   buildQuarantinePath,
   isAllowedAnswerMime,
   isOwnedQuarantinePath,
@@ -184,25 +184,27 @@ export const submitAnswerForModeration = onCall<SubmitAnswerRequest>(
     // destination is deterministic (submissionId), so doing this twice
     // overwrites one object rather than creating two, and an object with no
     // answer document pointing at it is unreachable by anyone.
+    //
+    // Phase 97 — through the SAME finalizer the class teacher's manual
+    // approval uses (answerFinalization.ts), so there is one publication
+    // algorithm, not two.
     let publishedUrl: string | null = null;
-    let approvedPath: string | null = null;
     if (canPublish(decision.state)) {
       const questionSnap = await questionRef.get();
       const visibility = String(questionSnap.data()?.visibility ?? "private");
-      approvedPath = buildApprovedAnswerPath(
-        visibility,
-        questionId,
-        caller.uid,
-        submissionId,
-        actualType,
-      );
-      const downloadToken = randomUUID();
-      await file.copy(bucket.file(approvedPath));
-      await bucket.file(approvedPath).setMetadata({
+      publishedUrl = await publishApprovedAnswerObject({
+        bucket,
+        quarantinePath,
+        approvedPath: buildApprovedAnswerPath(
+          visibility,
+          questionId,
+          caller.uid,
+          submissionId,
+          actualType,
+        ),
         contentType: actualType,
-        metadata: { firebaseStorageDownloadTokens: downloadToken },
+        downloadToken: randomUUID(),
       });
-      publishedUrl = buildDownloadUrl(bucket.name, approvedPath, downloadToken);
     }
 
     return db.runTransaction(async (tx: Transaction) => {
@@ -280,13 +282,12 @@ export const submitAnswerForModeration = onCall<SubmitAnswerRequest>(
       });
 
       if (answerRef && publishedUrl) {
-        tx.set(answerRef, {
+        finalizeApprovedAnswer(tx, answerRef, {
           questionId,
           ownerId: caller.uid,
           imageUrl: publishedUrl,
           method,
-          likeCount: 0,
-          createdAt: new Date(now),
+          now,
         });
       }
 

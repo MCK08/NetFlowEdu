@@ -119,14 +119,20 @@ describe("the precondition that makes an increment-only counter correct", () => 
   });
 
   it("the moderation state machine's `removed` transition still has no caller", () => {
-    // `approved -> removed` is declared legal, but nothing invokes
-    // applyTransition outside the pure module. If a reviewer callable ever
-    // withdraws published content, that IS an answer-removal path and the
-    // counter contract above no longer holds.
+    // `approved -> removed` is declared legal. Phase 97 added the ONE caller
+    // of applyTransition outside the pure module — the class teacher's review
+    // path — and it only ever targets `approved` or `rejected`. If it, or any
+    // later caller, ever withdraws published content, that IS an answer-
+    // removal path and the counter contract above no longer holds.
     const callers = sources.filter(
-      (s) => /applyTransition\(/.test(s.text) && !s.file.endsWith("moderationStates.ts"),
+      (s) => /applyTransition\(/.test(s.text) && !s.file.endsWith("moderationStates.ts") && !s.file.endsWith("index.ts"),
     );
-    const exportsOnly = callers.every((s) => s.file.endsWith("index.ts"));
-    expect(exportsOnly).toBe(true);
+    expect(callers.map((s) => s.file.replace(/^.*functions\/src\//, ""))).toEqual(["review/answerReview.ts"]);
+    for (const caller of callers) {
+      // No transition to removed, no answer deletion, no decrement.
+      expect(caller.text).not.toMatch(/"removed"/);
+      expect(caller.text).not.toMatch(/collection\("answers"\)[\s\S]{0,120}\.delete\(/);
+      expect(caller.text).not.toMatch(/increment\(-/);
+    }
   });
 });

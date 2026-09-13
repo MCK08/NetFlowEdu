@@ -46,6 +46,22 @@ export function isOwnedQuarantinePath(
 }
 
 /**
+ * Phase 97 — where the class teacher's review copy of a quarantined image
+ * lives while a decision is open.
+ *
+ * A separate object rather than a token on the quarantine object itself, for
+ * one reason: revocation must be provable. Deleting an object ends every URL
+ * that pointed at it, in production and in the emulator alike, whereas
+ * rewriting token metadata is honoured differently by the two. Deterministic,
+ * so re-minting replaces rather than accumulates. Storage rules deny every
+ * client read here; the only way in is the token the review callable hands to
+ * the authorized teacher.
+ */
+export function buildReviewAccessPath(submissionId: string, mime: string): string {
+  return `moderation/review/${submissionId}/upload.${extensionForMime(mime)}`;
+}
+
+/**
  * Where an APPROVED answer image is published.
  *
  * Mirrors the parent question's visibility, exactly like the pre-existing
@@ -76,6 +92,13 @@ export function buildApprovedAnswerPath(
  * server-side and only ever attached to content that has already been
  * approved.
  */
-export function buildDownloadUrl(bucket: string, path: string, token: string): string {
-  return `https://firebasestorage.googleapis.com/v0/b/${bucket}/o/${encodeURIComponent(path)}?alt=media&token=${token}`;
+export function buildDownloadUrl(
+  bucket: string,
+  path: string,
+  token: string,
+  // Phase 97 — the emulator suite serves objects from its own host; see
+  // answerFinalization.storageDownloadBase. Production callers omit it.
+  base = "https://firebasestorage.googleapis.com",
+): string {
+  return `${base}/v0/b/${bucket}/o/${encodeURIComponent(path)}?alt=media&token=${token}`;
 }

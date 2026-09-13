@@ -124,15 +124,8 @@ notified.
 
 ### The operational consequence, stated plainly
 
-**`manual_review` is currently a terminal state.** As of Phase 96 the repository
-contains no reviewer callable, no review queue, no moderation UI and no role
-designated for content review, and no client may patch a submission's status
-(verified: teacher, author and outsider all receive `403`). A submission that
-lands in `manual_review` stays there, and the answer is never published.
-
-This matters even with Vision correctly enabled, because `manual_review` is not
-only a misconfiguration outcome. `decideImageModeration` routes to it in three
-distinct situations:
+`manual_review` is **not** a misconfiguration outcome alone. `decideImageModeration`
+routes to it in three distinct situations:
 
 | Reason | When |
 |---|---|
@@ -141,23 +134,58 @@ distinct situations:
 | `uncertain` | Vision or the OCR text layer returned "review" — its intended verdict for ambiguous content |
 
 The third is normal, healthy operation. So **enabling Vision reduces how often
-answers stall; it does not eliminate it.** Until a review path exists, some
-proportion of legitimate answers will not publish.
+answers need a human; it does not eliminate it.** Automated review is what
+keeps the manual workload small; it is not a substitute for a reviewer.
 
-Deciding who may review — and building that path — is a product decision, not a
-deployment step. It is recorded in
-`PHASE96_VERIFIED_ANSWER_PUBLICATION_OPERABILITY.md`.
+### Who reviews (Phase 97)
+
+Since Phase 97, a submission in `manual_review` is resolved by **the canonical
+teacher of the submission's class** — `classes/{classId}.teacherId`, the same
+identity every other class mutation trusts. The teacher opens
+**Yanıt İncelemeleri** from the class page, sees the submitted image and the
+reason automated review stopped, and either publishes or does not. That is the
+whole permission: the teacher cannot edit the image, the text, the author, the
+question or any counter, and cannot delete a published answer.
+
+Stated as deployment facts:
+
+- **No other role reviews.** `organization_admin` and `platform_admin` have no
+  review authority; there is no moderator role. A teacher of another class has
+  none either — authority is class-scoped, not role-scoped.
+- **A provider failure never auto-approves.** Outage, timeout, disabled API,
+  malformed response and `uncertain` all wait for the class teacher.
+- **An explicit provider refusal is final.** `rejected` is terminal; the teacher
+  cannot reopen it.
+- **No client patches a submission.** `moderationSubmissions` stays
+  write-denied for every client; the decision is the `reviewAnswerSubmission`
+  callable only.
+- **Publication is one path.** Manual approval and automated approval share the
+  same finalizer, so a manually published answer is byte-for-byte the same
+  shape as an automatically published one.
+- **Deploy the index.** The review queue query needs the
+  `moderationSubmissions` composite index in `firestore.indexes.json`
+  (`classId, targetType, status, createdAt`) — `firebase deploy --only
+  firestore:indexes`.
+- **Teacher availability is the turnaround.** A class with no active teacher
+  accumulates pending answers; a Vision outage raises the volume. Neither is a
+  safety problem — nothing publishes without a decision.
+
+**Production Vision enablement itself may still need operator verification**:
+this guide describes the requirement; it does not confirm the API is enabled on
+your project. Check with `gcloud services list --enabled`.
 
 ### Local development and the emulator
 
 The emulator has no access to `vision.googleapis.com`, so every locally
-submitted answer resolves to `manual_review` and no answer is published. This is
-correct behaviour, not a broken setup, and there is deliberately **no
-emulator-only auto-approve branch** — a bypass keyed on an emulator environment
-variable is exactly the kind of thing that reaches production.
+submitted answer resolves to `manual_review` (reason `provider_unavailable`) —
+which is exactly the class-teacher review path, and the way to exercise it
+end-to-end locally: submit as a student, review as the class teacher. There is
+deliberately **no emulator-only auto-approve branch** — a bypass keyed on an
+emulator environment variable is exactly the kind of thing that reaches
+production.
 
-To exercise publication logic locally, inject a provider test double at the
-`resolveProviders` seam rather than weakening the pipeline.
+To exercise the *automated* approval branch locally, inject a provider test
+double at the `resolveProviders` seam rather than weakening the pipeline.
 
 ## 7. Native Config Files (later phases)
 

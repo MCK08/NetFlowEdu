@@ -168,6 +168,20 @@ service firebase.storage {
                    && request.resource.size < 10 * 1024 * 1024;
     }
 
+    // ---- Phase 97: class-teacher review copies ----------------------------
+    //
+    // While a submission awaits the class teacher's decision, the review
+    // callable copies its quarantined image here and hands the teacher a
+    // download token for it; the copy is deleted the moment a decision is
+    // recorded. No client may read or write this path directly — the token
+    // the server mints for the authorized teacher is the only way in, which
+    // is what keeps a review image invisible to classmates, to other classes'
+    // teachers and to the public. Stated explicitly rather than left to the
+    // catch-all deny below so the intent survives the next rules edit.
+    match /moderation/review/{submissionId}/{fileName} {
+      allow read, write: if false;
+    }
+
     match /users/{userId}/avatar/{fileName} {
       allow read: if isSignedIn();
       allow write: if isSignedIn() && uid() == userId

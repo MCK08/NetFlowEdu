@@ -59,6 +59,18 @@ export function TeacherClassDetailScreen({ classId }: TeacherClassDetailScreenPr
     });
   }
 
+  // Phase 97 — the class teacher's review queue for student answers that
+  // automated review could not settle. Same restrained secondary shape as the
+  // two buttons above; the server decides who may actually review.
+  function openAnswerReviews() {
+    guardedNavigate("answer-reviews", () => {
+      router.push({
+        pathname: "/(teacher)/class/[classId]/answer-reviews",
+        params: { classId },
+      });
+    });
+  }
+
   if (isLoading || !classRoom) {
     return (
       <SafeAreaView style={styles.centered}>
@@ -144,6 +156,17 @@ export function TeacherClassDetailScreen({ classId }: TeacherClassDetailScreenPr
             >
               <Ionicons name="trail-sign-outline" size={18} color={colors.primary} />
               <Text style={styles.performanceButtonText}>Sınıfın İlerleme Hikâyesi</Text>
+            </Pressable>
+
+            <Pressable
+              onPress={openAnswerReviews}
+              style={styles.performanceButton}
+              accessibilityRole="button"
+              accessibilityLabel="Yanıt incelemelerini aç"
+              accessibilityHint="Otomatik incelemenin karar veremediği öğrenci yanıtlarını kontrol edersin"
+            >
+              <Ionicons name="shield-checkmark-outline" size={18} color={colors.primary} />
+              <Text style={styles.performanceButtonText}>Yanıt İncelemeleri</Text>
             </Pressable>
 
             <Pressable

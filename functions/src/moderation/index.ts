@@ -68,3 +68,10 @@ export {
   isOwnedQuarantinePath,
 } from "./answerPublication";
 export type { AnswerMethod } from "./answerPublication";
+export {
+  buildPublishedAnswerDocument,
+  extractDownloadToken,
+  finalizeApprovedAnswer,
+  publishApprovedAnswerObject,
+  storageDownloadBase,
+} from "./answerFinalization";

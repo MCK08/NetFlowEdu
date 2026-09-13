@@ -44,5 +44,6 @@ export { submitQuestionCommentForModeration, submitAnswerForModeration } from ".
 // Phase 89 — question creation is server-authoritative too; firestore.rules
 // deny a client create outright, so this is the only way a question begins.
 export { createQuestion, updateQuestionRevision } from "./questions";
-
-// Later phases will export from ./review.
+// Phase 97 — the human half of answer publication. manual_review is resolved
+// by the submission's class teacher and by no one else; see review/answerReview.ts.
+export { listAnswerReviewQueue, getAnswerReviewDetail, reviewAnswerSubmission } from "./review";
