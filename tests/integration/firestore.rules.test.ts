@@ -539,6 +539,83 @@ describe("firestore.rules — answers/{answerId}", () => {
     );
   });
 
+  // ---- Phase 94: answer UPDATE and DELETE ---------------------------------
+  //
+  // Both were previously allowed to the answer's own owner and had NO test
+  // coverage at all, which is part of how the update rule's gap survived: it
+  // froze ownerId, questionId, method, imageUrl and createdAt, and its comment
+  // claimed nothing else could change — but it never named likeCount, and a
+  // rule cannot enforce a field it does not name. Measured against the
+  // emulator, the answer's author PATCHed their own likeCount from 0 to 9999.
+  //
+  // Neither verb had a product path (no edit or delete affordance on an
+  // answer, no client service for either), so both are now denied outright
+  // rather than repaired. These tests are what was missing.
+
+  it("denies the answer's OWNER forging their own likeCount (Phase 94)", async () => {
+    await seedQuestion("q1", privateQuestionDoc({ ownerId: "student-1" }));
+    await seedAnswer("a1", answerDoc({ questionId: "q1", ownerId: "student-1" }));
+    const owner = studentContext("student-1");
+    await assertFails(updateDoc(doc(owner.firestore(), "answers", "a1"), { likeCount: 9999 }));
+  });
+
+  it("denies the answer's owner adding an arbitrary field (Phase 94)", async () => {
+    await seedQuestion("q1", privateQuestionDoc({ ownerId: "student-1" }));
+    await seedAnswer("a1", answerDoc({ questionId: "q1", ownerId: "student-1" }));
+    const owner = studentContext("student-1");
+    await assertFails(updateDoc(doc(owner.firestore(), "answers", "a1"), { evilField: "arbitrary" }));
+  });
+
+  it("denies the answer's owner any update at all (Phase 94)", async () => {
+    await seedQuestion("q1", privateQuestionDoc({ ownerId: "student-1" }));
+    await seedAnswer("a1", answerDoc({ questionId: "q1", ownerId: "student-1" }));
+    const owner = studentContext("student-1");
+    // The five fields the old rule froze stay refused, for a broader reason.
+    await assertFails(updateDoc(doc(owner.firestore(), "answers", "a1"), { ownerId: "student-2" }));
+    await assertFails(updateDoc(doc(owner.firestore(), "answers", "a1"), { imageUrl: "https://evil.test/x.jpg" }));
+    await assertFails(updateDoc(doc(owner.firestore(), "answers", "a1"), { method: "drawing" }));
+  });
+
+  it("denies a NON-owner any update, as before (Phase 94)", async () => {
+    await seedQuestion("q1", privateQuestionDoc({ ownerId: "student-1" }));
+    await seedAnswer("a1", answerDoc({ questionId: "q1", ownerId: "student-1" }));
+    const otherStudent = studentContext("student-2");
+    await assertFails(updateDoc(doc(otherStudent.firestore(), "answers", "a1"), { likeCount: 9999 }));
+  });
+
+  it("denies even the answer's OWNER a direct delete (Phase 94)", async () => {
+    // Not a removed product capability — there was never an affordance for it.
+    // It would also have left questions/{id}.answerCount permanently
+    // overstated, since onAnswerCreate has no delete counterpart.
+    await seedQuestion("q1", privateQuestionDoc({ ownerId: "student-1" }));
+    await seedAnswer("a1", answerDoc({ questionId: "q1", ownerId: "student-1" }));
+    const owner = studentContext("student-1");
+    await assertFails(deleteDoc(doc(owner.firestore(), "answers", "a1")));
+  });
+
+  it("denies a non-owner and the question's owner a delete, as before (Phase 94)", async () => {
+    await seedQuestion("q1", privateQuestionDoc({ ownerId: "question-owner" }));
+    await seedAnswer("a1", answerDoc({ questionId: "q1", ownerId: "student-1" }));
+    await assertFails(deleteDoc(doc(studentContext("student-2").firestore(), "answers", "a1")));
+    await assertFails(deleteDoc(doc(studentContext("question-owner").firestore(), "answers", "a1")));
+  });
+
+  it("the answer document survives every client write verb (Phase 94)", async () => {
+    await seedQuestion("q1", privateQuestionDoc({ ownerId: "student-1" }));
+    await seedAnswer("a1", answerDoc({ questionId: "q1", ownerId: "student-1" }));
+    const owner = studentContext("student-1");
+    await assertFails(
+      setDoc(doc(owner.firestore(), "answers", "a2"), {
+        ...answerDoc({ questionId: "q1", ownerId: "student-1" }),
+        createdAt: serverTimestamp(),
+      }),
+    );
+    await assertFails(updateDoc(doc(owner.firestore(), "answers", "a1"), { likeCount: 5 }));
+    await assertFails(deleteDoc(doc(owner.firestore(), "answers", "a1")));
+    // Read is untouched: the owner can still see their own answer.
+    await assertSucceeds(getDoc(doc(owner.firestore(), "answers", "a1")));
+  });
+
   it("denies updating an answer after creation (no edit feature exists)", async () => {
     await seedQuestion("q1", privateQuestionDoc({ ownerId: "student-1" }));
     await seedAnswer("a1", answerDoc({ questionId: "q1", ownerId: "student-1" }));

@@ -637,18 +637,49 @@ service cloud.firestore {
       // construction rather than by adding checks inside the trigger.
       allow create: if false;
 
-      // likeCount is maintained only by toggleAnswerLike (Admin SDK). No
-      // other edit-answer feature exists, so nothing else may ever change.
-      allow update: if isOwner(resource.data.ownerId)
-                    && request.resource.data.ownerId == resource.data.ownerId
-                    && request.resource.data.questionId == resource.data.questionId
-                    && request.resource.data.method == resource.data.method
-                    && request.resource.data.imageUrl == resource.data.imageUrl
-                    && request.resource.data.createdAt == resource.data.createdAt;
+      // Phase 94 — no client may update an answer.
+      //
+      // WHAT THE RULE HERE USED TO SAY, AND WHAT IT ACTUALLY DID
+      //
+      // It allowed the answer's owner to update, freezing ownerId, questionId,
+      // method, imageUrl and createdAt, and its comment claimed "likeCount is
+      // maintained only by toggleAnswerLike (Admin SDK) ... nothing else may
+      // ever change". The freeze list was real — Phase 94 re-proved each of
+      // those five is refused — but it did not include likeCount, and a rule
+      // cannot enforce a field it does not name.
+      //
+      // So the comment was wrong about the one field that mattered. Measured
+      // against the emulator with a real token: the answer's own author PATCHed
+      // likeCount from 0 to 9999 and it was stored. They could also add
+      // arbitrary new fields the schema never defined. That quietly undoes
+      // Phase 92, which had just made answer likes deterministic,
+      // transactional and floored at zero — a counter is not protected if its
+      // subject can simply write it.
+      //
+      // There is no product feature to preserve: the client answer service
+      // exposes a subscription and nothing else, and AnswerCard's only
+      // affordances are zooming the image and opening a profile. No edit-answer
+      // screen, service or hook exists. This closes a capability nothing used.
+      //
+      // toggleAnswerLike is unaffected — it runs on the Admin SDK, which
+      // bypasses these rules, and remains the only writer of likeCount.
+      allow update: if false;
 
-      // Only the answer's own owner may delete it — never anyone else's,
-      // including the question's owner.
-      allow delete: if isOwner(resource.data.ownerId);
+      // Phase 94 — and no client may delete one either.
+      //
+      // The previous rule allowed the answer's own owner, and correctly refused
+      // everyone else including the question's owner; Phase 94 re-proved both
+      // halves. But nothing in the product ever called it — there is no delete
+      // affordance on an answer and no client service for it, the same shape as
+      // the question-delete capability Phase 90 retired.
+      //
+      // It was also unsafe to use. answerCount is incremented by onAnswerCreate
+      // and there is NO corresponding delete trigger, so any answer deletion
+      // would leave questions/{id}.answerCount permanently overstating reality.
+      // A removal feature, if the product ever wants one, needs a gateway that
+      // answers that — built then, with its UI, the way Phase 93 built comment
+      // deletion. Admin SDK paths are unaffected.
+      allow delete: if false;
     }
 
     // ---- questionLikes/{likeId} -----------------------------------------
