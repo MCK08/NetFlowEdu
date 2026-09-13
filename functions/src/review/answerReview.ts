@@ -1,7 +1,7 @@
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { getFirestore } from "firebase-admin/firestore";
 import { getStorage } from "firebase-admin/storage";
-import type { DocumentReference, DocumentSnapshot, Firestore, Transaction } from "firebase-admin/firestore";
+import type { DocumentSnapshot, Firestore, Transaction } from "firebase-admin/firestore";
 import { randomUUID } from "node:crypto";
 
 import {
@@ -19,6 +19,26 @@ import {
   buildReviewAccessPath,
 } from "../moderation/answerPublication";
 import { applyTransition, isModerationState, ModerationState } from "../moderation/moderationStates";
+import {
+  assertMayReview,
+  assertClassTeacher,
+  assertQuestionInClass,
+  decodeCursor,
+  HUMAN_REVIEWABLE_STATES,
+  loadReviewContext,
+  loadSubmission,
+  num,
+  queryReviewPage,
+  questionContext,
+  requireClassId,
+  requireDecision,
+  requireSubmissionId,
+  requireUid,
+  REVIEW_QUEUE_PAGE_SIZE,
+  ReviewDecision,
+  str,
+  submissionRef,
+} from "./reviewAuthorization";
 
 // Phase 97 — class-scoped manual answer review.
 //
@@ -55,13 +75,11 @@ import { applyTransition, isModerationState, ModerationState } from "../moderati
 // `approved` and returns the existing publishedEntityId — no second document,
 // so no second onAnswerCreate, so no second count and no second notification.
 
-export const REVIEW_QUEUE_PAGE_SIZE = 20;
-
-/** The one state a human rules on. `rejected` and `removed` are terminal;
- *  `approved` already published; the rest are the machine's. */
-export const HUMAN_REVIEWABLE_STATES: readonly ModerationState[] = ["manual_review"];
-
-export type ReviewDecision = "approve" | "reject";
+// Phase 98 — the authorization contract moved to reviewAuthorization.ts so the
+// comment review path shares it verbatim. Re-exported here so nothing that
+// imported these from the answer module has to change.
+export { HUMAN_REVIEWABLE_STATES, REVIEW_QUEUE_PAGE_SIZE } from "./reviewAuthorization";
+export type { ReviewDecision } from "./reviewAuthorization";
 
 export interface AnswerReviewQueueItem {
   /** Opaque handle for the detail and decision calls. Never rendered. */
@@ -98,138 +116,8 @@ export interface AnswerReviewResult {
 }
 
 // ---------------------------------------------------------------------------
-// Authorization — the whole Phase 97 product decision, in one function.
-// ---------------------------------------------------------------------------
-
-interface LoadedSubmission {
-  ref: DocumentReference;
-  data: Record<string, unknown>;
-}
-
-function submissionRef(db: Firestore, submissionId: string): DocumentReference {
-  return db.collection("moderationSubmissions").doc(submissionId);
-}
-
-function requireUid(uid: string | undefined): string {
-  if (!uid) throw new HttpsError("unauthenticated", "Bu işlem için giriş yapmanız gerekiyor.");
-  return uid;
-}
-
-function requireSubmissionId(value: unknown): string {
-  if (typeof value !== "string" || value.length === 0 || value.length > 200) {
-    throw new HttpsError("invalid-argument", "Geçersiz inceleme kimliği.");
-  }
-  return value;
-}
-
-/**
- * Asserts that `callerUid` is the canonical teacher of `classId`.
- *
- * Reads the class document — inside the caller's transaction when one is
- * supplied, so the decision cannot commit against a class whose teacher
- * changed underneath it.
- */
-async function assertClassTeacher(
-  db: Firestore,
-  tx: Transaction | null,
-  classId: string,
-  callerUid: string,
-): Promise<void> {
-  const ref = db.collection("classes").doc(classId);
-  const snap = tx ? await tx.get(ref) : await ref.get();
-  const teacherId = snap.exists ? snap.data()?.teacherId : null;
-  if (typeof teacherId !== "string" || teacherId !== callerUid) {
-    throw new HttpsError("permission-denied", "Bu sınıfın yanıtlarını yalnızca sınıfın öğretmeni inceleyebilir.");
-  }
-}
-
-/**
- * Every check a reviewer must pass for ONE submission. Pure over its inputs
- * except for the class read, so the transaction and the pre-flight can share
- * it. Order matters for what the caller learns: a non-teacher is refused
- * before anything about the submission's state is revealed.
- */
-async function assertMayReview(
-  db: Firestore,
-  tx: Transaction | null,
-  submission: Record<string, unknown>,
-  callerUid: string,
-): Promise<{ classId: string; authorId: string; questionId: string }> {
-  if (submission.targetType !== "answer_image") {
-    throw new HttpsError("failed-precondition", "Bu gönderi bir yanıt incelemesi değil.");
-  }
-  const classId = submission.classId;
-  const authorId = submission.authorId;
-  const questionId = submission.questionId;
-  if (typeof classId !== "string" || classId.length === 0) {
-    // A submission with no class has no canonical teacher — and therefore,
-    // in Phase 97, no reviewer. Stated as a permission fact, not a bug.
-    throw new HttpsError("permission-denied", "Bu yanıt bir sınıfa bağlı değil; sınıf incelemesi yapılamaz.");
-  }
-  if (typeof authorId !== "string" || typeof questionId !== "string") {
-    throw new HttpsError("failed-precondition", "Gönderi kaydı eksik.");
-  }
-  await assertClassTeacher(db, tx, classId, callerUid);
-  // Self-review is refused AFTER the teacher check on purpose: a teacher who
-  // somehow authored the submission is told they may not rule on their own
-  // content, not that they are not the teacher.
-  if (authorId === callerUid) {
-    throw new HttpsError("permission-denied", "Kendi gönderini inceleyemezsin.");
-  }
-  return { classId, authorId, questionId };
-}
-
-/** The parent question must belong to the SAME class the submission claims. */
-async function assertQuestionInClass(
-  db: Firestore,
-  tx: Transaction | null,
-  questionId: string,
-  classId: string,
-): Promise<Record<string, unknown>> {
-  const ref = db.collection("questions").doc(questionId);
-  const snap = tx ? await tx.get(ref) : await ref.get();
-  if (!snap.exists) throw new HttpsError("not-found", "Bu soru artık mevcut değil.");
-  const question = snap.data() ?? {};
-  if (question.classId !== classId) {
-    throw new HttpsError("permission-denied", "Bu yanıt bu sınıfın sorusuna ait değil.");
-  }
-  return question;
-}
-
-async function loadSubmission(db: Firestore, submissionId: string): Promise<LoadedSubmission> {
-  const ref = submissionRef(db, submissionId);
-  const snap = await ref.get();
-  if (!snap.exists) throw new HttpsError("not-found", "İncelenecek gönderi bulunamadı.");
-  return { ref, data: snap.data() ?? {} };
-}
-
-// ---------------------------------------------------------------------------
 // Queue
 // ---------------------------------------------------------------------------
-
-function num(value: unknown, fallback = 0): number {
-  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
-}
-
-function str(value: unknown): string | null {
-  return typeof value === "string" && value.length > 0 ? value : null;
-}
-
-function encodeCursor(createdAt: number, submissionId: string): string {
-  return `${createdAt}:${submissionId}`;
-}
-
-function decodeCursor(value: unknown): { createdAt: number; submissionId: string } | null {
-  if (typeof value !== "string" || value.length === 0) return null;
-  const idx = value.indexOf(":");
-  if (idx <= 0) throw new HttpsError("invalid-argument", "Geçersiz sayfa imleci.");
-  const createdAt = Number(value.slice(0, idx));
-  const submissionId = value.slice(idx + 1);
-  if (!Number.isFinite(createdAt) || submissionId.length === 0) {
-    throw new HttpsError("invalid-argument", "Geçersiz sayfa imleci.");
-  }
-  return { createdAt, submissionId };
-}
 
 /**
  * Joins the bounded page with its question and author context.
@@ -245,16 +133,7 @@ async function enrichQueueItems(
   classId: string,
   docs: DocumentSnapshot[],
 ): Promise<AnswerReviewQueueItem[]> {
-  const questionIds = [...new Set(docs.map((d) => str(d.data()?.questionId)).filter((v): v is string => !!v))];
-  const authorIds = [...new Set(docs.map((d) => str(d.data()?.authorId)).filter((v): v is string => !!v))];
-  const membersRef = db.collection("classes").doc(classId).collection("members");
-  const [questionSnaps, memberSnaps] = await Promise.all([
-    questionIds.length ? db.getAll(...questionIds.map((id) => db.collection("questions").doc(id))) : [],
-    authorIds.length ? db.getAll(...authorIds.map((id) => membersRef.doc(id))) : [],
-  ]);
-  const questions = new Map(questionSnaps.map((s) => [s.id, s.data() ?? {}]));
-  const members = new Map(memberSnaps.map((s) => [s.id, s.data() ?? {}]));
-
+  const { questions, members } = await loadReviewContext(db, classId, docs);
   return docs.map((doc) => {
     const data = doc.data() ?? {};
     const question = questions.get(String(data.questionId)) ?? {};
@@ -264,12 +143,7 @@ async function enrichQueueItems(
       submittedAt: num(data.createdAt),
       reviewReason: str(data.decisionReason) ?? "uncertain",
       method: data.method === "drawing" ? "drawing" : "photo",
-      question: {
-        description: str(question.description),
-        subject: str(question.subject) ?? "",
-        topic: str(question.topic) ?? "",
-        imageUrl: str(question.imageUrl),
-      },
+      question: questionContext(question),
       author: { displayName: str(member.displayName) ?? "Öğrenci" },
     };
   });
@@ -289,30 +163,12 @@ export async function loadAnswerReviewQueue(
   data: { classId?: unknown; cursor?: unknown } | undefined,
 ): Promise<AnswerReviewQueuePage> {
   const uid = requireUid(callerUid);
-  const classId = data?.classId;
-  if (typeof classId !== "string" || classId.length === 0) {
-    throw new HttpsError("invalid-argument", "Geçersiz sınıf kimliği.");
-  }
+  const classId = requireClassId(data?.classId);
   await assertClassTeacher(db, null, classId, uid);
-  const cursor = decodeCursor(data?.cursor);
-
-  let query = db
-    .collection("moderationSubmissions")
-    .where("classId", "==", classId)
-    .where("targetType", "==", "answer_image")
-    .where("status", "==", "manual_review")
-    .orderBy("createdAt", "asc")
-    .orderBy("__name__", "asc")
-    .limit(REVIEW_QUEUE_PAGE_SIZE + 1);
-  if (cursor) query = query.startAfter(cursor.createdAt, submissionRef(db, cursor.submissionId));
-
-  const snap = await query.get();
-  const page = snap.docs.slice(0, REVIEW_QUEUE_PAGE_SIZE);
-  const hasMore = snap.docs.length > REVIEW_QUEUE_PAGE_SIZE;
-  const last = page[page.length - 1];
+  const { page, nextCursor } = await queryReviewPage(db, classId, "answer_image", decodeCursor(data?.cursor));
   return {
     items: await enrichQueueItems(db, classId, page),
-    nextCursor: hasMore && last ? encodeCursor(num(last.data()?.createdAt), last.id) : null,
+    nextCursor,
     pageSize: REVIEW_QUEUE_PAGE_SIZE,
   };
 }
@@ -396,7 +252,7 @@ export async function loadAnswerReviewDetail(
   const uid = requireUid(callerUid);
   const submissionId = requireSubmissionId(data?.submissionId);
   const { data: submission } = await loadSubmission(db, submissionId);
-  const { classId, questionId } = await assertMayReview(db, null, submission, uid);
+  const { classId, questionId } = await assertMayReview(db, null, submission, uid, "answer_image");
   await assertQuestionInClass(db, null, questionId, classId);
 
   const status = isModerationState(submission.status) ? submission.status : "manual_review";
@@ -423,13 +279,6 @@ export const getAnswerReviewDetail = onCall<{ submissionId: string }>(
 // Decision
 // ---------------------------------------------------------------------------
 
-function requireDecision(value: unknown): ReviewDecision {
-  if (value !== "approve" && value !== "reject") {
-    throw new HttpsError("invalid-argument", "Geçersiz inceleme kararı.");
-  }
-  return value;
-}
-
 /**
  * The canonical review decision. One mutation, two outcomes.
  *
@@ -452,7 +301,7 @@ export async function applyAnswerReview(
 
   // ---- Pre-flight: authorization and idempotent short-circuits ----------
   const { ref, data: submission } = await loadSubmission(db, submissionId);
-  const { classId, authorId, questionId } = await assertMayReview(db, null, submission, uid);
+  const { classId, authorId, questionId } = await assertMayReview(db, null, submission, uid, "answer_image");
   const question = await assertQuestionInClass(db, null, questionId, classId);
   const currentState = isModerationState(submission.status) ? submission.status : null;
   if (!currentState) throw new HttpsError("failed-precondition", "Gönderi durumu okunamadı.");
@@ -514,7 +363,7 @@ export async function applyAnswerReview(
     if (!snap.exists) throw new HttpsError("not-found", "İncelenecek gönderi bulunamadı.");
     const current = snap.data() ?? {};
     // Re-checked against the documents as they are NOW.
-    await assertMayReview(db, tx, current, uid);
+    await assertMayReview(db, tx, current, uid, "answer_image");
     await assertQuestionInClass(db, tx, questionId, classId);
     const state = isModerationState(current.status) ? current.status : null;
     if (!state) throw new HttpsError("failed-precondition", "Gönderi durumu okunamadı.");

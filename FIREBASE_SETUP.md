@@ -162,6 +162,14 @@ Stated as deployment facts:
 - **Publication is one path.** Manual approval and automated approval share the
   same finalizer, so a manually published answer is byte-for-byte the same
   shape as an automatically published one.
+- **Comments too (Phase 98).** The deterministic Turkish text layer sends
+  ambiguous comments (an ambiguous token, wellbeing or meet-up language, a
+  phone number or handle, repetition) to `manual_review` with reason
+  `uncertain`. The same class teacher resolves them under **Yorum
+  İncelemeleri**, through `reviewCommentSubmission`, with the same boundary:
+  the retained text is published verbatim or not at all; nothing is edited.
+  No text provider is configured, so `provider_unavailable` cannot currently
+  occur for comments.
 - **Deploy the index.** The review queue query needs the
   `moderationSubmissions` composite index in `firestore.indexes.json`
   (`classId, targetType, status, createdAt`) — `firebase deploy --only

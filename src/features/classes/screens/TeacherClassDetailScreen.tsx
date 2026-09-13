@@ -71,6 +71,16 @@ export function TeacherClassDetailScreen({ classId }: TeacherClassDetailScreenPr
     });
   }
 
+  // Phase 98 — the sibling queue for comments the text layer could not settle.
+  function openCommentReviews() {
+    guardedNavigate("comment-reviews", () => {
+      router.push({
+        pathname: "/(teacher)/class/[classId]/comment-reviews",
+        params: { classId },
+      });
+    });
+  }
+
   if (isLoading || !classRoom) {
     return (
       <SafeAreaView style={styles.centered}>
@@ -167,6 +177,17 @@ export function TeacherClassDetailScreen({ classId }: TeacherClassDetailScreenPr
             >
               <Ionicons name="shield-checkmark-outline" size={18} color={colors.primary} />
               <Text style={styles.performanceButtonText}>Yanıt İncelemeleri</Text>
+            </Pressable>
+
+            <Pressable
+              onPress={openCommentReviews}
+              style={styles.performanceButton}
+              accessibilityRole="button"
+              accessibilityLabel="Yorum incelemelerini aç"
+              accessibilityHint="Otomatik incelemenin karar veremediği öğrenci yorumlarını kontrol edersin"
+            >
+              <Ionicons name="chatbox-ellipses-outline" size={18} color={colors.primary} />
+              <Text style={styles.performanceButtonText}>Yorum İncelemeleri</Text>
             </Pressable>
 
             <Pressable

@@ -68,6 +68,7 @@ export {
   isOwnedQuarantinePath,
 } from "./answerPublication";
 export type { AnswerMethod } from "./answerPublication";
+export { buildPublishedCommentDocument, finalizeApprovedComment } from "./commentFinalization";
 export {
   buildPublishedAnswerDocument,
   extractDownloadToken,

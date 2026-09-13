@@ -47,3 +47,5 @@ export { createQuestion, updateQuestionRevision } from "./questions";
 // Phase 97 — the human half of answer publication. manual_review is resolved
 // by the submission's class teacher and by no one else; see review/answerReview.ts.
 export { listAnswerReviewQueue, getAnswerReviewDetail, reviewAnswerSubmission } from "./review";
+// Phase 98 — the same reviewer, for comments the text layer could not settle.
+export { listCommentReviewQueue, getCommentReviewDetail, reviewCommentSubmission } from "./review";

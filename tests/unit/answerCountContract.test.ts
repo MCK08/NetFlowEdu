@@ -119,15 +119,20 @@ describe("the precondition that makes an increment-only counter correct", () => 
   });
 
   it("the moderation state machine's `removed` transition still has no caller", () => {
-    // `approved -> removed` is declared legal. Phase 97 added the ONE caller
-    // of applyTransition outside the pure module — the class teacher's review
-    // path — and it only ever targets `approved` or `rejected`. If it, or any
-    // later caller, ever withdraws published content, that IS an answer-
-    // removal path and the counter contract above no longer holds.
+    // `approved -> removed` is declared legal. Phase 97 added the class
+    // teacher's answer review path and Phase 98 the comment review path — the
+    // only callers of applyTransition outside the pure module — and both only
+    // ever target `approved` or `rejected`. If either, or any later caller,
+    // ever withdraws published content, that IS a removal path and the
+    // counter contract above no longer holds.
     const callers = sources.filter(
       (s) => /applyTransition\(/.test(s.text) && !s.file.endsWith("moderationStates.ts") && !s.file.endsWith("index.ts"),
     );
-    expect(callers.map((s) => s.file.replace(/^.*functions\/src\//, ""))).toEqual(["review/answerReview.ts"]);
+    // Phase 98 added the comment review path — same reviewer, same rule.
+    expect(callers.map((s) => s.file.replace(/^.*functions\/src\//, "")).sort()).toEqual([
+      "review/answerReview.ts",
+      "review/commentReview.ts",
+    ]);
     for (const caller of callers) {
       // No transition to removed, no answer deletion, no decrement.
       expect(caller.text).not.toMatch(/"removed"/);

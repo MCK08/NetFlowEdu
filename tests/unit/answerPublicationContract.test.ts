@@ -126,34 +126,41 @@ describe("manual_review is resolved by the class teacher, and only by them (Phas
   const sources = readAll(FUNCTIONS_SRC).map((s) => ({ ...s, text: code(s.text) }));
   const rel = (file: string) => path.relative(path.join(__dirname, "..", ".."), file);
   const review = fs.readFileSync(path.join(FUNCTIONS_SRC, "review", "answerReview.ts"), "utf8");
+  // Phase 98 — the authorization contract moved to one shared module so the
+  // comment review path could not drift from the answer path.
+  const authorization = fs.readFileSync(path.join(FUNCTIONS_SRC, "review", "reviewAuthorization.ts"), "utf8");
 
-  it("exactly one module outside the state machine performs a moderation transition: the review path", () => {
+  it("exactly the review paths perform a moderation transition, and nothing else does", () => {
     // Phase 96 pinned this list as empty. Phase 97 made the product decision
-    // it was waiting for — the class's canonical teacher reviews — and this is
-    // the one place the decision is applied. A second caller means a second
-    // reviewer, which must come back here and say who.
+    // it was waiting for — the class's canonical teacher reviews answers —
+    // and Phase 98 applied the SAME decision to comments. Both go through the
+    // same shared authorization. A third caller means a new reviewer or a
+    // new content type, which must come back here and say which.
     const callers = sources.filter(
       (s) => /applyTransition\(/.test(s.text) && !s.file.endsWith("moderationStates.ts"),
     );
-    expect(callers.map((s) => rel(s.file)).filter((f) => !f.endsWith("index.ts"))).toEqual([
+    expect(callers.map((s) => rel(s.file)).filter((f) => !f.endsWith("index.ts")).sort()).toEqual([
       "functions/src/review/answerReview.ts",
+      "functions/src/review/commentReview.ts",
     ]);
   });
 
   it("the reviewer is the canonical class teacher, resolved from classes/{classId}.teacherId", () => {
-    expect(review).toContain('collection("classes").doc(classId)');
-    expect(review).toContain("teacherId !== callerUid");
+    expect(authorization).toContain('collection("classes").doc(classId)');
+    expect(authorization).toContain("teacherId !== callerUid");
     // No role check anywhere in the review path: not teacher-the-role, not
     // organization_admin, not platform_admin.
-    expect(code(review)).not.toMatch(/organization_admin|platform_admin|isOrgAdmin|isPlatformAdmin/);
+    expect(code(review + authorization)).not.toMatch(/organization_admin|platform_admin|isOrgAdmin|isPlatformAdmin/);
+    // And the answer path actually goes through the shared check.
+    expect(code(review)).toContain("assertMayReview(");
   });
 
   it("self-review is refused even for the class teacher", () => {
-    expect(review).toContain("authorId === callerUid");
+    expect(authorization).toContain("authorId === callerUid");
   });
 
   it("only manual_review is human-reviewable", () => {
-    expect(review).toContain('HUMAN_REVIEWABLE_STATES: readonly ModerationState[] = ["manual_review"]');
+    expect(authorization).toContain('HUMAN_REVIEWABLE_STATES: readonly ModerationState[] = ["manual_review"]');
   });
 
   it("the review callables are exported and nothing accepts a reviewer, author, class or status from the client", () => {

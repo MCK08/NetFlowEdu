@@ -4,6 +4,7 @@ import type { DocumentReference, Firestore, Transaction } from "firebase-admin/f
 
 import { canReadQuestion } from "../social/questionAccess";
 import { isValidOperationId } from "../study/operationId";
+import { finalizeApprovedComment } from "./commentFinalization";
 import { decideTextModeration } from "./moderationDecision";
 import { canPublish, ModerationState } from "./moderationStates";
 import { callProvider, resolveProviders } from "./providers";
@@ -192,16 +193,11 @@ export const submitQuestionCommentForModeration = onCall<SubmitCommentRequest>(
       // rejected or manual_review submission reaches this point too — and
       // writes nothing to questionComments, so no counter moves and no
       // notification is produced.
+      //
+      // Phase 98 — through the SAME finalizer the class teacher's manual
+      // approval uses (commentFinalization.ts): one publication shape.
       if (commentRef) {
-        tx.set(commentRef, {
-          questionId,
-          ownerId: caller.uid,
-          text,
-          status: "active",
-          // Milliseconds, matching what the client's toComment() reads.
-          // Written by the Admin SDK, so request.time is unavailable here.
-          createdAt: new Date(now),
-        });
+        finalizeApprovedComment(tx, commentRef, { questionId, ownerId: caller.uid, text, now });
       }
 
       tx.set(rateRef, { lastSubmissionAt: now, updatedAt: now }, { merge: true });

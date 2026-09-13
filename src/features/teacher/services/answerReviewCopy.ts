@@ -28,6 +28,33 @@ export function reviewReasonCopy(reason: string): string {
   }
 }
 
+/** Phase 98 — the same reasons, said about a comment. */
+export function commentReviewReasonCopy(reason: string): string {
+  switch (reason) {
+    case "provider_unavailable":
+      return "Otomatik inceleme şu anda tamamlanamadı.";
+    case "uncertain":
+      return "Otomatik inceleme bu yorum için kesin karar veremedi.";
+    default:
+      return "Otomatik inceleme bu yorum için tamamlanamadı.";
+  }
+}
+
+export const COMMENT_REVIEW_QUEUE_TITLE = "Yorum İncelemeleri";
+
+export const COMMENT_REVIEW_QUEUE_TRUST_NOTE =
+  "Bu ekranda, otomatik incelemede kesin bir sonuca ulaşmayan öğrenci yorumlarını yayınlanmadan önce kontrol edebilirsin.";
+
+export const COMMENT_REVIEW_QUEUE_EMPTY = {
+  title: "İncelenecek yorum yok.",
+  description: "Otomatik incelemenin karar veremediği bir yorum geldiğinde burada görünür.",
+};
+
+export function commentReviewOutcomeCopy(status: "approved" | "rejected", alreadyDecided: boolean): string {
+  if (status === "approved") return alreadyDecided ? "Bu yorum zaten yayınlanmış." : "Yorum yayınlandı.";
+  return alreadyDecided ? "Bu yorum için karar zaten verilmiş." : "Yorum yayınlanmadı.";
+}
+
 /** Said once above the queue: what these items are, and are not. */
 export const REVIEW_QUEUE_TRUST_NOTE =
   "Bu ekranda, otomatik incelemenin kesin karar veremediği öğrenci yanıtlarını yayınlanmadan önce kontrol edebilirsin.";
