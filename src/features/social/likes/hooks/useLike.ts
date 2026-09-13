@@ -49,13 +49,19 @@ export function useLike({ targetType, targetId, initialLikeCount, uid }: UseLike
 
     const previousLiked = liked;
     const previousCount = likeCount;
+    // Phase 91 — send what the tap MEANT, not "flip whatever is there". The
+    // rollback below restores `liked`, so a user who taps again after a failure
+    // sends the same desired state a second time; with a desired state that is
+    // idempotent, where a toggle would have undone a call that had actually
+    // succeeded.
+    const desiredLiked = !previousLiked;
 
-    setLiked(!previousLiked);
+    setLiked(desiredLiked);
     setLikeCount(Math.max(0, previousCount + (previousLiked ? -1 : 1)));
     setIsToggling(true);
 
     try {
-      const result = await toggleLike(targetType, targetId);
+      const result = await toggleLike(targetType, targetId, desiredLiked);
       setLiked(result.liked);
       setLikeCount(result.likeCount);
     } catch {

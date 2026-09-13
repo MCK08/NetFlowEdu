@@ -1032,6 +1032,12 @@ describe("firestore.rules — questionComments/{commentId}", () => {
     return testEnv.authenticatedContext(uid, { role: "student", organizationId: null });
   }
 
+  // Phase 91 — a teacher context, so the author-only delete right can be
+  // asserted against the role most likely to be granted it by mistake.
+  function teacherContext(uid: string) {
+    return testEnv.authenticatedContext(uid, { role: "teacher", organizationId: "org-1" });
+  }
+
   it("denies an unauthenticated user reading comments", async () => {
     await seedQuestion("q1", publicQuestionDoc({ ownerId: "student-1" }));
     await seedComment("c1", commentDoc());
@@ -1159,6 +1165,35 @@ describe("firestore.rules — questionComments/{commentId}", () => {
     await seedComment("c1", commentDoc({ questionId: "q1", ownerId: "student-1" }));
     const otherStudent = studentContext("student-2");
     await assertFails(deleteDoc(doc(otherStudent.firestore(), "questionComments", "c1")));
+  });
+
+  // Phase 91 — the comment-delete right is AUTHOR-ONLY, and this pins the two
+  // people it is most tempting to quietly extend it to. Authoring a question
+  // does not make you the moderator of the conversation under it, and neither
+  // does teaching the class: the same boundary Phases 86-90 hold for the
+  // question itself. Proven at runtime too, but nothing in the rules suite held
+  // it in place until now.
+  it("denies the QUESTION'S OWNER deleting someone else's comment on it (Phase 91)", async () => {
+    await seedQuestion("q1", publicQuestionDoc({ ownerId: "student-1" }));
+    await seedComment("c1", commentDoc({ questionId: "q1", ownerId: "student-2" }));
+    const questionOwner = studentContext("student-1");
+    await assertFails(deleteDoc(doc(questionOwner.firestore(), "questionComments", "c1")));
+  });
+
+  it("denies a TEACHER deleting a student's comment (Phase 91)", async () => {
+    await seedQuestion("q1", publicQuestionDoc({ ownerId: "student-1" }));
+    await seedComment("c1", commentDoc({ questionId: "q1", ownerId: "student-1" }));
+    const teacher = teacherContext("teacher-1");
+    await assertFails(deleteDoc(doc(teacher.firestore(), "questionComments", "c1")));
+  });
+
+  // Phase 90 measured that a server-side question removal would orphan its
+  // comments. The read rule requires the question to exist, so an orphan is
+  // unreadable rather than leaked — which is why Phase 91 adds no cleanup job.
+  it("denies reading a comment whose question no longer exists (Phase 91)", async () => {
+    await seedComment("c1", commentDoc({ questionId: "question-that-is-gone", ownerId: "student-1" }));
+    const student = studentContext("student-1");
+    await assertFails(getDoc(doc(student.firestore(), "questionComments", "c1")));
   });
 });
 

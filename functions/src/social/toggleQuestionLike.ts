@@ -13,6 +13,24 @@ import {
 
 interface ToggleQuestionLikeRequest {
   questionId: string;
+  /** Phase 91 — the state the caller WANTS to end in.
+   *
+   *  WHY THIS EXISTS
+   *
+   *  Without it this callable is a pure toggle, and a toggle's result depends
+   *  on how many times it is called rather than on what the user meant. Phase
+   *  91 proved both consequences against the emulator: a client that retries
+   *  after a lost response flips the like back off, and two devices tapping
+   *  "like" for the same user can land on NOT liked. The deterministic document
+   *  id already prevented duplicate likes and counter drift — it could not
+   *  prevent inversion, because inversion is what a toggle is.
+   *
+   *  With a desired state, the same request sent twice produces the same
+   *  answer, which is what makes a retry safe.
+   *
+   *  Optional on purpose: omitting it keeps the original toggle behaviour, so a
+   *  client build that predates this field keeps working unchanged. */
+  liked?: boolean;
 }
 
 interface ToggleQuestionLikeResult {
@@ -60,6 +78,16 @@ export const toggleQuestionLike = onCall<ToggleQuestionLikeRequest>(
 
       const alreadyLiked = likeSnap.exists;
       const currentCount = typeof question.likeCount === "number" ? question.likeCount : 0;
+
+      // A desired state that already holds is a no-op, not a flip — and
+      // deliberately not an error either: a retry succeeded the first time, so
+      // reporting failure on the second would be a lie the client would have to
+      // undo. It returns the state the caller asked for, which is also the
+      // state that is stored.
+      const desired = request.data?.liked;
+      if (typeof desired === "boolean" && desired === alreadyLiked) {
+        return { liked: alreadyLiked, likeCount: currentCount };
+      }
 
       if (alreadyLiked) {
         // ---- READ PHASE (every read must precede every write) ----

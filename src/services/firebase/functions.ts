@@ -63,12 +63,18 @@ interface ToggleLikeResult {
 
 // Toggles the caller's like on a question — the only way likeCount ever
 // changes; see functions/src/social/toggleQuestionLike.ts.
-export async function toggleQuestionLike(questionId: string): Promise<ToggleLikeResult> {
-  const callable = httpsCallable<{ questionId: string }, ToggleLikeResult>(
+export async function toggleQuestionLike(
+  questionId: string,
+  liked?: boolean,
+): Promise<ToggleLikeResult> {
+  // Phase 91 — `liked` is the state the caller wants to end in, not an
+  // instruction to flip. Sending it makes a retry repeat rather than invert;
+  // omitting it keeps the original toggle behaviour.
+  const callable = httpsCallable<{ questionId: string; liked?: boolean }, ToggleLikeResult>(
     functions,
     "toggleQuestionLike",
   );
-  const result = await callable({ questionId });
+  const result = await callable(liked === undefined ? { questionId } : { questionId, liked });
   return result.data;
 }
 
