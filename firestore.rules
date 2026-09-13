@@ -191,6 +191,12 @@ service cloud.firestore {
     // Phase 72 — an optional authored hint ladder is a short, bounded list.
     // Absent/null is always legal (legacy questions and every question whose
     // author added none).
+    // Phase 89 — hintsWithinBounds and choiceFeedbackWithinBounds below no
+    // longer gate anything: the question create rule they guarded now denies
+    // every client write, so `createQuestion` on the server is what bounds
+    // these. They are kept because their comments are the clearest record of
+    // what rules can and cannot check about authored content, which is the
+    // reasoning Phase 89 acted on. Nothing calls them.
     function hintsWithinBounds(data) {
       return !('hints' in data)
              || data.hints == null
@@ -247,65 +253,42 @@ service cloud.firestore {
       // guaranteed at the query level, only for single-document get()s.
       allow read: if isSignedIn() && (isOwner(resource.data.ownerId) || canReadQuestionData(resource.data));
 
-      // private/public: any signed-in user, no classId, organizationId must
-      // be the caller's own claim. 'class' (Phase 9.1): either the class's
-      // own teacher, OR a genuine member of that class whose OWN
-      // membership record (classMemberData — never a client-submitted
-      // claim) says role == 'student'. posterRole is verified against that
-      // same authoritative source in both branches, exactly the "never
-      // trust a client role claim" pattern this ruleset already applies to
-      // chat's senderRole (see classes/{classId}/messages below).
+      // Phase 89 — no client may create a question, including a teacher in
+      // their own class.
       //
-      // organizationId is checked against the CLASS's own organizationId
-      // (classData(...).organizationId), not the caller's claim
-      // (organizationId()), for the class branch — a student NEVER has an
-      // organizationId claim (only teachers get one minted, via
-      // completeOnboarding). Requiring == organizationId() here would make
-      // it impossible for ANY student to ever post a class question — the
-      // exact bug already found and fixed for joinClassByCode (see that
-      // file's own doc comment: "every student's claim is literally null").
-      // For the teacher branch this is equivalent to the caller's own claim
-      // anyway (a class's organizationId is its owning teacher's), so
-      // nothing changes for teachers.
-      // Phase 72 — optional authored hints. Rules can bound the LIST but
-      // cannot iterate it to check each entry's length, so the count is
-      // enforced here (where a client cannot bypass it) and per-entry
-      // trimming/truncation is enforced by questionHints.ts on both the write
-      // and the read. Same reasoning as description's own size cap above:
-      // this is content every classmate can read, so its size is not left
-      // entirely to the client. Absent or null passes, which is what keeps
-      // every pre-Phase-72 writer working unchanged.
-      allow create: if isSignedIn()
-                    && request.resource.data.ownerId == uid()
-                    && hintsWithinBounds(request.resource.data)
-                    && choiceFeedbackWithinBounds(request.resource.data)
-                    && request.resource.data.likeCount == 0
-                    && request.resource.data.commentCount == 0
-                    && request.resource.data.answerCount == 0
-                    && request.resource.data.subject is string
-                    && request.resource.data.subject.size() <= 40
-                    && (request.resource.data.description == null
-                        || (request.resource.data.description is string
-                            && request.resource.data.description.size() <= 300))
-                    && (
-                         request.resource.data.visibility in ['private', 'public']
-                         && request.resource.data.classId == null
-                         && request.resource.data.organizationId == organizationId()
-                         ||
-                         request.resource.data.visibility == 'class'
-                         && request.resource.data.classId is string
-                         && request.resource.data.organizationId
-                            == classData(request.resource.data.classId).organizationId
-                         && (
-                              isTeacher()
-                              && classData(request.resource.data.classId).teacherId == uid()
-                              && request.resource.data.posterRole == 'teacher'
-                              ||
-                              isClassMember(request.resource.data.classId)
-                              && classMemberData(request.resource.data.classId, uid()).role == 'student'
-                              && request.resource.data.posterRole == 'student'
-                            )
-                       );
+      // WHY THIS IS NOT A PERMISSION REMOVAL
+      //
+      // Teachers and students both still author questions. They do it through
+      // the `createQuestion` callable, which runs on the Admin SDK and is
+      // unaffected by this line. What they may no longer do is assemble a
+      // question document themselves and hand Firestore the finished article.
+      //
+      // WHAT THE RULE THIS REPLACES COULD AND COULD NOT DO
+      //
+      // It was good at identity and was left in place for four phases because
+      // of it: ownerId was pinned to the caller, posterRole was checked
+      // against the caller's real membership record, the counters had to be
+      // zero, and an outsider was refused. Phase 89 re-proved every one of
+      // those against the live emulator before touching anything — none of it
+      // was forgeable, and none of it is being claimed as newly fixed.
+      //
+      // What it could not do is judge a question. Rules cannot compare three
+      // fields to decide whether the correct answer is among the options, and
+      // they cannot read a semanticDefinitions document to ask whether a
+      // shared meaning exists, belongs to this class, matches this question's
+      // scope, or has been archived. The comment on choiceFeedbackWithinBounds
+      // above says exactly that, and it was honest. So the same probe that
+      // confirmed identity was safe also created, with a real teacher token, a
+      // question dated 2099, a question whose correct answer was an option it
+      // did not have, a one-option "multiple choice", a 1000-character hint,
+      // an image hosted on another domain, and a mapping to a definition that
+      // was archived, belonged to another class, sat in another subject, and
+      // in one case did not exist at all — each carrying whatever label the
+      // payload felt like claiming.
+      //
+      // Those are the writes this line ends. The server now decides what a
+      // question is, which is the only place that judgement can be made.
+      allow create: if false;
 
       // answerCount/likeCount/commentCount are maintained only by trusted
       // Cloud Functions (Admin SDK bypasses these rules) — don't trust the

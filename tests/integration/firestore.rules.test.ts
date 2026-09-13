@@ -716,144 +716,69 @@ describe("firestore.rules — questions/{questionId} visibility model", () => {
     await assertSucceeds(getDoc(doc(studentContext("student-1").firestore(), "questions", "q1")));
   });
 
-  it("allows creating a public question", async () => {
-    const student = studentContext("student-1");
-    await assertSucceeds(
-      addDoc(collection(student.firestore(), "questions"), {
-        ...publicQuestionDoc({ ownerId: "student-1" }),
-        createdAt: serverTimestamp(),
-      }),
-    );
-  });
-
-  // Phase 21 — topic/gradeLevel/choices/correctChoice are new fields with
-  // no dedicated allowlist entry in the create rule (same trust level as
-  // subject/description already had): this proves they pass straight
-  // through rather than silently causing the whole create to be denied,
-  // AND that they read back exactly as written — the create rule has no
-  // `hasOnly()` restricting the document to a fixed field set.
-  it("allows creating and reading back a public question with Phase 21 metadata", async () => {
-    const student = studentContext("student-1");
-    const ref = await assertSucceeds(
-      addDoc(collection(student.firestore(), "questions"), {
-        ...publicQuestionDoc({ ownerId: "student-1" }),
-        topic: "Denklemler",
-        gradeLevel: "9",
-        choices: { A: "Paris", B: "London" },
-        correctChoice: "A",
-        createdAt: serverTimestamp(),
-      }),
-    );
-
-    const snapshot = await getDoc(doc(student.firestore(), "questions", ref.id));
-    expect(snapshot.data()?.topic).toBe("Denklemler");
-    expect(snapshot.data()?.gradeLevel).toBe("9");
-    expect(snapshot.data()?.choices).toEqual({ A: "Paris", B: "London" });
-    expect(snapshot.data()?.correctChoice).toBe("A");
-  });
-
-  // Phase 72 — an optional authored hint ladder. Rules bound the LIST size
-  // (they cannot iterate it to measure each entry); per-entry trimming and
-  // truncation is questionHints.ts's job on both write and read.
-  it("allows creating a question with an authored hint ladder", async () => {
-    const student = studentContext("student-1");
-    const ref = await assertSucceeds(
-      addDoc(collection(student.firestore(), "questions"), {
-        ...publicQuestionDoc({ ownerId: "student-1" }),
-        hints: ["Önce birimlere bak.", "Denklemi sadeleştir."],
-        createdAt: serverTimestamp(),
-      }),
-    );
-    const snapshot = await getDoc(doc(student.firestore(), "questions", ref.id));
-    expect(snapshot.data()?.hints).toEqual(["Önce birimlere bak.", "Denklemi sadeleştir."]);
-  });
-
-  it("allows creating a question with no hints field at all", async () => {
-    // Every pre-Phase-72 writer must keep working untouched.
-    const student = studentContext("student-1");
-    await assertSucceeds(
-      addDoc(collection(student.firestore(), "questions"), {
-        ...publicQuestionDoc({ ownerId: "student-1" }),
-        createdAt: serverTimestamp(),
-      }),
-    );
-  });
-
-  it("allows an explicitly null hints field", async () => {
-    const student = studentContext("student-1");
-    await assertSucceeds(
-      addDoc(collection(student.firestore(), "questions"), {
-        ...publicQuestionDoc({ ownerId: "student-1" }),
-        hints: null,
-        createdAt: serverTimestamp(),
-      }),
-    );
-  });
-
-  it("denies a hint ladder longer than the allowed maximum", async () => {
-    const student = studentContext("student-1");
-    await assertFails(
-      addDoc(collection(student.firestore(), "questions"), {
-        ...publicQuestionDoc({ ownerId: "student-1" }),
-        hints: ["bir", "iki", "üç", "dört"],
-        createdAt: serverTimestamp(),
-      }),
-    );
-  });
-
-  it("denies a hints field that is not a list", async () => {
-    const student = studentContext("student-1");
-    await assertFails(
-      addDoc(collection(student.firestore(), "questions"), {
-        ...publicQuestionDoc({ ownerId: "student-1" }),
-        hints: "tek bir ipucu",
-        createdAt: serverTimestamp(),
-      }),
-    );
-  });
-
-  // Phase 77 — optional authored feedback per wrong choice. Rules bound the
-  // SHAPE (a map, at most one entry per real choice label); whether an entry
-  // names an option this question has, and whether it sits on the correct
-  // answer, are relationships between three fields that choiceFeedback.ts
-  // enforces on both write and read.
-  it("allows creating a question with authored choice feedback", async () => {
-    const student = studentContext("student-1");
-    const ref = await assertSucceeds(
-      addDoc(collection(student.firestore(), "questions"), {
-        ...publicQuestionDoc({ ownerId: "student-1" }),
+  // Phase 89 — every one of these used to assert that a client CREATE
+  // succeeded, and each documented a different thing a client was allowed to
+  // put in the document: Phase 21 metadata, a hint ladder, authored choice
+  // feedback, an absent or null field. That was all true, and it is exactly
+  // what Phase 89 measured before changing anything — a probe with real
+  // teacher and student tokens confirmed the rule's identity checks held
+  // (ownerId, posterRole, counters, outsiders) while its silence about content
+  // let through a question dated 2099, a correct answer that was not among the
+  // options, a one-option "multiple choice", a 1000-character hint, an image on
+  // another domain, and a semantic mapping to an archived, cross-class,
+  // wrong-scope or entirely invented definition.
+  //
+  // Rules cannot check any of that: it needs three fields compared against each
+  // other and a semanticDefinitions document read. So creation moved to the
+  // `createQuestion` callable, and the rule that used to wave content through
+  // now denies client creates outright. These cases are kept, inverted, because
+  // what they cover is still what a forged create would carry.
+  describe("no direct client create survives, whatever it carries (Phase 89)", () => {
+    const carriedPayloads: [string, Record<string, unknown>][] = [
+      ["a plain public question", {}],
+      ["Phase 21 metadata", { topic: "Denklemler", gradeLevel: "9", choices: { A: "Paris", B: "London" }, correctChoice: "A" }],
+      ["an authored hint ladder", { hints: ["Önce birimlere bak.", "Denklemi sadeleştir."] }],
+      ["no hints field at all", {}],
+      ["an explicitly null hints field", { hints: null }],
+      ["authored choice feedback", {
         choices: { A: "Paris", B: "London" },
         correctChoice: "A",
         choiceFeedback: { B: { text: "Başkenti karıştırmış olabilirsin.", conceptKey: null } },
-        createdAt: serverTimestamp(),
-      }),
-    );
-    const snapshot = await getDoc(doc(student.firestore(), "questions", ref.id));
-    expect(snapshot.data()?.choiceFeedback).toEqual({
-      B: { text: "Başkenti karıştırmış olabilirsin.", conceptKey: null },
+      }],
+      ["an explicitly null choiceFeedback field", { choiceFeedback: null }],
+      ["a shared semantic mapping", {
+        choices: { A: "Paris", B: "London" },
+        correctChoice: "A",
+        choiceFeedback: { B: { text: "not", semanticDefinitionId: "def-1", semanticLabel: "İddia" } },
+      }],
+      ["a fabricated createdAt", { createdAt: 4102444800000 }],
+      ["an image on another domain", { imageUrl: "https://evil.test/tracker.png" }],
+    ];
+
+    for (const [name, carried] of carriedPayloads) {
+      it(`denies a client create carrying ${name}`, async () => {
+        const student = studentContext("student-1");
+        await assertFails(
+          addDoc(collection(student.firestore(), "questions"), {
+            ...publicQuestionDoc({ ownerId: "student-1" }),
+            createdAt: serverTimestamp(),
+            ...carried,
+          }),
+        );
+      });
+    }
+
+    it("denies it with a fixed document id too, not just an auto id", async () => {
+      // addDoc and setDoc are the same operation to the rule, but a forged
+      // create would more likely pick its own id.
+      const student = studentContext("student-1");
+      await assertFails(
+        setDoc(doc(student.firestore(), "questions", "forged-id"), {
+          ...publicQuestionDoc({ ownerId: "student-1" }),
+          createdAt: serverTimestamp(),
+        }),
+      );
     });
-  });
-
-  it("allows creating a question with no choiceFeedback field at all", async () => {
-    // Every pre-Phase-77 writer must keep working untouched.
-    const student = studentContext("student-1");
-    await assertSucceeds(
-      addDoc(collection(student.firestore(), "questions"), {
-        ...publicQuestionDoc({ ownerId: "student-1" }),
-        createdAt: serverTimestamp(),
-      }),
-    );
-  });
-
-  it("allows an explicitly null choiceFeedback field", async () => {
-    const student = studentContext("student-1");
-    await assertSucceeds(
-      addDoc(collection(student.firestore(), "questions"), {
-        ...publicQuestionDoc({ ownerId: "student-1" }),
-        choiceFeedback: null,
-        createdAt: serverTimestamp(),
-      }),
-    );
   });
 
   it("denies choice feedback with more entries than there are choice labels", async () => {
@@ -1656,10 +1581,16 @@ describe("firestore.rules — classes/{classId} and members", () => {
     );
   });
 
-  it("lets the owning teacher post a question to their own class", async () => {
+  // Phase 89 — the class's OWN teacher is denied a direct create too. They
+  // still author questions; they do it through the `createQuestion` callable,
+  // which re-derives their standing from this same class document. The tests
+  // immediately below (another teacher, a non-member) now pass for a broader
+  // reason than they used to, and are kept because the narrower reason is
+  // still what the callable enforces server-side.
+  it("denies even the owning teacher a direct create into their own class (Phase 89)", async () => {
     await seedClass("class-1", classDoc());
     const teacher = teacherContext("teacher-1");
-    await assertSucceeds(
+    await assertFails(
       addDoc(collection(teacher.firestore(), "questions"), {
         ...classQuestionDoc({ ownerId: "teacher-1", classId: "class-1", organizationId: "org-1" }),
         createdAt: serverTimestamp(),
@@ -2498,10 +2429,13 @@ describe("firestore.rules — questions/{questionId} student publishing (Phase 9
 
   // ---- create: student member can publish -------------------------------
 
-  it("lets a genuine class member (student) create a class question", async () => {
+  it("denies even a genuine class member a direct create (Phase 89)", async () => {
+    // Student authorship is NOT removed — it moves to the callable, which
+    // checks this same membership record. See createQuestion.emulator.test.ts,
+    // "F3 lets a genuine student member create".
     await seedClassWithMembers();
     const student = studentContext("student-1");
-    await assertSucceeds(
+    await assertFails(
       addDoc(collection(student.firestore(), "questions"), {
         ...studentClassQuestionDoc(),
         createdAt: serverTimestamp(),
@@ -2548,10 +2482,14 @@ describe("firestore.rules — questions/{questionId} student publishing (Phase 9
   // organizationId, not organizationId() (the caller's claim, always null
   // for a student) — a rule that checked the latter would make this
   // ALWAYS fail, for every student, permanently.
-  it("succeeds even though the student's own organizationId claim is null, using the class's organizationId instead", async () => {
+  it("denies a direct create regardless of the student's null organizationId claim (Phase 89)", async () => {
+    // The null-claim handling this documented still matters — the callable
+    // reads organizationId off the CLASS for exactly the same reason, so a
+    // student with no claim of their own can still author. It is just no
+    // longer the rule that decides.
     await seedClassWithMembers();
     const student = studentContext("student-1");
-    await assertSucceeds(
+    await assertFails(
       addDoc(collection(student.firestore(), "questions"), {
         ...studentClassQuestionDoc(),
         createdAt: serverTimestamp(),
@@ -2583,10 +2521,21 @@ describe("firestore.rules — questions/{questionId} student publishing (Phase 9
     );
   });
 
-  it("accepts a subject at exactly 40 characters", async () => {
+  // Phase 89 — IMPORTANT WHEN READING THE REST OF THIS BLOCK.
+  //
+  // Every "denies ..." create test that follows still passes, but no longer for
+  // the reason its name gives: since `allow create: if false`, a client create
+  // is denied before any content check is reached. They are kept as a record of
+  // the shape a forged create takes, not as proof that a specific bound is
+  // enforced. The bounds themselves moved to the callable and are proven in
+  // tests/unit/questionCreateContract.test.ts and
+  // tests/integration/createQuestion.emulator.test.ts, where they are now
+  // stricter: subject must be a real taxonomy value rather than any string of
+  // 40 characters or fewer.
+  it("denies a client create even at the old subject boundary (Phase 89)", async () => {
     await seedClassWithMembers();
     const student = studentContext("student-1");
-    await assertSucceeds(
+    await assertFails(
       addDoc(collection(student.firestore(), "questions"), {
         ...studentClassQuestionDoc({ subject: "a".repeat(40) }),
         createdAt: serverTimestamp(),
@@ -2605,10 +2554,12 @@ describe("firestore.rules — questions/{questionId} student publishing (Phase 9
     );
   });
 
-  it("accepts a null description (optional field, omitted)", async () => {
+  it("denies a client create with a null description too (Phase 89)", async () => {
+    // A question with no text is still legal — the image carries it. The
+    // callable keeps accepting it; see questionCreateContract's C7.
     await seedClassWithMembers();
     const student = studentContext("student-1");
-    await assertSucceeds(
+    await assertFails(
       addDoc(collection(student.firestore(), "questions"), {
         ...studentClassQuestionDoc({ description: null }),
         createdAt: serverTimestamp(),
@@ -5322,9 +5273,13 @@ describe("firestore.rules — questions/{questionId} revision authorization (Pha
   // R7/R8 — the gateway is about UPDATE. Creation is untouched, and a phase
   // that silently broke question authoring would be worse than the gap it fixed.
   describe("create is untouched (R7/R8)", () => {
-    it("R7 still allows the class teacher to create a question", async () => {
+    // Phase 88 wrote these two to prove it had NOT touched create while moving
+    // update to the server. Phase 89 moves create as well, so they invert —
+    // deliberately kept side by side, because together they are the record of
+    // how the client's write rights to this collection actually narrowed.
+    it("R7 now denies the class teacher a direct create (Phase 89)", async () => {
       await seedClassAndMembers();
-      await assertSucceeds(
+      await assertFails(
         setDoc(questionRef(teacherDb(), "new-teacher-q"), {
           ...classQuestion(),
           createdAt: serverTimestamp(),
@@ -5332,9 +5287,9 @@ describe("firestore.rules — questions/{questionId} revision authorization (Pha
       );
     });
 
-    it("R8 still allows a student member to create a class question", async () => {
+    it("R8 now denies a student member a direct create (Phase 89)", async () => {
       await seedClassAndMembers();
-      await assertSucceeds(
+      await assertFails(
         setDoc(questionRef(studentDb(), "new-student-q"), {
           ...classQuestion({ ownerId: STUDENT, posterRole: "student" }),
           createdAt: serverTimestamp(),

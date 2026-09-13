@@ -1,6 +1,6 @@
 import * as ImagePicker from "expo-image-picker";
 
-import { createQuestion } from "@services/questions/questions";
+import { createQuestion, getQuestionById } from "@services/questions/questions";
 import { sanitizeHints } from "@features/questions/services/questionHints";
 import { sanitizeChoiceFeedback } from "@features/questions/services/choiceFeedback";
 import { uploadQuestionImage } from "@services/storage/questionImages";
@@ -135,6 +135,14 @@ export async function uploadQuestionWithMetadata(input: UploadQuestionInput): Pr
     choiceFeedback: input.choiceFeedback ?? null,
   });
 
+  // Phase 89 — return what the SERVER stored, not an optimistic reconstruction.
+  // The server now owns createdAt, posterRole, organizationId and every
+  // semanticLabel, so a locally rebuilt object could disagree with the document
+  // the moment it is written. One read removes that whole class of drift.
+  const created = await getQuestionById(id);
+  if (created) return created;
+  // A read-back failure is not a create failure — the question exists. Fall
+  // back to the optimistic shape so the composer still closes cleanly.
   return {
     id,
     ownerId: input.uid,
@@ -240,6 +248,14 @@ export async function uploadClassQuestionImage(
   });
   if (__DEV__) console.log("[QUESTION_UPLOAD] firestore create succeeded");
 
+  // Phase 89 — return what the SERVER stored, not an optimistic reconstruction.
+  // The server now owns createdAt, posterRole, organizationId and every
+  // semanticLabel, so a locally rebuilt object could disagree with the document
+  // the moment it is written. One read removes that whole class of drift.
+  const created = await getQuestionById(id);
+  if (created) return created;
+  // A read-back failure is not a create failure — the question exists. Fall
+  // back to the optimistic shape so the composer still closes cleanly.
   return {
     id,
     ownerId: input.uid,

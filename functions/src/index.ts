@@ -38,6 +38,8 @@ export { recordStudyOutcome, setStudyDailyGoal, removeStudyItem } from "./study"
 export { submitQuestionCommentForModeration, submitAnswerForModeration } from "./moderation";
 // Phase 88 — the authoritative question-revision gateway. Client writes to a
 // question's authoring fields are denied by firestore.rules; this is the path.
-export { updateQuestionRevision } from "./questions";
+// Phase 89 — question creation is server-authoritative too; firestore.rules
+// deny a client create outright, so this is the only way a question begins.
+export { createQuestion, updateQuestionRevision } from "./questions";
 
 // Later phases will export from ./review.

@@ -1,5 +1,4 @@
 import {
-  addDoc,
   collection,
   doc,
   DocumentData,
@@ -10,7 +9,6 @@ import {
   orderBy,
   query,
   QueryDocumentSnapshot,
-  serverTimestamp,
   startAfter,
   Timestamp,
   where,
@@ -18,17 +16,21 @@ import {
 import { httpsCallable, FunctionsError } from "firebase/functions";
 
 import { parseChoicesFromUnknown, parseCorrectChoiceFromUnknown } from "@features/questions/services/multipleChoice";
-import { parseHintsFromUnknown, sanitizeHints } from "@features/questions/services/questionHints";
-import {
-  parseChoiceFeedbackFromUnknown,
-  sanitizeChoiceFeedback,
-} from "@features/questions/services/choiceFeedback";
+import { parseHintsFromUnknown } from "@features/questions/services/questionHints";
+import { parseChoiceFeedbackFromUnknown } from "@features/questions/services/choiceFeedback";
 import {
   QuestionRevisionPayload,
 } from "@features/questions/services/questionRevision";
 import { getCurrentUser } from "@services/firebase/auth";
+import { QuestionCreateError, QuestionCreateErrorCode } from "./questionCreateError";
 import { db, functions } from "@services/firebase/config";
 import { ChoiceLabel, Question, QuestionChoices, QuestionPosterRole, QuestionVisibility } from "@/types/question";
+
+// Re-exported so every existing importer of this service keeps working; the
+// definitions live in a dependency-free module so Jest-testable code (the
+// composer error mapper) can import them without loading firebase/config.
+export { QuestionCreateError };
+export type { QuestionCreateErrorCode };
 
 export interface CreateQuestionInput {
   ownerId: string;
@@ -66,47 +68,103 @@ export interface CreateQuestionInput {
   // against `choices`/`correctChoice` below rather than trusted, so it can
   // never name an option this question does not have.
   choiceFeedback?: Partial<Record<ChoiceLabel, unknown>> | null;
+  // Phase 89 — identifies ONE submission attempt, so a retried submission
+  // cannot become a second question. Supplied by the caller when it has a
+  // stable notion of "this attempt"; otherwise generated per call. Never
+  // derived from the question's content — two intentionally identical
+  // questions are two questions.
+  operationId?: string;
 }
 
-// Matches firestore.rules `allow create` exactly: ownerId must be the
-// caller's uid, organizationId must equal the caller's own claim (null for
-// students without an organization — the rule compares with ==, so a
-// literal null here is required, not omission). For visibility 'class',
-// classId must be set, and the caller must be either that class's own
-// teacher OR a genuine member with a matching posterRole — see
-// firestore.rules' comment on the create rule. Returns the new doc id so
-// the caller can optimistically prepend it to the feed.
+/** Creates one question through the authoritative server gateway.
+ *
+ *  Phase 89 — this performs NO Firestore write, and could not: the rules
+ *  refuse a client create outright. It hands the draft to `createQuestion` on
+ *  the server, which derives the fields an author must not choose for
+ *  themselves and validates everything else.
+ *
+ *  WHY THE INPUT STILL CARRIES ownerId / posterRole / organizationId
+ *
+ *  Four composers call this and none of them needed to change. Those three
+ *  fields are simply no longer SENT: the server reads the caller's own uid,
+ *  their real standing in the target class, and that class's organisation. A
+ *  caller passing something else does not get it — it never leaves this
+ *  function. They stay on the interface because removing them would churn four
+ *  call sites to delete values the server now ignores anyway.
+ *
+ *  `operationId` identifies ONE submission attempt so a retry cannot produce a
+ *  second question. It is not derived from the question's content: two
+ *  intentionally identical questions are two questions.
+ *
+ *  Returns the new doc id, so the caller can still optimistically prepend it. */
 export async function createQuestion(input: CreateQuestionInput): Promise<string> {
-  const ref = await addDoc(collection(db, "questions"), {
-    ownerId: input.ownerId,
-    organizationId: input.organizationId,
-    visibility: input.visibility,
-    imageUrl: input.imageUrl,
-    classId: input.visibility === "class" ? (input.classId ?? null) : null,
-    subject: input.subject ?? "",
-    description: input.description ?? null,
-    posterRole: input.posterRole,
-    topic: input.topic ?? "",
-    gradeLevel: input.gradeLevel ?? "",
-    choices: input.choices ?? null,
-    correctChoice: input.correctChoice ?? null,
-    // Sanitized on the way in as well as on the way out: a blank or
-    // over-long hint must never reach the document in the first place.
-    hints: sanitizeHints(input.hints),
-    // Same posture as `hints`: sanitized on the way in as well as on the way
-    // out, and validated against this question's OWN options, so a stale
-    // mapping for a since-removed choice never reaches the document.
-    choiceFeedback: sanitizeChoiceFeedback(
-      input.choiceFeedback,
-      input.choices ?? null,
-      input.correctChoice ?? null,
-    ),
-    likeCount: 0,
-    commentCount: 0,
-    answerCount: 0,
-    createdAt: serverTimestamp(),
-  });
-  return ref.id;
+  const user = getCurrentUser();
+  if (!user) throw new QuestionCreateError("unauthenticated");
+
+  const callable = httpsCallable<QuestionCreatePayload, { questionId: string; created: boolean }>(
+    functions,
+    "createQuestion",
+  );
+
+  try {
+    const result = await callable({
+      operationId: input.operationId ?? newOperationId(),
+      // The create SURFACE, not a visibility the client gets to assert. The
+      // server turns this into the stored visibility and classId.
+      surface: input.visibility,
+      classId: input.visibility === "class" ? (input.classId ?? null) : null,
+      imageUrl: input.imageUrl,
+      subject: input.subject ?? "",
+      topic: input.topic ?? "",
+      gradeLevel: input.gradeLevel ?? "",
+      description: input.description ?? null,
+      choices: input.choices ?? null,
+      correctChoice: input.correctChoice ?? null,
+      choiceFeedback: input.choiceFeedback ?? null,
+      hints: input.hints ?? null,
+    });
+    return result.data.questionId;
+  } catch (error) {
+    throw new QuestionCreateError(mapCreateError(error));
+  }
+}
+
+interface QuestionCreatePayload {
+  operationId: string;
+  surface: QuestionVisibility;
+  classId: string | null;
+  imageUrl: string;
+  subject: string;
+  topic: string;
+  gradeLevel: string;
+  description: string | null;
+  choices: QuestionChoices | null;
+  correctChoice: ChoiceLabel | null;
+  choiceFeedback: Partial<Record<ChoiceLabel, unknown>> | null;
+  hints: readonly string[] | null;
+}
+
+/** A random, opaque id for one submission attempt.
+ *
+ *  Generated here rather than on the server because the whole point is that a
+ *  retry of the SAME attempt reuses it; a server-generated id would be new
+ *  every call and could not deduplicate anything. */
+function newOperationId(): string {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  let id = "";
+  for (let i = 0; i < 24; i += 1) {
+    id += alphabet[Math.floor(Math.random() * alphabet.length)];
+  }
+  return id;
+}
+
+function mapCreateError(error: unknown): QuestionCreateErrorCode {
+  const code = (error as FunctionsError | undefined)?.code;
+  if (code === "functions/unauthenticated") return "unauthenticated";
+  if (code === "functions/permission-denied") return "not-member";
+  if (code === "functions/not-found") return "class-not-found";
+  if (code === "functions/invalid-argument") return "invalid-question";
+  return "unavailable";
 }
 
 function toQuestion(id: string, data: DocumentData): Question {
