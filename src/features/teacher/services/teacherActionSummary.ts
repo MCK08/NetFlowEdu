@@ -2,12 +2,21 @@ import { ClassTopicHotspot } from "./classTopicInsights";
 import { StudentAttentionCard } from "./studentAttention";
 
 // Turns Phase 27's two already-computed, already-sorted lists (topic
-// hotspots, student attention) into a small, capped "what can I do right
-// now" list. No new signal, no score, no percentage — every action is a
-// direct reference to a real hotspot or a real student, using the priority
-// order those lists were ALREADY built with (see classTopicInsights.ts's
-// strugglingStudents-descending sort and studentAttention.ts's
-// category-priority sort) rather than re-deriving a third ranking here.
+// hotspots, student attention) into "what can I do right now" actions. No new
+// signal, no score, no percentage — every action is a direct reference to a
+// real hotspot or a real student, using the priority order those lists were
+// ALREADY built with (see classTopicInsights.ts's strugglingStudents-
+// descending sort and studentAttention.ts's category-priority sort) rather
+// than re-deriving a third ranking here.
+//
+// Phase 101 — this returns EVERY qualifying action. It used to cap itself at
+// 4, a size chosen for the Phase 27 summary block that Phase 73's Action
+// Center then replaced. Stacked under the Action Center's own cap of 5, that
+// old cap could leave a visible slot empty while a qualifying student sat
+// unshown, and it made a complete action list impossible to build. Capping is
+// now done in exactly one place, summarizeTeacherActionCenter. The filters
+// below — needs_attention / watch only, one action per topic — are the
+// contract and are unchanged.
 
 export type TeacherActionKind = "create_question" | "open_student";
 
@@ -28,12 +37,6 @@ export interface TeacherAction {
   // Present for open_student actions. Null for create_question actions.
   studentUid: string | null;
 }
-
-// Small on purpose (§12 "dashboard'ı action listesine boğma") — this is a
-// short "what to do first" list, not an exhaustive one; the full hotspot
-// list and full student list are both still fully visible elsewhere on the
-// screen.
-export const MAX_TEACHER_ACTIONS = 4;
 
 function topicKey(subject: string, topic: string): string {
   return `${subject}__${topic}`;
@@ -86,5 +89,5 @@ export function buildTeacherActionSummary(
     });
   }
 
-  return actions.slice(0, MAX_TEACHER_ACTIONS);
+  return actions;
 }

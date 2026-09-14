@@ -14,7 +14,10 @@ import { joinSpokenLabel } from "@utils/spokenLabel";
 
 import {
   actionCenterLabel,
+  actionCenterViewAllLabel,
+  actionCenterViewAllSpokenLabel,
   ACTION_CENTER_EMPTY_COPY,
+  ACTION_CENTER_TITLE,
   TeacherActionCenterItem,
   TeacherActionCenterKind,
 } from "../services/teacherActionCenter";
@@ -38,6 +41,13 @@ interface TeacherActionCenterSectionProps {
   items: readonly TeacherActionCenterItem[];
   onOpenStudent: (studentUid: string) => void;
   onPrepareIntervention: (item: TeacherActionCenterItem) => void;
+  /** Phase 101 — passed only when the embedded summary hides actions
+   *  (summarizeTeacherActionCenter's hasMore). Absent means nothing is hidden,
+   *  so no control is shown. */
+  viewAll?: { totalCount: number; onPress: () => void } | null;
+  /** Phase 101 — the full route names the screen in its own header, so it
+   *  hides this one rather than repeat the same title twice. */
+  showHeader?: boolean;
 }
 
 const KIND_ICON: Readonly<Record<TeacherActionCenterKind, keyof typeof Ionicons.glyphMap>> = {
@@ -138,12 +148,14 @@ export const TeacherActionCenterSection = memo(function TeacherActionCenterSecti
   items,
   onOpenStudent,
   onPrepareIntervention,
+  viewAll = null,
+  showHeader = true,
 }: TeacherActionCenterSectionProps) {
   useThemeSubscription();
 
   return (
     <View style={styles.section}>
-      <SectionHeader title="Bugün Öne Çıkanlar" />
+      {showHeader ? <SectionHeader title={ACTION_CENTER_TITLE} /> : null}
       {items.length === 0 ? (
         // Deliberately not "the class is fine": students with no trustworthy
         // evidence are invisible to every signal behind this list.
@@ -160,6 +172,20 @@ export const TeacherActionCenterSection = memo(function TeacherActionCenterSecti
           ))}
         </View>
       )}
+      {/* Phase 101 — after the rows, not in the header: a teacher reaches it
+          having just scanned the five actions it continues, and as its own
+          row it gets a full touch target instead of a caption-sized link. */}
+      {viewAll ? (
+        <Pressable
+          onPress={viewAll.onPress}
+          accessibilityRole="button"
+          accessibilityLabel={actionCenterViewAllSpokenLabel(viewAll.totalCount)}
+          style={styles.viewAll}
+        >
+          <Text style={styles.viewAllLabel}>{actionCenterViewAllLabel(viewAll.totalCount)}</Text>
+          <Ionicons name="chevron-forward" size={iconSize.xs} color={colors.primary} />
+        </Pressable>
+      ) : null}
     </View>
   );
 });
@@ -230,5 +256,24 @@ const styles = themedStyles(() => ({
   empty: {
     ...typography.body,
     color: colors.textSecondary,
+  },
+  viewAll: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.xxs,
+    minHeight: minTouchTarget,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.divider,
+    backgroundColor: colors.surface,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  viewAllLabel: {
+    ...typography.bodyStrong,
+    color: colors.primary,
+    flexShrink: 1,
+    textAlign: "center",
   },
 }));

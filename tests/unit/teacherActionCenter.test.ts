@@ -10,6 +10,7 @@ import {
   buildTeacherActionCenter,
   MAX_ACTION_CENTER_ITEMS,
   StudentInterventionOutcome,
+  summarizeTeacherActionCenter,
 } from "../../src/features/teacher/services/teacherActionCenter";
 import {
   InterventionConfidence,
@@ -226,21 +227,26 @@ describe("action center — deduplication", () => {
   });
 });
 
-describe("action center — bounded", () => {
-  it("caps how many actions a teacher is shown at once", () => {
+// Phase 101 moved the cap out of the builder and into
+// summarizeTeacherActionCenter, so the embedded section and the full route
+// read one list. The two guarantees below are the same ones Phase 73 pinned,
+// now stated about the summary that actually enforces them.
+describe("action center — bounded summary", () => {
+  it("caps how many actions the embedded summary shows at once", () => {
     const outcomes = Array.from({ length: 4 }, (_, i) =>
       outcome(`s${i}`, `S${i}`, "worsened", "high"),
     );
-    const summary = Array.from({ length: 6 }, (_, i) => topicAction(`T${i}`));
-    expect(build(outcomes, summary).length).toBeLessThanOrEqual(MAX_ACTION_CENTER_ITEMS);
+    const topics = Array.from({ length: 6 }, (_, i) => topicAction(`T${i}`));
+    const summary = summarizeTeacherActionCenter(build(outcomes, topics));
+    expect(summary.items.length).toBeLessThanOrEqual(MAX_ACTION_CENTER_ITEMS);
     expect(MAX_ACTION_CENTER_ITEMS).toBe(5);
   });
 
-  it("keeps the strongest actions when it has to cut", () => {
+  it("keeps the strongest actions when the summary has to cut", () => {
     const outcomes = Array.from({ length: 6 }, (_, i) =>
       outcome(`s${i}`, `S${i}`, "worsened", "high"),
     );
-    const items = build(outcomes, [topicAction("Denklemler")]);
+    const items = summarizeTeacherActionCenter(build(outcomes, [topicAction("Denklemler")])).items;
     expect(items.every((i) => i.kind === "escalate")).toBe(true);
   });
 });

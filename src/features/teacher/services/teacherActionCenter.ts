@@ -53,9 +53,11 @@ export interface TeacherActionCenterItem {
   evidenceNote: string | null;
 }
 
-// A short "what to look at first" list, not a task manager. The full student
-// list, the full hotspot list and each student's own screen all remain
-// unchanged and fully available.
+// How many actions the EMBEDDED summary shows — a short "what to look at
+// first" list, not a task manager. Phase 101: this is a presentation limit
+// applied by summarizeTeacherActionCenter, never by the builder, so the
+// complete list is always available to the dedicated "Bugün Öne Çıkanlar"
+// route and the summary is by construction its first N items.
 export const MAX_ACTION_CENTER_ITEMS = 5;
 
 // Fixed precedence. Escalations first because a regression with real evidence
@@ -98,11 +100,12 @@ function evidenceNoteFor(result: InterventionEffectivenessResult): string | null
     : `Müdahaleden sonra ${reviewed} soru tekrar edildi.`;
 }
 
-/** The class's action list: Phase 47 outcomes first, then the existing
- *  hotspot/student actions.
+/** The class's COMPLETE action list: Phase 47 outcomes first, then the
+ *  existing hotspot/student actions.
  *
  *  Pure and deterministic — same inputs always produce the same list in the
- *  same order. */
+ *  same order. Uncapped since Phase 101; take the embedded summary with
+ *  summarizeTeacherActionCenter so both surfaces read one list. */
 export function buildTeacherActionCenter(params: {
   outcomes: readonly StudentInterventionOutcome[];
   /** buildTeacherActionSummary's output, already sorted by its own rules. */
@@ -160,7 +163,31 @@ export function buildTeacherActionCenter(params: {
   // inside each kind without a second ranking being invented here.
   items.sort((a, b) => KIND_ORDER[a.kind] - KIND_ORDER[b.kind]);
 
-  return items.slice(0, MAX_ACTION_CENTER_ITEMS);
+  return items;
+}
+
+export interface TeacherActionCenterSummary {
+  /** What the embedded section renders: the first MAX_ACTION_CENTER_ITEMS. */
+  items: TeacherActionCenterItem[];
+  /** Every action the builder produced — the number "Tümünü Gör" states. */
+  totalCount: number;
+  /** True only when something is actually hidden from the summary. */
+  hasMore: boolean;
+}
+
+/** Phase 101 — the ONLY place the Action Center is capped.
+ *
+ *  The summary is a prefix of the complete list, never a separately ranked
+ *  one: the same order, the same dedupe, the same copy, cut at a fixed
+ *  length. "Tümünü Gör" exists exactly when that cut hides something. */
+export function summarizeTeacherActionCenter(
+  all: readonly TeacherActionCenterItem[],
+): TeacherActionCenterSummary {
+  return {
+    items: all.slice(0, MAX_ACTION_CENTER_ITEMS),
+    totalCount: all.length,
+    hasMore: all.length > MAX_ACTION_CENTER_ITEMS,
+  };
 }
 
 // Section headings a teacher reads. Derived from the action kind, never the
@@ -174,6 +201,35 @@ const KIND_LABEL: Readonly<Record<TeacherActionCenterKind, string>> = {
 
 export function actionCenterLabel(item: TeacherActionCenterItem): string {
   return KIND_LABEL[item.kind];
+}
+
+/** The Action Center's name, wherever it appears: the embedded section, the
+ *  class-page entry and the full route. One name for one surface — a second
+ *  one would make a teacher wonder whether they are looking at two lists. */
+export const ACTION_CENTER_TITLE = "Bugün Öne Çıkanlar";
+
+/** Under the full route's heading. Says what the list is and how it is
+ *  ordered, and deliberately not "every student": its sources are bounded
+ *  (the class's top topic hotspots, recent interventions), so an exhaustive
+ *  claim would be one the records cannot support. */
+export const ACTION_CENTER_FULL_LIST_NOTE =
+  "Sınıf Performansı'ndaki öne çıkanların tamamı, aksiyon türüne göre sıralı.";
+
+/** Shown on the full route when Phase 47 verdicts could not be loaded. The
+ *  list still renders its topic and student actions, as the embedded section
+ *  always has, but a page presenting itself as complete must say what is
+ *  missing rather than let an absence read as "no follow-ups". */
+export const ACTION_CENTER_OUTCOMES_UNAVAILABLE =
+  "Müdahale sonuçları yüklenemedi; takip ve öncelikli inceleme aksiyonları bu listede eksik olabilir.";
+
+/** The view-all control. The number is the complete action count — never a
+ *  count of problems, risks or struggling students. */
+export function actionCenterViewAllLabel(totalCount: number): string {
+  return `Tümünü Gör (${totalCount})`;
+}
+
+export function actionCenterViewAllSpokenLabel(totalCount: number): string {
+  return `Bugün öne çıkan ${totalCount} aksiyonun tümünü gör`;
 }
 
 /** What the class surface says when nothing stands out.

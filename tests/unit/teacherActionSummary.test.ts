@@ -1,7 +1,4 @@
-import {
-  buildTeacherActionSummary,
-  MAX_TEACHER_ACTIONS,
-} from "../../src/features/teacher/services/teacherActionSummary";
+import { buildTeacherActionSummary } from "../../src/features/teacher/services/teacherActionSummary";
 import { ClassTopicHotspot } from "../../src/features/teacher/services/classTopicInsights";
 import { StudentAttentionCard } from "../../src/features/teacher/services/studentAttention";
 
@@ -101,7 +98,11 @@ describe("buildTeacherActionSummary — multiple hotspots, priority", () => {
 });
 
 describe("buildTeacherActionSummary — cap and ordering", () => {
-  it("caps the total at MAX_TEACHER_ACTIONS even with many hotspots and students", () => {
+  it("returns every hotspot and every qualifying student, hotspots first (Phase 101)", () => {
+    // Phase 101 removed this function's own cap of 4. Capping now happens only
+    // in summarizeTeacherActionCenter, so a complete action list can exist.
+    // What must NOT change is asserted here: nothing is dropped, nothing is
+    // reordered, and hotspots still precede students.
     const hotspots = Array.from({ length: 6 }, (_, i) =>
       hotspot({ subject: "Matematik", topic: `Konu${i}`, strugglingStudents: 6 - i }),
     );
@@ -112,7 +113,11 @@ describe("buildTeacherActionSummary — cap and ordering", () => {
       }),
     );
     const actions = buildTeacherActionSummary(hotspots, cards);
-    expect(actions).toHaveLength(MAX_TEACHER_ACTIONS);
+    expect(actions).toHaveLength(12);
+    expect(actions.slice(0, 6).map((a) => a.topicContext?.topic)).toEqual(
+      hotspots.map((h) => h.topic),
+    );
+    expect(actions.slice(6).map((a) => a.studentUid)).toEqual(cards.map((c) => c.studentUid));
   });
 
   it("never produces a duplicate topic even if the hotspot list somehow repeats one", () => {

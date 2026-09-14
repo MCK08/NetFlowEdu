@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { FlatList, Pressable, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -14,12 +14,9 @@ import { useAuth } from "@features/authentication";
 import { useClassAssignments } from "@features/assignments/hooks/useClassAssignments";
 import { resolveAssignmentDisplayStatus } from "@features/assignments/services/assignmentStatus";
 import { selectRecentTopicAssignments } from "@features/assignments/services/assignmentHistorySignals";
-import { ImageSourcePicker } from "@features/classes/components/ImageSourcePicker";
-import { QuestionMetadataModal } from "@features/questions/components/QuestionMetadataModal";
 import { useClassSemanticDefinitions } from "@features/questions/hooks/useClassSemanticDefinitions";
 import type { SemanticDefinitionInput } from "@features/questions/services/semanticDefinition";
 import { LearningTrend } from "@features/study/services/learningTrend";
-import { getClassById } from "@services/firebase/classes";
 import { colors } from "@theme/colors";
 import { contentWidth } from "@theme/layout";
 import { radius } from "@theme/radius";
@@ -29,16 +26,19 @@ import { themedStyles } from "@theme/themeRuntime";
 
 import { ClassConceptHeatmapSection } from "../components/ClassConceptHeatmapSection";
 import { ClassSemanticCohortSection } from "../components/ClassSemanticCohortSection";
+import { ClassTopicComposerModals } from "../components/ClassTopicComposerModals";
 import { StudentPerformanceCard } from "../components/StudentPerformanceCard";
 import { TeacherActionCenterSection } from "../components/TeacherActionCenterSection";
-import { useClassInterventionOutcomes } from "../hooks/useClassInterventionOutcomes";
+import { useClassActionCenter } from "../hooks/useClassActionCenter";
 import {
-  buildTeacherActionCenter,
-  TeacherActionCenterItem,
-} from "../services/teacherActionCenter";
+  actionCenterComposerContext,
+  teacherActionCenterHref,
+  teacherStudentHref,
+} from "../services/actionCenterNavigation";
+import { TeacherActionCenterItem } from "../services/teacherActionCenter";
 import { useClassPerformance } from "../hooks/useClassPerformance";
 import { useClassSemanticCohorts } from "../hooks/useClassSemanticCohorts";
-import { useTeacherQuestionComposer } from "../hooks/useTeacherQuestionComposer";
+import { useClassTopicComposer } from "../hooks/useClassTopicComposer";
 import { ClassSemanticCohort } from "../services/classSemanticCohorts";
 import { ClassTopicHotspot } from "../services/classTopicInsights";
 import {
@@ -46,7 +46,6 @@ import {
   StudentAttentionCard,
 } from "../services/studentAttention";
 import { buildClassPerformanceSummary, StudentPerformanceCard as StudentPerformanceCardData } from "../services/studentPerformance";
-import { buildTeacherActionSummary } from "../services/teacherActionSummary";
 import {
   hasRecentTopicIntervention,
   InterventionCandidate,
@@ -142,36 +141,13 @@ export function ClassPerformanceScreen({ classId }: ClassPerformanceScreenProps)
   const [filter, setFilter] = useState<FilterValue>("all");
   const [expandedHotspot, setExpandedHotspot] = useState<string | null>(null);
 
-  // ONE new read this phase: the class doc's own organizationId, needed to
-  // satisfy uploadClassQuestionImage's existing required parameter (the
-  // exact same field useClassUpload/useStudentQuestionUpload already
-  // require). useClassPerformance's own `getClassMembers` read doesn't
-  // carry organizationId (it's a roster, not class metadata), so there's
-  // no already-loaded value to reuse here — a single classes/{classId}
-  // get() is the smallest correct source. Read once per screen mount, not
-  // per composer open.
-  const [classOrganizationId, setClassOrganizationId] = useState<string | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    getClassById(classId).then((room) => {
-      if (!cancelled) setClassOrganizationId(room?.organizationId ?? null);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [classId]);
-
-  const [composerTopicContext, setComposerTopicContext] = useState<{
-    subject: string;
-    topic: string;
-    gradeLevel: string | null;
-  } | null>(
-    null,
-  );
-  const composer = useTeacherQuestionComposer({
-    uid: firebaseUser?.uid,
-    organizationId: classOrganizationId,
+  // Phase 101 — the question composer that "Müdahale Hazırla" and the hotspot
+  // CTA open, extracted verbatim into useClassTopicComposer so the dedicated
+  // "Bugün Öne Çıkanlar" route offers the identical composer: the same single
+  // classes/{classId} read for organizationId, the same prefill.
+  const topicComposer = useClassTopicComposer({
     classId,
+    uid: firebaseUser?.uid,
     // A teacher-created question changes the class's own topic hotspots
     // over time (once studied), so a refresh keeps the dashboard honest —
     // reuses the exact same refresh() the retry button already calls, no
@@ -200,8 +176,7 @@ export function ClassPerformanceScreen({ classId }: ClassPerformanceScreenProps)
   // and silently falls back to its first entry ("5"), which is exactly the
   // failure this fixes.
   function openComposerForTopic(subject: string, topic: string, gradeLevel: string | null) {
-    setComposerTopicContext({ subject, topic, gradeLevel });
-    composer.openComposer();
+    topicComposer.openForTopic(subject, topic, gradeLevel);
   }
 
   // Zero new reads to LIST assignments here beyond useClassAssignments'
@@ -254,39 +229,29 @@ export function ClassPerformanceScreen({ classId }: ClassPerformanceScreenProps)
     });
   }
 
-  const teacherActions = useMemo(
-    () => buildTeacherActionSummary(topicHotspots, attentionCards),
-    [topicHotspots, attentionCards],
-  );
-
-  // Phase 73 — Phase 47's class-wide verdicts. Assignments are already loaded
-  // by this screen, so this adds at most MAX_INSPECTED_ASSIGNMENTS bounded
-  // submission queries and nothing per student.
-  const { outcomes: interventionOutcomes } = useClassInterventionOutcomes(
-    classId,
-    assignments,
-    studentEvidence,
-  );
-
   // Phase 73 — one list: post-intervention follow-ups and escalations first,
   // then the hotspot/student actions buildTeacherActionSummary already ranked.
-  const actionCenterItems = useMemo(
-    () =>
-      buildTeacherActionCenter({
-        outcomes: interventionOutcomes,
-        summaryActions: teacherActions,
-      }),
-    [interventionOutcomes, teacherActions],
-  );
+  // Phase 101 — composed by useClassActionCenter, which the dedicated "Bugün
+  // Öne Çıkanlar" route also uses, so the two surfaces cannot list different
+  // actions. Assignments are already loaded by this screen, so the only fetch
+  // remains Phase 73's at most MAX_INSPECTED_ASSIGNMENTS submission queries.
+  const actionCenter = useClassActionCenter({
+    classId,
+    topicHotspots,
+    attentionCards,
+    assignments,
+    studentEvidence,
+  });
 
   function handleActionCenterPress(item: TeacherActionCenterItem) {
-    if (item.topicContext) {
-      openComposerForTopic(
-        item.topicContext.subject,
-        item.topicContext.topic,
-        item.topicContext.gradeLevel,
-      );
-    }
+    const context = actionCenterComposerContext(item);
+    if (context) openComposerForTopic(context.subject, context.topic, context.gradeLevel);
+  }
+
+  // Phase 101 — the complete Action Center, only offered when the summary
+  // above actually hides something.
+  function openFullActionCenter() {
+    router.push(teacherActionCenterHref(classId));
   }
 
   const attentionByStudent = useMemo(() => {
@@ -325,11 +290,7 @@ export function ClassPerformanceScreen({ classId }: ClassPerformanceScreenProps)
   );
 
   function openStudent(studentUid: string) {
-    const card = cards.find((c) => c.studentUid === studentUid);
-    router.push({
-      pathname: "/(teacher)/class/[classId]/student/[studentId]",
-      params: { classId, studentId: studentUid, studentName: card?.displayName ?? "" },
-    });
+    router.push(teacherStudentHref(classId, studentUid, cards));
   }
 
   // Phase 43's own input, derived once from the roster this screen already
@@ -508,9 +469,14 @@ export function ClassPerformanceScreen({ classId }: ClassPerformanceScreenProps)
                   each student's own screen. Rendering both would have shown
                   the same hotspot twice. */}
               <TeacherActionCenterSection
-                items={actionCenterItems}
+                items={actionCenter.summary.items}
                 onOpenStudent={openStudent}
                 onPrepareIntervention={handleActionCenterPress}
+                viewAll={
+                  actionCenter.summary.hasMore
+                    ? { totalCount: actionCenter.summary.totalCount, onPress: openFullActionCenter }
+                    : null
+                }
               />
 
               {/* Phase 73 — where the class's signals concentrate, by topic.
@@ -732,28 +698,10 @@ export function ClassPerformanceScreen({ classId }: ClassPerformanceScreenProps)
         />
       )}
 
-      <ImageSourcePicker
-        visible={composer.isSourcePickerOpen}
-        onSelect={composer.selectImageSource}
-        onCancel={composer.cancelSourcePicker}
-      />
-
-      <QuestionMetadataModal
-        visible={composer.pickedImageUri !== null}
-        imageUri={composer.pickedImageUri}
-        isUploading={composer.isUploading}
-        errorMessage={composer.errorMessage}
-        onSubmit={composer.submitDetails}
-        onCancel={composer.cancelDetails}
-        initialSubject={composerTopicContext?.subject}
-        initialTopic={composerTopicContext?.topic}
-        // Phase 43 — only ever a grade the topic's own questions agree on;
-        // undefined when they do not, so the modal keeps its own default
-        // instead of being handed a guess.
-        initialGradeLevel={composerTopicContext?.gradeLevel ?? undefined}
-        // Phase 80 — the class's shared vocabulary. Loaded lazily, only while
-        // the composer is actually open, so a teacher who never authors a
-        // question never pays the read.
+      <ClassTopicComposerModals
+        state={topicComposer}
+        // Phase 80/82 — the class's shared vocabulary. Loaded on first paint on
+        // this screen because the cohort section needs it too.
         semanticDefinitions={semanticDefinitions}
         onCreateSemanticDefinition={handleCreateSemanticDefinition}
       />

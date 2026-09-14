@@ -44,6 +44,13 @@ export function TeacherClassDetailScreen({ classId }: TeacherClassDetailScreenPr
     });
   }
 
+  // Phase 101 — the complete Phase 73 Action Center for this class.
+  function openActionCenter() {
+    guardedNavigate("actions", () => {
+      router.push({ pathname: "/(teacher)/class/[classId]/actions", params: { classId } });
+    });
+  }
+
   function openPerformance() {
     guardedNavigate("performance", () => {
       router.push({ pathname: "/(teacher)/class/[classId]/performance", params: { classId } });
@@ -143,6 +150,23 @@ export function TeacherClassDetailScreen({ classId }: TeacherClassDetailScreenPr
             >
               <Ionicons name="chatbubble-outline" size={18} color={colors.textInverse} />
               <Text style={styles.chatButtonText}>Sınıf Sohbeti</Text>
+            </Pressable>
+
+            {/* Phase 101 — the Phase 73 Action Center, one tap from the class.
+                Until now it was reachable only inside "Sınıf Performansı", a
+                name that reads as analytics rather than "what should I look at
+                today". Same restrained secondary shape as its neighbours, and
+                deliberately no count or badge: the class page never shouts
+                about students. */}
+            <Pressable
+              onPress={openActionCenter}
+              style={styles.performanceButton}
+              accessibilityRole="button"
+              accessibilityLabel="Bugün öne çıkanları aç"
+              accessibilityHint="Bu sınıfta şu an öne çıkan takip, müdahale ve öğrenci aksiyonlarını görürsün"
+            >
+              <Ionicons name="today-outline" size={18} color={colors.primary} />
+              <Text style={styles.performanceButtonText}>Bugün Öne Çıkanlar</Text>
             </Pressable>
 
             {/* Phase 27 — read-only class performance dashboard. */}
