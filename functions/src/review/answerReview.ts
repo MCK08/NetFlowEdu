@@ -19,6 +19,7 @@ import {
   buildReviewAccessPath,
 } from "../moderation/answerPublication";
 import { applyTransition, isModerationState, ModerationState } from "../moderation/moderationStates";
+import { commitModerationOutcome, prepareModerationOutcome } from "../moderation/moderationOutcome";
 import {
   assertMayReview,
   assertClassTeacher,
@@ -380,6 +381,19 @@ export async function applyAnswerReview(
       throw new HttpsError("failed-precondition", "Bu gönderi için karar zaten verildi.");
     }
 
+    // Phase 99 — the author's outcome notification is READ here and WRITTEN
+    // below, inside this same transaction, so the student's only durable
+    // record of a rejection cannot be lost by a side effect that fails after
+    // the decision commits. A retry finds the document already there and
+    // plans nothing.
+    const outcomePlan = await prepareModerationOutcome(tx, db, {
+      authorId,
+      submissionId,
+      questionId,
+      targetType: "answer_image",
+      outcome: target === "approved" ? "approved" : "rejected",
+    });
+
     // ================= COMPUTE =================
     const answerRef = decision === "approve" ? db.collection("answers").doc() : null;
 
@@ -400,6 +414,7 @@ export async function applyAnswerReview(
         now,
       });
     }
+    commitModerationOutcome(tx, outcomePlan);
     return {
       submissionId,
       status: target,

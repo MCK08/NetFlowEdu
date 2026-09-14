@@ -24,7 +24,13 @@ export function commentStatusFeedback(status: CommentSubmissionStatus): Submissi
     case "in_review":
       return {
         title: "Yorumun inceleniyor.",
-        message: "Onaylandığında yayınlanacak.",
+        // Phase 99 — the second sentence is new because the outcome it points
+        // at is new. Before manual review had a resolver and a result the
+        // author could see, "onaylandığında" was a promise with no visible
+        // ending: an approval arrived silently and a refusal arrived not at
+        // all. Both now produce exactly one notification, so it is finally
+        // true to tell the student where to look.
+        message: "Onaylandığında yayınlanacak. Sonucu bildirimlerinde göreceksin.",
         clearDraft: true,
       };
     case "not_published":

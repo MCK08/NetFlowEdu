@@ -14,6 +14,16 @@ export const NOTIFICATION_TYPES = [
   "friend_request_received",
   "friend_request_accepted",
   "class_student_joined",
+  // Phase 99 — the author's own moderation outcome. Produced only by the
+  // class-teacher review callables (functions/src/review/), one per final
+  // human decision, and addressed to the content's AUTHOR. Distinct from
+  // question_answered / question_commented above, which tell the QUESTION
+  // OWNER that new content appeared: those are about someone else's action
+  // on your question, these are about the fate of your own submission.
+  "answer_review_approved",
+  "answer_review_rejected",
+  "comment_review_approved",
+  "comment_review_rejected",
 ] as const;
 
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
@@ -22,7 +32,12 @@ export function isNotificationType(value: unknown): value is NotificationType {
   return typeof value === "string" && (NOTIFICATION_TYPES as readonly string[]).includes(value);
 }
 
-export type NotificationEntityType = "question" | "answer" | "friendship" | "class";
+// "moderation" (Phase 99) means entityId is a moderationSubmissions id — the
+// immutable record of one submission, which is what makes one outcome per
+// submission expressible as a deterministic notification id. It is NEVER a
+// navigation target: a moderation outcome routes through parentEntityId (the
+// parent question), exactly as answer_liked already does.
+export type NotificationEntityType = "question" | "answer" | "friendship" | "class" | "moderation";
 
 // Everything a notification document needs to render itself without a
 // follow-up read — actor identity is a SNAPSHOT taken at creation time

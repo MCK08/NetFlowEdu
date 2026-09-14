@@ -13,11 +13,27 @@ export const NOTIFICATION_TYPES = [
   "friend_request_received",
   "friend_request_accepted",
   "class_student_joined",
+  // Phase 99 — the author's own moderation outcome, addressed to the student
+  // who submitted the content. Never names the reviewing teacher.
+  "answer_review_approved",
+  "answer_review_rejected",
+  "comment_review_approved",
+  "comment_review_rejected",
 ] as const;
 
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
-export type NotificationEntityType = "question" | "answer" | "friendship" | "class";
+/** Whether a stored `type` string is one this build can render. Lives beside
+ *  the allowlist rather than in the notifications feature so the Firestore
+ *  mapping layer can use it without depending on a feature module. */
+export function isKnownNotificationType(value: string): value is NotificationType {
+  return (NOTIFICATION_TYPES as readonly string[]).includes(value);
+}
+
+// "moderation" (Phase 99): entityId is a moderationSubmissions id, used for
+// identity only — these notifications navigate via parentEntityId (the parent
+// question), never to a moderation document.
+export type NotificationEntityType = "question" | "answer" | "friendship" | "class" | "moderation";
 
 export interface NotificationRecord {
   id: string;

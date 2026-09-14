@@ -55,6 +55,17 @@ export function resolveNotificationDestination(
       return questionDestination(notification, role, notification.entityId || null);
     case "answer_liked":
       return questionDestination(notification, role, notification.parentEntityId);
+    // Phase 99 — a moderation outcome opens the PARENT QUESTION, never the
+    // moderation submission and never the teacher's review screen. That is
+    // the only target that is valid for both outcomes: a rejection has no
+    // published answer or comment to open, so routing to the content would
+    // mean inventing an id that does not exist. Approved content is visible
+    // on the question anyway, which is where the student wanted to end up.
+    case "answer_review_approved":
+    case "answer_review_rejected":
+    case "comment_review_approved":
+    case "comment_review_rejected":
+      return questionDestination(notification, role, notification.parentEntityId);
     case "friend_request_received":
     case "friend_request_accepted":
       return friendsDestination(role);

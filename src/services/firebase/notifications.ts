@@ -16,7 +16,7 @@ import {
 import { httpsCallable } from "firebase/functions";
 
 import { db, functions } from "./config";
-import { NotificationRecord, NotificationType } from "@/types/notification";
+import { isKnownNotificationType, NotificationRecord, NotificationType } from "@/types/notification";
 
 function toMillis(value: Timestamp | number | null | undefined): number | null {
   if (value instanceof Timestamp) return value.toMillis();
@@ -66,7 +66,16 @@ export async function getNotificationsPage(
   const snapshot = await getDocs(query(collection(db, "users", uid, "notifications"), ...constraints));
   const docs = snapshot.docs;
   return {
-    notifications: docs.map((d) => toNotification(d.id, d.data())),
+    // Phase 99 — unknown types are dropped here rather than rendered. The
+    // presentation and navigation mappers are exhaustive switches that THROW
+    // on an unrecognised type, which was safe only while the allowlist never
+    // grew. It grows in this phase, so a client running an older build can
+    // now genuinely meet a type it has no branch for; one bad document must
+    // not take down the whole inbox. Pagination is unaffected: the cursor and
+    // hasMore are computed from the raw page, not the filtered list.
+    notifications: docs
+      .map((d) => toNotification(d.id, d.data()))
+      .filter((n) => isKnownNotificationType(n.type)),
     cursor: docs.length > 0 ? (docs[docs.length - 1] as QueryDocumentSnapshot<DocumentData>) : null,
     hasMore: docs.length === pageSize,
   };

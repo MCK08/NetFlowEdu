@@ -3179,6 +3179,67 @@ describe("firestore.rules — users/{uid}/notifications and notificationMeta", (
     );
   });
 
+  // ---- Phase 99: moderation outcomes are server-authored ------------------
+  //
+  // The class teacher decides whether a student's content is published, and
+  // the student is told through a notification. The teacher must not be able
+  // to write that notification themselves — a forged "yayınlandı" with no
+  // published content, or a "yayınlanmadı" for a decision nobody made, would
+  // be indistinguishable from the real thing in the student's inbox. The
+  // decision and its notification are one server transaction or neither.
+
+  it("denies a teacher writing a moderation outcome into a student's inbox", async () => {
+    const teacher = testEnv.authenticatedContext("teacher-a", {
+      role: "teacher",
+      organizationId: "org-1",
+    });
+    await assertFails(
+      setDoc(
+        doc(teacher.firestore(), "users", "student-1", "notifications", "student-1_answer_review_approved_system_sub1"),
+        notificationDoc({
+          recipientId: "student-1",
+          actorId: "system",
+          type: "answer_review_approved",
+          entityType: "moderation",
+          entityId: "sub1",
+        }),
+      ),
+    );
+  });
+
+  it("denies a student fabricating their own moderation outcome", async () => {
+    const student = studentCtx("student-1");
+    await assertFails(
+      setDoc(
+        doc(student.firestore(), "users", "student-1", "notifications", "student-1_answer_review_approved_system_sub1"),
+        notificationDoc({
+          recipientId: "student-1",
+          actorId: "system",
+          type: "answer_review_approved",
+          entityType: "moderation",
+          entityId: "sub1",
+        }),
+      ),
+    );
+  });
+
+  it("denies a classmate reading another student's moderation outcome", async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(
+        doc(ctx.firestore(), "users", "student-1", "notifications", "outcome1"),
+        notificationDoc({ type: "answer_review_rejected", entityType: "moderation", entityId: "sub1" }),
+      );
+    });
+    const classmate = studentCtx("student-2");
+    await assertFails(
+      getDoc(doc(classmate.firestore(), "users", "student-1", "notifications", "outcome1")),
+    );
+    const teacher = testEnv.authenticatedContext("teacher-a", { role: "teacher", organizationId: "org-1" });
+    await assertFails(
+      getDoc(doc(teacher.firestore(), "users", "student-1", "notifications", "outcome1")),
+    );
+  });
+
   // ---- client update is fully denied (Pre-commit hardening) -------------
   //
   // Reading a notification is now EXCLUSIVELY the markNotificationRead

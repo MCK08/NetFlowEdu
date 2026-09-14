@@ -4,6 +4,7 @@ import type { DocumentSnapshot, Firestore, Transaction } from "firebase-admin/fi
 
 import { finalizeApprovedComment } from "../moderation/commentFinalization";
 import { applyTransition, isModerationState, ModerationState } from "../moderation/moderationStates";
+import { commitModerationOutcome, prepareModerationOutcome } from "../moderation/moderationOutcome";
 import { isValidCommentText } from "../moderation/submissionTypes";
 import {
   assertClassTeacher,
@@ -220,6 +221,18 @@ export async function applyCommentReview(
       throw new HttpsError("failed-precondition", "Bu gönderi için karar zaten verildi.");
     }
 
+    // Phase 99 — same contract as the answer path: the author's outcome is
+    // read here and written below in this transaction, so a rejection (which
+    // produces no document anywhere else) still leaves the student a durable
+    // record. A retry plans nothing.
+    const outcomePlan = await prepareModerationOutcome(tx, db, {
+      authorId,
+      submissionId,
+      questionId,
+      targetType: "question_comment",
+      outcome: target === "approved" ? "approved" : "rejected",
+    });
+
     // ================= COMPUTE =================
     // The text published is the text the submission retained — validated
     // again here against the same bound the submission gate applied, and
@@ -241,6 +254,7 @@ export async function applyCommentReview(
     if (commentRef) {
       finalizeApprovedComment(tx, commentRef, { questionId, ownerId: authorId, text: text as string, now });
     }
+    commitModerationOutcome(tx, outcomePlan);
     return {
       submissionId,
       status: target,

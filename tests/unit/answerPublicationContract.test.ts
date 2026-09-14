@@ -190,10 +190,45 @@ describe("manual_review is resolved by the class teacher, and only by them (Phas
     expect(finalizer).toEqual(["functions/src/moderation/answerFinalization.ts"]);
   });
 
-  it("the review path never touches counters, notifications or learning evidence", () => {
+  it("the review path never touches counters or learning evidence", () => {
     const manual = code(review);
-    expect(manual).not.toMatch(/answerCount|FieldValue\.increment|prepareNotification|commitNotification/);
+    expect(manual).not.toMatch(/answerCount|FieldValue\.increment/);
     expect(manual).not.toMatch(/studyEvents|studyItems|semanticDefinitions/);
+  });
+
+  it("the review path emits the author outcome and NOT the publication notification", () => {
+    // Phase 97 pinned this file as touching no notification at all, which was
+    // right while onAnswerCreate owned the only one. Phase 99 adds a SECOND,
+    // different notification: the publication event still belongs to the
+    // trigger and tells the QUESTION OWNER that an answer arrived, while the
+    // review path tells the AUTHOR what happened to their submission. Two
+    // recipients, two purposes, two owners — and the boundary is that the
+    // review path reaches notifications ONLY through the shared moderation
+    // outcome helper. A direct prepareNotification/commitNotification call
+    // here would mean the review path had started producing publication
+    // notifications of its own, which is the duplicate this forbids.
+    for (const path of ["review/answerReview.ts", "review/commentReview.ts"]) {
+      const src = code(fs.readFileSync(path.startsWith("review") ? path.replace(/^/, FUNCTIONS_SRC + "/") : path, "utf8"));
+      expect(src).toContain("prepareModerationOutcome(");
+      expect(src).toContain("commitModerationOutcome(");
+      expect(src).not.toMatch(/\bprepareNotification\(/);
+      expect(src).not.toMatch(/\bcommitNotification\(/);
+    }
+    // And the helper itself never owns a counter or a publication event.
+    const helper = code(fs.readFileSync(path.join(FUNCTIONS_SRC, "moderation", "moderationOutcome.ts"), "utf8"));
+    expect(helper).not.toMatch(/answerCount|commentCount|FieldValue\.increment/);
+    expect(helper).not.toMatch(/studyEvents|studyItems|semanticDefinitions/);
+  });
+
+  it("the author outcome never carries the reviewer's identity", () => {
+    // reviewedBy stays internal to moderationSubmissions. The actor is the
+    // platform, which is also what stops createNotification's self-actor
+    // guard from dropping a notification addressed to the person it is about.
+    const helper = fs.readFileSync(path.join(FUNCTIONS_SRC, "moderation", "moderationOutcome.ts"), "utf8");
+    expect(code(helper)).not.toMatch(/reviewedBy|callerUid|reviewerId|teacherId/);
+    expect(helper).toContain('MODERATION_ACTOR_ID = "system"');
+    // The recipient is the submission's author, never anything from a request.
+    expect(code(helper)).toContain("recipientId: params.authorId");
   });
 
   it("moderation submissions remain server-only for clients", () => {
