@@ -29,6 +29,9 @@ export {
   leaveClass,
   removeClassMember,
   regenerateClassJoinCode,
+  // Phase 102 — the class teacher removes a student's message from the class
+  // chat; firestore.rules keep every client update/delete denied.
+  removeClassMessage,
 } from "./classes";
 export {
   sendFriendRequest,

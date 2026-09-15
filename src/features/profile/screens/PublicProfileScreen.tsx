@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
-import { router } from "expo-router";
+
 import { useCallback, useMemo, useState } from "react";
 import { FlatList, ListRenderItemInfo, Text, useWindowDimensions, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -9,7 +9,8 @@ import { ImageViewer } from "@components/ImageViewer";
 import { AnimatedPressable } from "@components/ui/AnimatedPressable";
 import { Divider } from "@components/ui/Divider";
 import { EmptyState } from "@components/ui/EmptyState";
-import { IconButton } from "@components/ui/IconButton";
+import { AppBackButton } from "@components/ui/AppBackButton";
+
 import { PrimaryButton } from "@components/ui/PrimaryButton";
 import { SectionHeader } from "@components/ui/SectionHeader";
 import { useAuth } from "@features/authentication";
@@ -40,7 +41,8 @@ export function PublicProfileScreen({ userId }: PublicProfileScreenProps) {
   const { profile, isLoading, errorMessage, isNotFound, retry } = usePublicProfile(userId);
   const { questions, isLoading: questionsLoading } = usePublicUserQuestions(userId);
   const [previewUri, setPreviewUri] = useState<string | null>(null);
-  const { firebaseUser } = useAuth();
+  const { firebaseUser, profile: viewerProfile } = useAuth();
+  const viewerRole = viewerProfile?.role;
   const { width } = useWindowDimensions();
   const isOwnProfile = Boolean(firebaseUser) && firebaseUser?.uid === userId;
 
@@ -77,7 +79,7 @@ export function PublicProfileScreen({ userId }: PublicProfileScreenProps) {
   if (isLoading) {
     return (
       <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
-        <Header />
+        <Header viewerRole={viewerRole} />
         <ProfileLoadingSkeleton gridItemSize={itemSize - GRID_GAP} />
       </SafeAreaView>
     );
@@ -89,7 +91,7 @@ export function PublicProfileScreen({ userId }: PublicProfileScreenProps) {
   if (errorMessage || !profile) {
     return (
       <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
-        <Header />
+        <Header viewerRole={viewerRole} />
         <View style={styles.centered}>
           <Ionicons
             name={isNotFound ? "person-remove-outline" : "cloud-offline-outline"}
@@ -112,7 +114,7 @@ export function PublicProfileScreen({ userId }: PublicProfileScreenProps) {
 
   return (
     <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
-      <Header />
+      <Header viewerRole={viewerRole} />
 
       {/* One virtualized surface. The previous version rendered every
           question inside a ScrollView via .map(), so a prolific user's
@@ -166,16 +168,11 @@ export function PublicProfileScreen({ userId }: PublicProfileScreenProps) {
   );
 }
 
-function Header() {
+function Header({ viewerRole }: { viewerRole: string | undefined }) {
   return (
     <View>
       <View style={styles.header}>
-        <IconButton
-          icon="chevron-back"
-          onPress={() => router.back()}
-          accessibilityLabel="Geri"
-          color={colors.textPrimary}
-        />
+        <AppBackButton fallbackHref={viewerRole === "teacher" ? "/(teacher)/(tabs)" : "/(student)/(tabs)"} />
         <Text style={styles.headerTitle}>Profil</Text>
         <View style={styles.headerSpacer} />
       </View>

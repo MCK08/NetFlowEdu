@@ -3,6 +3,7 @@ import { Tabs } from "expo-router";
 
 import { ProfileTabButton } from "@features/authentication/components/ProfileTabButton";
 import { colors } from "@theme/colors";
+import { immersiveChrome, immersiveTabBarStyle } from "@theme/immersive";
 import { useThemeSubscription } from "@theme/ThemeProvider";
 
 export default function StudentTabsLayout() {
@@ -25,6 +26,13 @@ export default function StudentTabsLayout() {
         options={{
           title: "Akış",
           tabBarIcon: ({ color, size }) => <Ionicons name="home" color={color} size={size} />,
+          // Phase 102 — the feed is an immersive dark pager in BOTH themes
+          // (Phase 55); its tab bar follows that surface, not the theme, so
+          // a Light-theme feed is no longer a dark page with a white bar
+          // under it. Only this tab: the others keep the themed bar above.
+          tabBarStyle: immersiveTabBarStyle(),
+          tabBarActiveTintColor: immersiveChrome.activeTint,
+          tabBarInactiveTintColor: immersiveChrome.inactiveTint,
         }}
       />
       {/* Phase 16 — the adaptive review queue. Placed second so the daily

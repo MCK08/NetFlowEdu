@@ -10,6 +10,7 @@ import { EmptyState } from "@components/ui/EmptyState";
 import { LoadingSkeleton } from "@components/ui/LoadingSkeleton";
 import { PrimaryButton } from "@components/ui/PrimaryButton";
 import { SearchInput } from "@components/ui/SearchInput";
+import { AppBackButton } from "@components/ui/AppBackButton";
 import { colors } from "@theme/colors";
 import { contentWidth } from "@theme/layout";
 import { radius } from "@theme/radius";
@@ -371,15 +372,7 @@ export function SemanticVocabularyScreen({ classId }: SemanticVocabularyScreenPr
   return (
     <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
       <View style={styles.header}>
-        <Pressable
-          onPress={() => router.back()}
-          style={styles.backButton}
-          accessibilityRole="button"
-          accessibilityLabel="Geri"
-          hitSlop={8}
-        >
-          <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
-        </Pressable>
+        <AppBackButton fallbackHref={{ pathname: "/(teacher)/class/[classId]", params: { classId } }} style={styles.backButton} />
         <View style={styles.headerText}>
           <Text style={styles.title}>Ortak Etiketler</Text>
           <Text style={styles.subtitle}>

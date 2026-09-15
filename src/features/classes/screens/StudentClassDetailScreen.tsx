@@ -1,10 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { Alert, ActivityIndicator, FlatList, Pressable, Text, useWindowDimensions, View } from "react-native";
+import { Alert, ActivityIndicator, FlatList, Text, useWindowDimensions, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AnimatedPressable } from "@components/ui/AnimatedPressable";
 import { EmptyState } from "@components/ui/EmptyState";
+import { AppBackButton } from "@components/ui/AppBackButton";
 import { useAuth } from "@features/authentication";
 import { QuestionMetadataModal } from "@features/questions/components/QuestionMetadataModal";
 import { useClassSemanticDefinitions } from "@features/questions/hooks/useClassSemanticDefinitions";
@@ -115,14 +116,7 @@ export function StudentClassDetailScreen({ classId }: StudentClassDetailScreenPr
         contentContainerStyle={styles.listContent}
         ListHeaderComponent={
           <View style={styles.header}>
-            <Pressable
-              onPress={() => router.back()}
-              style={styles.backButton}
-              accessibilityRole="button"
-              accessibilityLabel="Geri"
-            >
-              <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
-            </Pressable>
+            <AppBackButton fallbackHref="/(student)/(tabs)/classes" style={styles.backButton} />
 
             <Text style={styles.title}>{classRoom.name}</Text>
             <Text style={styles.memberCount}>{classRoom.memberCount} üye</Text>

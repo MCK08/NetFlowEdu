@@ -1,17 +1,20 @@
 import { FirebaseError } from "firebase/app";
-import { DocumentData, DocumentSnapshot, QueryDocumentSnapshot } from "firebase/firestore";
+import { DocumentData, DocumentSnapshot, QueryDocumentSnapshot, Timestamp } from "firebase/firestore";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Keyboard } from "react-native";
 
 import { runGuardedOnce } from "@features/authentication/services/guardedAction";
+import { ChatReadTarget } from "@services/firebase/classChatReads";
 import {
   getOlderClassMessagesPage,
   sendClassMessage,
   subscribeToRecentClassMessages,
 } from "@services/firebase/classMessages";
+import { removeClassMessage } from "@services/firebase/functions";
 import { ChatListMessage, ChatSenderRole, ClassMessage } from "@/types/message";
 
 import { mergeClassMessages } from "../services/classMessageMerge";
+import { RemoveMessageError, removeMessageErrorMessage } from "../services/messageModeration";
 import { normalizeMessageText, validateMessageText } from "../services/messageValidation";
 
 const PERMISSION_DENIED_MESSAGE = "Bu sınıfın sohbetini görüntüleme yetkiniz yok.";
@@ -61,6 +64,11 @@ function generateClientMessageId(): string {
 // the live listener — see the reconciliation effect below.
 export function useClassChat({ classId, sender }: UseClassChatOptions) {
   const [liveMessages, setLiveMessages] = useState<ClassMessage[]>([]);
+  // Phase 102 — the newest confirmed message with its RAW createdAt, for the
+  // read cursor (the rules want the exact stored timestamp, not a
+  // millisecond round-trip). Replaced only when the newest message changes,
+  // so the reads hook's effect does not re-run on every snapshot.
+  const [newestLive, setNewestLive] = useState<ChatReadTarget | null>(null);
   const [olderMessages, setOlderMessages] = useState<ClassMessage[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -100,6 +108,15 @@ export function useClassChat({ classId, sender }: UseClassChatOptions) {
       (next, rawDocsDesc) => {
         liveRawDocsRef.current = rawDocsDesc;
         setLiveMessages(next);
+        const newestDoc = rawDocsDesc[0];
+        const createdAt = newestDoc?.get("createdAt");
+        if (newestDoc && createdAt instanceof Timestamp) {
+          setNewestLive((prev) =>
+            prev?.messageId === newestDoc.id ? prev : { messageId: newestDoc.id, createdAt },
+          );
+        } else {
+          setNewestLive(null);
+        }
         setIsLoading(false);
         setError(null);
       },
@@ -257,8 +274,40 @@ export function useClassChat({ classId, sender }: UseClassChatOptions) {
     }
   }
 
+  // Phase 102 — the class teacher removes a student's message. The write is
+  // the removeClassMessage Cloud Function's alone (firestore.rules deny every
+  // client update); what happens here is only the call, and a local patch of
+  // the paginated history — the live window re-renders from its own
+  // listener, but older pages are one-time reads and would otherwise keep
+  // showing the removed text until the chat is reopened.
+  const [moderationError, setModerationError] = useState<string | null>(null);
+  const removingRef = useRef(false);
+
+  async function removeMessage(messageId: string): Promise<boolean> {
+    if (!classId || removingRef.current) return false;
+    removingRef.current = true;
+    setModerationError(null);
+    try {
+      await removeClassMessage(classId, messageId);
+      setOlderMessages((prev) =>
+        prev.some((message) => message.id === messageId)
+          ? prev.map((message) => (message.id === messageId ? { ...message, text: "", deleted: true } : message))
+          : prev,
+      );
+      return true;
+    } catch (err) {
+      setModerationError(
+        err instanceof RemoveMessageError ? removeMessageErrorMessage(err.code) : removeMessageErrorMessage("unavailable"),
+      );
+      return false;
+    } finally {
+      removingRef.current = false;
+    }
+  }
+
   return {
     messages: listMessages,
+    newestLive,
     isLoading,
     error,
     hasMoreOlder,
@@ -270,5 +319,8 @@ export function useClassChat({ classId, sender }: UseClassChatOptions) {
     sendError,
     send,
     retryFailed,
+    removeMessage,
+    moderationError,
+    clearModerationError: () => setModerationError(null),
   };
 }

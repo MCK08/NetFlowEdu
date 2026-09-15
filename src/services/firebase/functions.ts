@@ -1,4 +1,6 @@
-import { httpsCallable } from "firebase/functions";
+import { FunctionsError, httpsCallable } from "firebase/functions";
+
+import { mapRemoveMessageError, RemoveMessageError } from "@features/classes/services/messageModeration";
 
 import { functions } from "./config";
 
@@ -151,6 +153,27 @@ export async function regenerateClassJoinCode(classId: string): Promise<{ joinCo
   );
   const result = await callable({ classId });
   return result.data;
+}
+
+// Phase 102 — see functions/src/classes/removeClassMessage.ts. The class's
+// own teacher removes a STUDENT'S message from the class chat; the server
+// derives every right from the stored class and message, so the payload is
+// the message's path and nothing else. An already-removed message is a
+// success ({ removed: false }) — that is what makes a retry safe.
+export async function removeClassMessage(
+  classId: string,
+  messageId: string,
+): Promise<{ removed: boolean }> {
+  const callable = httpsCallable<{ classId: string; messageId: string }, { removed: boolean }>(
+    functions,
+    "removeClassMessage",
+  );
+  try {
+    const result = await callable({ classId, messageId });
+    return result.data;
+  } catch (error) {
+    throw new RemoveMessageError(mapRemoveMessageError((error as FunctionsError | undefined)?.code));
+  }
 }
 
 interface SendFriendRequestResult {

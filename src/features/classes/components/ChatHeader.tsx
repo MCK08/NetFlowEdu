@@ -1,14 +1,16 @@
+import { Href } from "expo-router";
 import { Text, View } from "react-native";
 
+import { AppBackButton } from "@components/ui/AppBackButton";
 import { Divider } from "@components/ui/Divider";
-import { IconButton } from "@components/ui/IconButton";
 import { colors } from "@theme/colors";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
 import { themedStyles } from "@theme/themeRuntime";
 
 interface ChatHeaderProps {
-  onBack: () => void;
+  /** Phase 102 — the class this chat belongs to, for the no-history fallback. */
+  fallbackHref: Href;
 }
 
 // Compact chat header.
@@ -21,16 +23,11 @@ interface ChatHeaderProps {
 // structure around it (real back IconButton with a guaranteed 44pt target,
 // token typography, a hairline Divider instead of a 1px hardcoded border,
 // and a balanced trailing spacer so the title is not pushed off-centre).
-export function ChatHeader({ onBack }: ChatHeaderProps) {
+export function ChatHeader({ fallbackHref }: ChatHeaderProps) {
   return (
     <View>
       <View style={styles.row}>
-        <IconButton
-          icon="chevron-back"
-          onPress={onBack}
-          accessibilityLabel="Geri"
-          color={colors.textPrimary}
-        />
+        <AppBackButton fallbackHref={fallbackHref} />
         <Text style={styles.title} numberOfLines={1}>
           Sınıf Sohbeti
         </Text>

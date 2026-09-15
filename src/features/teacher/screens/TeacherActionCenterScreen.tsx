@@ -1,12 +1,13 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useCallback } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { EmptyState } from "@components/ui/EmptyState";
 import { LoadingSkeleton } from "@components/ui/LoadingSkeleton";
 import { PrimaryButton } from "@components/ui/PrimaryButton";
+import { AppBackButton } from "@components/ui/AppBackButton";
 import { useAuth } from "@features/authentication";
 import { useClassAssignments } from "@features/assignments/hooks/useClassAssignments";
 import { useClassSemanticDefinitions } from "@features/questions/hooks/useClassSemanticDefinitions";
@@ -131,15 +132,7 @@ export function TeacherActionCenterScreen({ classId }: TeacherActionCenterScreen
   return (
     <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
       <View style={styles.header}>
-        <Pressable
-          onPress={() => router.back()}
-          style={styles.backButton}
-          accessibilityRole="button"
-          accessibilityLabel="Geri"
-          hitSlop={8}
-        >
-          <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
-        </Pressable>
+        <AppBackButton fallbackHref={{ pathname: "/(teacher)/class/[classId]", params: { classId } }} style={styles.backButton} />
         <View style={styles.headerText}>
           <Text style={styles.title} accessibilityRole="header">
             {ACTION_CENTER_TITLE}

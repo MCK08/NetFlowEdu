@@ -1,10 +1,12 @@
-import { Ionicons } from "@expo/vector-icons";
+
 import { router, useNavigation } from "expo-router";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Alert, Pressable, Text, View } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import { Alert, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AnimatedPressable } from "@components/ui/AnimatedPressable";
+import { AppBackButton } from "@components/ui/AppBackButton";
+import { useBackNavigation } from "@hooks/useBackNavigation";
 import { useAuth } from "@features/authentication";
 import { colors } from "@theme/colors";
 import { radius } from "@theme/radius";
@@ -88,22 +90,12 @@ export function AnswerScreen({ questionId }: AnswerScreenProps) {
     return unsubscribe;
   }, [navigation]);
 
-  const handleBackPress = useCallback(() => {
-    router.back();
-  }, []);
+  const handleBackPress = useBackNavigation({ pathname: "/(student)/question/[questionId]", params: { questionId } });
 
   return (
     <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
       <View style={styles.header}>
-        <Pressable
-          onPress={handleBackPress}
-          style={styles.backButton}
-          accessibilityRole="button"
-          accessibilityLabel="Geri"
-          hitSlop={8}
-        >
-          <Ionicons name="chevron-back" size={26} color={colors.textPrimary} />
-        </Pressable>
+        <AppBackButton fallbackHref={{ pathname: "/(student)/question/[questionId]", params: { questionId } }} onPress={handleBackPress} size="lg" style={styles.backButton} />
         <Text style={styles.title}>Cevap Ver</Text>
       </View>
 

@@ -10,6 +10,7 @@ import { EmptyState } from "@components/ui/EmptyState";
 import { LoadingSkeleton } from "@components/ui/LoadingSkeleton";
 import { PrimaryButton } from "@components/ui/PrimaryButton";
 import { SectionHeader } from "@components/ui/SectionHeader";
+import { AppBackButton } from "@components/ui/AppBackButton";
 import { useAuth } from "@features/authentication";
 import { useClassAssignments } from "@features/assignments/hooks/useClassAssignments";
 import { resolveAssignmentDisplayStatus } from "@features/assignments/services/assignmentStatus";
@@ -414,15 +415,7 @@ export function ClassPerformanceScreen({ classId }: ClassPerformanceScreenProps)
   return (
     <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
       <View style={styles.header}>
-        <Pressable
-          onPress={() => router.back()}
-          style={styles.backButton}
-          accessibilityRole="button"
-          accessibilityLabel="Geri"
-          hitSlop={8}
-        >
-          <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
-        </Pressable>
+        <AppBackButton fallbackHref={{ pathname: "/(teacher)/class/[classId]", params: { classId } }} style={styles.backButton} />
         <Text style={styles.title}>Sınıf Performansı</Text>
       </View>
 

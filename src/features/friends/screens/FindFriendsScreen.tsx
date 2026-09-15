@@ -5,7 +5,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { Divider } from "@components/ui/Divider";
 import { EmptyState } from "@components/ui/EmptyState";
-import { IconButton } from "@components/ui/IconButton";
+import { AppBackButton } from "@components/ui/AppBackButton";
+
 import { SearchInput } from "@components/ui/SearchInput";
 import { useAuth } from "@features/authentication";
 import { useNavigationGuard } from "@hooks/useNavigationGuard";
@@ -117,12 +118,7 @@ export function FindFriendsScreen() {
   return (
     <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
       <View style={styles.header}>
-        <IconButton
-          icon="chevron-back"
-          onPress={() => router.back()}
-          accessibilityLabel="Geri"
-          color={colors.textPrimary}
-        />
+        <AppBackButton fallbackHref={ownProfile?.role === "teacher" ? "/(teacher)/(tabs)/friends" : "/(student)/friends"} />
         <Text style={styles.title}>Arkadaş Bul</Text>
         <View style={styles.headerSpacer} />
       </View>

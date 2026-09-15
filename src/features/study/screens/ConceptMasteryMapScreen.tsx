@@ -5,6 +5,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { Ionicons } from "@expo/vector-icons";
 
+import { AppBackButton } from "@components/ui/AppBackButton";
 import { EmptyState } from "@components/ui/EmptyState";
 import { LoadingSkeleton } from "@components/ui/LoadingSkeleton";
 import { PrimaryButton } from "@components/ui/PrimaryButton";
@@ -72,7 +73,10 @@ export function ConceptMasteryMapScreen() {
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.column}>
           <View style={styles.header}>
-            <Text style={styles.title}>Öğrenme Haritam</Text>
+            <View style={styles.headerRow}>
+              <AppBackButton fallbackHref={ROUTES.studentLearningAtlas} style={styles.backButton} />
+              <Text style={styles.title}>Öğrenme Haritam</Text>
+            </View>
             <Text style={styles.subtitle}>Çalışmalarından oluşan öğrenme görünümün.</Text>
           </View>
 
@@ -166,9 +170,19 @@ const styles = themedStyles(() => ({
   header: {
     gap: spacing.xxs,
   },
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xxs,
+  },
+  backButton: {
+    marginLeft: -spacing.sm,
+  },
   title: {
     ...typography.displayLg,
     color: colors.textPrimary,
+    flex: 1,
+    minWidth: 0,
   },
   subtitle: {
     ...typography.body,

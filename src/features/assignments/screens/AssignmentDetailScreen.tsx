@@ -1,4 +1,4 @@
-import { Ionicons } from "@expo/vector-icons";
+
 import { router } from "expo-router";
 import { FlatList, Pressable, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -7,6 +7,7 @@ import { Card } from "@components/ui/Card";
 import { EmptyState } from "@components/ui/EmptyState";
 import { LoadingSkeleton } from "@components/ui/LoadingSkeleton";
 import { PrimaryButton } from "@components/ui/PrimaryButton";
+import { AppBackButton } from "@components/ui/AppBackButton";
 import { colors } from "@theme/colors";
 import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
@@ -95,15 +96,14 @@ export function AssignmentDetailScreen({ assignmentId }: AssignmentDetailScreenP
   return (
     <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
       <View style={styles.header}>
-        <Pressable
-          onPress={() => router.back()}
+        <AppBackButton
+          fallbackHref={
+            assignment
+              ? { pathname: "/(teacher)/class/[classId]", params: { classId: assignment.classId } }
+              : "/(teacher)/(tabs)/classes"
+          }
           style={styles.backButton}
-          accessibilityRole="button"
-          accessibilityLabel="Geri"
-          hitSlop={8}
-        >
-          <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
-        </Pressable>
+        />
         <Text style={styles.title} numberOfLines={1}>
           {assignment?.title ?? "Ödev"}
         </Text>

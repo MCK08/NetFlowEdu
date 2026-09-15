@@ -1,4 +1,4 @@
-import { Ionicons } from "@expo/vector-icons";
+
 import { router } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
@@ -7,6 +7,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Chip } from "@components/ui/Chip";
 import { LoadingSkeleton } from "@components/ui/LoadingSkeleton";
 import { PrimaryButton } from "@components/ui/PrimaryButton";
+import { AppBackButton } from "@components/ui/AppBackButton";
 import { useAuth } from "@features/authentication";
 import { GRADE_LEVELS, getTopicsForSubject, QUESTION_SUBJECTS } from "@features/questions/data/questionTaxonomy";
 import { getClassById, getClassMembers } from "@services/firebase/classes";
@@ -265,15 +266,7 @@ export function CreateAssignmentScreen({
   return (
     <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
       <View style={styles.header}>
-        <Pressable
-          onPress={() => router.back()}
-          style={styles.backButton}
-          accessibilityRole="button"
-          accessibilityLabel="Geri"
-          hitSlop={8}
-        >
-          <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
-        </Pressable>
+        <AppBackButton fallbackHref={{ pathname: "/(teacher)/class/[classId]", params: { classId } }} style={styles.backButton} />
         <Text style={styles.title}>Ödev Oluştur</Text>
       </View>
 

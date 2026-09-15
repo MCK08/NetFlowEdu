@@ -570,7 +570,52 @@ service cloud.firestore {
                     && request.resource.data.editedAt == null
                     && request.resource.data.deleted == false;
 
+      // Phase 102 — still no client update or delete. The one change a
+      // message can undergo (the class teacher removing a student's message)
+      // happens through the removeClassMessage Cloud Function, which is
+      // what makes it authoritative, class-scoped and retry-safe.
       allow update: if false;
+      allow delete: if false;
+    }
+
+    // ---- classes/{classId}/chatReads/{memberUid} ------------------------
+    // Phase 102 — one read cursor per (class, member): the newest message
+    // this member has OPENED the conversation on. This is what backs the
+    // sender's "Görüldü" — and because a class chat is a group, it is one
+    // document per recipient, never a single seenAt on the message.
+    //
+    // A member writes only their OWN cursor, and only to a message that
+    // actually exists in this class: lastReadAt must equal that message's
+    // stored createdAt (a get() on the message, so a cursor can never point
+    // past the conversation or at an invented time). The cursor is
+    // monotonic — an update may not move it backwards — and updatedAt is
+    // the server's clock. Any member may read the cursors, which is what
+    // lets a sender see who has caught up; there is no presence, typing or
+    // "online" signal here and none of these fields could carry one.
+    function chatReadMessageCreatedAt(classId) {
+      return get(/databases/$(database)/documents/classes/$(classId)/messages/$(request.resource.data.lastReadMessageId)).data.createdAt;
+    }
+
+    function isValidChatRead(classId) {
+      return request.resource.data.keys().hasOnly(['lastReadMessageId', 'lastReadAt', 'updatedAt'])
+          && request.resource.data.lastReadMessageId is string
+          && request.resource.data.lastReadMessageId.size() > 0
+          && request.resource.data.lastReadAt is timestamp
+          && request.resource.data.lastReadAt == chatReadMessageCreatedAt(classId)
+          && request.resource.data.updatedAt == request.time;
+    }
+
+    match /classes/{classId}/chatReads/{memberUid} {
+      allow read: if isSignedIn() && isClassMember(classId);
+      allow create: if isSignedIn()
+                    && isOwner(memberUid)
+                    && isClassMember(classId)
+                    && isValidChatRead(classId);
+      allow update: if isSignedIn()
+                    && isOwner(memberUid)
+                    && isClassMember(classId)
+                    && isValidChatRead(classId)
+                    && request.resource.data.lastReadAt >= resource.data.lastReadAt;
       allow delete: if false;
     }
 

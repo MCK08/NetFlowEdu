@@ -1,12 +1,14 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router, useNavigation } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Alert, FlatList, Platform, Pressable, Text, useWindowDimensions, View } from "react-native";
+import { ActivityIndicator, Alert, FlatList, Platform, Text, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { EmptyState } from "@components/ui/EmptyState";
 import { PrimaryButton } from "@components/ui/PrimaryButton";
+import { AppBackButton } from "@components/ui/AppBackButton";
 import { ROUTES } from "@constants/routes";
+import { useBackNavigation } from "@hooks/useBackNavigation";
 import { formatFeedPosition } from "@features/classes/services/classFeedPagination";
 import { useAuth } from "@features/authentication";
 import { colors } from "@theme/colors";
@@ -144,10 +146,7 @@ export function StudySessionScreen({ mode, assignmentId }: StudySessionScreenPro
     [swipeQuestions.length, cardHeight],
   );
 
-  function goBack() {
-    if (router.canGoBack()) router.back();
-    else router.replace(ROUTES.studentStudy as never);
-  }
+  const goBack = useBackNavigation(ROUTES.studentStudy);
 
   // Swipe cards (adaptive AND assignment — both render StudySessionAdaptiveCard)
   // are self-contained (each owns its own useStudyQuestionState, see that
@@ -311,15 +310,7 @@ export function StudySessionScreen({ mode, assignmentId }: StudySessionScreenPro
 
   const header = (
     <View style={[styles.header, { paddingTop: insets.top + spacing.xs }]}>
-      <Pressable
-        onPress={goBack}
-        style={styles.backButton}
-        accessibilityRole="button"
-        accessibilityLabel="Geri"
-        hitSlop={8}
-      >
-        <Ionicons name="chevron-back" size={26} color={colors.textPrimary} />
-      </Pressable>
+      <AppBackButton fallbackHref={ROUTES.studentStudy} onPress={goBack} size="lg" style={styles.backButton} />
       <Text style={styles.headerTitle}>
         {mode === "mandatory" ? "Tekrar" : isAssignmentMode ? "Ödev" : "Çalışma"}
       </Text>

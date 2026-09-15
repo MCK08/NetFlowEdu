@@ -4,6 +4,7 @@ import { ActivityIndicator, FlatList, Pressable, Text, useWindowDimensions, View
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { EmptyState } from "@components/ui/EmptyState";
+import { AppBackButton } from "@components/ui/AppBackButton";
 import { useAuth } from "@features/authentication";
 import { QuestionGridItem } from "@features/profile/components/QuestionGridItem";
 import { useNavigationGuard } from "@hooks/useNavigationGuard";
@@ -114,14 +115,7 @@ export function TeacherClassDetailScreen({ classId }: TeacherClassDetailScreenPr
         contentContainerStyle={styles.listContent}
         ListHeaderComponent={
           <View style={styles.header}>
-            <Pressable
-              onPress={() => router.back()}
-              style={styles.backButton}
-              accessibilityRole="button"
-              accessibilityLabel="Geri"
-            >
-              <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
-            </Pressable>
+            <AppBackButton fallbackHref="/(teacher)/(tabs)/classes" style={styles.backButton} />
 
             <Text style={styles.title}>{classRoom.name}</Text>
 

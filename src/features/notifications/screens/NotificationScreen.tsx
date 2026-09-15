@@ -1,7 +1,7 @@
-import { Ionicons } from "@expo/vector-icons";
+
 import { router } from "expo-router";
 import { useCallback, useEffect, useMemo } from "react";
-import { ActivityIndicator, Pressable, RefreshControl, SectionList, Text, View } from "react-native";
+import { ActivityIndicator, RefreshControl, SectionList, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { Divider } from "@components/ui/Divider";
@@ -11,8 +11,10 @@ import { PrimaryButton } from "@components/ui/PrimaryButton";
 import { LoadingSkeleton } from "@components/ui/LoadingSkeleton";
 import { Toast } from "@components/ui/Toast";
 import { useToast } from "@components/ui/useToast";
+import { AppBackButton } from "@components/ui/AppBackButton";
 import { useAuth } from "@features/authentication";
 import { useNavigationGuard } from "@hooks/useNavigationGuard";
+import { useBackNavigation } from "@hooks/useBackNavigation";
 import { colors } from "@theme/colors";
 import { minTouchTarget } from "@theme/sizes";
 import { spacing } from "@theme/spacing";
@@ -113,25 +115,13 @@ export function NotificationScreen({ role }: { role: UserRole }) {
   // replacing with this role's own tab home rather than calling back()
   // blindly, which would be a no-op (and log a warning) if this screen was
   // ever opened as the root of its own stack (e.g. a future deep link).
-  function goBack() {
-    if (router.canGoBack()) router.back();
-    else router.replace((role === "teacher" ? ROUTES.teacher : ROUTES.student) as never);
-  }
+  const goBack = useBackNavigation(role === "teacher" ? ROUTES.teacher : ROUTES.student);
 
   return (
     <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
       <View style={styles.header}>
         <View style={styles.headerTopRow}>
-          <Pressable
-            onPress={goBack}
-            style={styles.backButton}
-            accessibilityRole="button"
-            accessibilityLabel="Geri"
-            accessibilityHint="Önceki ekrana döner"
-            hitSlop={8}
-          >
-            <Ionicons name="chevron-back" size={26} color={colors.textPrimary} />
-          </Pressable>
+          <AppBackButton fallbackHref={role === "teacher" ? ROUTES.teacher : ROUTES.student} onPress={goBack} size="lg" style={styles.backButton} />
           <View style={styles.headerTitleRow}>
             <Text style={styles.title}>Bildirimler</Text>
             {badgeLabel ? (

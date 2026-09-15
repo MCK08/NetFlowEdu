@@ -3,6 +3,7 @@ import { useCallback, useMemo } from "react";
 import { ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { AppBackButton } from "@components/ui/AppBackButton";
 import { EmptyState } from "@components/ui/EmptyState";
 import { LoadingSkeleton } from "@components/ui/LoadingSkeleton";
 import { PrimaryButton } from "@components/ui/PrimaryButton";
@@ -94,7 +95,10 @@ export function StrugglePatternsScreen() {
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.column}>
           <View style={styles.header}>
-            <Text style={styles.title}>Zorlanma Örüntülerim</Text>
+            <View style={styles.headerRow}>
+              <AppBackButton fallbackHref={ROUTES.studentConceptMasteryMap} style={styles.backButton} />
+              <Text style={styles.title}>Zorlanma Örüntülerim</Text>
+            </View>
             <Text style={styles.subtitle}>
               Son öğrenme kayıtlarında tekrar eden zorlanmaları gör.
             </Text>
@@ -187,9 +191,19 @@ const styles = themedStyles(() => ({
   header: {
     gap: spacing.xxs,
   },
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xxs,
+  },
+  backButton: {
+    marginLeft: -spacing.sm,
+  },
   title: {
     ...typography.displayLg,
     color: colors.textPrimary,
+    flex: 1,
+    minWidth: 0,
   },
   subtitle: {
     ...typography.body,

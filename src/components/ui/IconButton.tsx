@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import { StyleProp, ViewStyle } from "react-native";
 
 import { colors } from "@theme/colors";
 import { iconSize } from "@theme/sizes";
@@ -14,6 +15,9 @@ interface IconButtonProps {
   size?: keyof typeof iconSize;
   color?: string;
   disabled?: boolean;
+  /** Phase 102 — additive layout hook (a header's negative margin, say).
+   *  The 44pt hit area is never reduced by it. */
+  style?: StyleProp<ViewStyle>;
 }
 
 // A tappable icon with a guaranteed >=44pt hit area (Step 6 accessibility
@@ -28,6 +32,7 @@ export function IconButton({
   size = "md",
   color = colors.textSecondary,
   disabled,
+  style,
 }: IconButtonProps) {
   return (
     <AnimatedPressable
@@ -36,7 +41,7 @@ export function IconButton({
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       hitSlop={8}
-      style={styles.hitArea}
+      style={[styles.hitArea, style]}
     >
       <Ionicons name={icon} size={iconSize[size]} color={color} />
     </AnimatedPressable>

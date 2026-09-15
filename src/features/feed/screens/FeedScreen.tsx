@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { router, useFocusEffect } from "expo-router";
+import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -33,6 +34,7 @@ import { CameraButton } from "@features/upload/components/CameraButton";
 import { VisibilityPicker } from "@features/upload/components/VisibilityPicker";
 import { useUpload } from "@features/upload/hooks/useUpload";
 import { colors } from "@theme/colors";
+import { IMMERSIVE_FOREGROUND, immersiveChrome } from "@theme/immersive";
 import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
@@ -130,7 +132,7 @@ const MAX_CONTENT_WIDTH = 680;
 // resolves to #04070E, so the filter control rendered as a completely empty
 // pill and the Daily Flow icon vanished behind its own badge. Reproduced on
 // the iPhone 17 Pro simulator in dark mode before this fix.
-const CHROME_FOREGROUND = "#FFFFFF";
+const CHROME_FOREGROUND = IMMERSIVE_FOREGROUND;
 
 // The immersive pager's own ground, constant in both themes.
 //
@@ -141,7 +143,9 @@ const CHROME_FOREGROUND = "#FFFFFF";
 // show — and the chrome above, which is pinned light for the dark pages,
 // became white-on-white. Caught on the iPhone SE with an empty "Sana Özel".
 // Pinning the surface keeps the pager one continuous colour in every state.
-const IMMERSIVE_SURFACE = "#0B0B0F";
+// Phase 102 — the value itself is unchanged; it now lives in theme/immersive.ts
+// so the channel strip and the tab bar can agree with it (see that file).
+const IMMERSIVE_SURFACE = immersiveChrome.surface;
 
 export function FeedScreen() {
   const { height: windowHeight, width } = useWindowDimensions();
@@ -216,6 +220,19 @@ export function FeedScreen() {
       refreshSignals();
       refreshAssignments();
     }, [refreshSignals, refreshAssignments]),
+  );
+
+  // Phase 102 — the pager is dark in both themes, so while THIS tab is the
+  // one on screen the status bar must be light-content regardless of the
+  // theme's own choice (the root layout sets it from the resolved theme). The
+  // override is mounted only while focused: tabs keep their screens mounted,
+  // and a permanent override would bleed onto Çalış/Sınıflarım/Profil.
+  const [isFocused, setIsFocused] = useState(false);
+  useFocusEffect(
+    useCallback(() => {
+      setIsFocused(true);
+      return () => setIsFocused(false);
+    }, []),
   );
 
   // Phase 50's channel pools, unchanged — immersive paging is a presentation
@@ -362,6 +379,7 @@ export function FeedScreen() {
   // for why it floats rather than taking flow space.
   const chrome = (
     <View style={[styles.chrome, { top: insets.top }]} pointerEvents="box-none">
+      {isFocused ? <StatusBar style="light" /> : null}
       <View style={styles.chromeRow}>
         <BrandLockup size="compact" onDark />
         <View style={styles.chromeActions}>
@@ -394,7 +412,12 @@ export function FeedScreen() {
         </View>
       </View>
 
-      <FeedChannelBar channels={channels} activeChannel={activeChannel} onSelect={setChannel} />
+      <FeedChannelBar
+        channels={channels}
+        activeChannel={activeChannel}
+        onSelect={setChannel}
+        surface="immersive"
+      />
     </View>
   );
 

@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
-import { router } from "expo-router";
+
 import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -16,6 +16,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { EmptyState } from "@components/ui/EmptyState";
 import { PrimaryButton } from "@components/ui/PrimaryButton";
+import { AppBackButton } from "@components/ui/AppBackButton";
+import { useBackNavigation } from "@hooks/useBackNavigation";
 import { SemanticDefinitionPicker } from "@features/questions/components/SemanticDefinitionPicker";
 import { MAX_CHOICE_FEEDBACK_LENGTH } from "@features/questions/services/choiceFeedback";
 import { MAX_HINT_LENGTH } from "@features/questions/services/questionHints";
@@ -95,10 +97,7 @@ export function QuestionRevisionScreen({ classId, questionId }: QuestionRevision
     if (draft && hintBoxes === null) setHintBoxes(hintDraftBoxes(draft.hints));
   }, [draft, hintBoxes]);
 
-  const goBack = useCallback(() => {
-    if (router.canGoBack()) router.back();
-    else router.replace({ pathname: "/(teacher)/class/[classId]/semantic-vocabulary", params: { classId } });
-  }, [classId]);
+  const goBack = useBackNavigation({ pathname: "/(teacher)/class/[classId]/semantic-vocabulary", params: { classId } });
 
   // Saved → back to where the teacher came from; the studio refreshes on
   // focus, so the change is visible there rather than announced in a modal.
@@ -119,15 +118,7 @@ export function QuestionRevisionScreen({ classId, questionId }: QuestionRevision
 
   const header = (
     <View style={styles.header}>
-      <Pressable
-        onPress={goBack}
-        style={styles.backButton}
-        accessibilityRole="button"
-        accessibilityLabel="Geri"
-        hitSlop={8}
-      >
-        <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
-      </Pressable>
+      <AppBackButton fallbackHref={{ pathname: "/(teacher)/class/[classId]/semantic-vocabulary", params: { classId } }} onPress={goBack} style={styles.backButton} />
       <View style={styles.headerText}>
         <Text style={styles.title} accessibilityRole="header">
           Soruyu düzenle

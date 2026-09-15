@@ -1,7 +1,7 @@
-import { Ionicons } from "@expo/vector-icons";
+
 import { router } from "expo-router";
 import { useMemo } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { Card } from "@components/ui/Card";
@@ -9,6 +9,7 @@ import { Chip } from "@components/ui/Chip";
 import { EmptyState } from "@components/ui/EmptyState";
 import { LoadingSkeleton } from "@components/ui/LoadingSkeleton";
 import { PrimaryButton } from "@components/ui/PrimaryButton";
+import { AppBackButton } from "@components/ui/AppBackButton";
 import { TeacherLearningTimeline } from "@features/learningStory/components/TeacherLearningTimeline";
 import { useTeacherLearningTimeline } from "@features/learningStory/hooks/useTeacherLearningTimeline";
 import { buildTeacherLearningTimeline } from "@features/learningStory/services/teacherLearningTimeline";
@@ -179,15 +180,7 @@ export function StudentPerformanceScreen({ classId, studentId, studentName }: St
   return (
     <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
       <View style={styles.header}>
-        <Pressable
-          onPress={() => router.back()}
-          style={styles.backButton}
-          accessibilityRole="button"
-          accessibilityLabel="Geri"
-          hitSlop={8}
-        >
-          <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
-        </Pressable>
+        <AppBackButton fallbackHref={{ pathname: "/(teacher)/class/[classId]", params: { classId } }} style={styles.backButton} />
         <Text style={styles.title} numberOfLines={1}>
           {studentName ?? "Öğrenci Performansı"}
         </Text>

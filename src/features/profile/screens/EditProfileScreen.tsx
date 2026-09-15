@@ -2,10 +2,12 @@ import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { Pressable, Text, View } from "react-native";
 
+import { AppBackButton } from "@components/ui/AppBackButton";
 import { KeyboardSafeScreen } from "@components/ui/KeyboardSafeScreen";
 import { PrimaryButton } from "@components/ui/PrimaryButton";
 import { TextField } from "@components/ui/TextField";
 
+import { useAuth } from "@features/authentication";
 import { useEditProfileForm } from "../hooks/useEditProfileForm";
 import { colors } from "@theme/colors";
 import { themedStyles } from "@theme/themeRuntime";
@@ -23,10 +25,23 @@ export function EditProfileScreen() {
     isSaving,
     submit,
   } = useEditProfileForm();
+  const { profile } = useAuth();
 
   return (
     <KeyboardSafeScreen>
-      <Text style={styles.title}>Profili Düzenle</Text>
+      {/* Phase 102 — a modal still needs a visible way out: iOS has the
+          swipe-down gesture, Android the hardware back, but web and a
+          keyboard user have neither. Falls back to the profile tab when the
+          sheet was deep-linked with no history. */}
+      <View style={styles.headerRow}>
+        <AppBackButton
+          fallbackHref={profile?.role === "teacher" ? "/(teacher)/(tabs)/profile" : "/(student)/(tabs)/profile"}
+          accessibilityLabel="Kapat"
+          style={styles.closeButton}
+        />
+        <Text style={styles.title}>Profili Düzenle</Text>
+        <View style={styles.headerSpacer} />
+      </View>
 
       <Pressable onPress={pickPhoto} style={styles.avatarWrapper} accessibilityRole="button">
         {previewPhotoUri ? (
@@ -66,10 +81,22 @@ export function EditProfileScreen() {
 }
 
 const styles = themedStyles(() => ({
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  closeButton: {
+    marginLeft: -8,
+  },
+  headerSpacer: {
+    width: 44,
+  },
   title: {
     fontSize: 22,
     fontWeight: "700",
     textAlign: "center",
+    flex: 1,
+    minWidth: 0,
   },
   avatarWrapper: {
     alignItems: "center",

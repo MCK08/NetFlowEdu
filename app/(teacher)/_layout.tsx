@@ -1,4 +1,5 @@
 import { Stack } from "expo-router";
+import { colors } from "@theme/colors";
 import { useThemeSubscription } from "@theme/ThemeProvider";
 
 // Phase 10: the teacher area gained tabs (Sınıflarım/Arkadaşlar/Profil),
@@ -7,7 +8,15 @@ import { useThemeSubscription } from "@theme/ThemeProvider";
 export default function TeacherLayout() {
   useThemeSubscription();
   return (
-    <Stack screenOptions={{ headerShown: false }}>
+    <Stack
+      screenOptions={{
+        headerShown: false,
+        // Phase 102 — same as the root stack: without this the nested
+        // navigator keeps its default light card behind/between screens,
+        // which reads as a white flash on push/pop in dark mode.
+        contentStyle: { backgroundColor: colors.background },
+      }}
+    >
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="class/[classId]/index" />
       <Stack.Screen name="class/[classId]/chat" />

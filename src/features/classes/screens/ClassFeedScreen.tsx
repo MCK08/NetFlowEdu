@@ -1,14 +1,17 @@
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
+
 import { useCallback, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, FlatList, NativeScrollEvent, NativeSyntheticEvent, Pressable, Text, View, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { AppBackButton } from "@components/ui/AppBackButton";
 import { useAuth } from "@features/authentication";
 import { FeedItem } from "@features/classes/services/feedItems";
 import { RatingCard } from "@features/study/components/RatingCard";
 import { useInterleavedStudyFeed } from "@features/study/hooks/useInterleavedStudyFeed";
+import { useBackNavigation } from "@hooks/useBackNavigation";
 import { colors } from "@theme/colors";
+import { IMMERSIVE_FOREGROUND } from "@theme/immersive";
 import { themedStyles } from "@theme/themeRuntime";
 
 import { ClassFeedCard } from "../components/ClassFeedCard";
@@ -147,10 +150,7 @@ export function ClassFeedScreen({ classId }: ClassFeedScreenProps) {
     [paginationFailed, activeQuestionIndex, questions.length, hasMore],
   );
 
-  function goBack() {
-    if (router.canGoBack()) router.back();
-    else router.replace({ pathname: "/(student)/class/[classId]", params: { classId } });
-  }
+  const goBack = useBackNavigation({ pathname: "/(student)/class/[classId]", params: { classId } });
 
   function restartFeed() {
     listRef.current?.scrollToOffset({ offset: 0, animated: true });
@@ -250,15 +250,14 @@ export function ClassFeedScreen({ classId }: ClassFeedScreenProps) {
 
       {/* Header overlays the feed so the question keeps the full screen. */}
       <View style={[styles.header, { top: insets.top + 8 }]} pointerEvents="box-none">
-        <Pressable
+        {/* This feed pins its own dark chrome (see the styles below), so the
+            chevron stays white in both themes. */}
+        <AppBackButton
+          fallbackHref={{ pathname: "/(student)/class/[classId]", params: { classId } }}
           onPress={goBack}
+          color={IMMERSIVE_FOREGROUND}
           style={styles.backButton}
-          accessibilityRole="button"
-          accessibilityLabel="Geri"
-          hitSlop={8}
-        >
-          <Ionicons name="chevron-back" size={24} color="white" />
-        </Pressable>
+        />
         <Text style={styles.headerTitle} numberOfLines={1}>
           {className}
         </Text>

@@ -11,6 +11,8 @@ import { themedStyles } from "@theme/themeRuntime";
 import { ChatListMessage } from "@/types/message";
 import { useThemeSubscription } from "@theme/ThemeProvider";
 
+import { REMOVE_MESSAGE_ACTION_LABEL, REMOVED_MESSAGE_PLACEHOLDER } from "../services/messageModeration";
+
 // Reserved gutter so every incoming bubble in a group lines up on the same
 // left edge, whether or not this particular row draws the avatar.
 const AVATAR_SIZE = 32;
@@ -30,6 +32,15 @@ interface ChatMessageBubbleProps {
   isFirstInGroup: boolean;
   isLastInGroup: boolean;
   onRetry?: (clientMessageId: string) => void;
+  // Phase 102 — "Görüldü" (or "Görüldü · N" in a group), set by the screen on
+  // the sender's newest confirmed message only; null everywhere else.
+  seenLabel?: string | null;
+  // Phase 102 — the class teacher's remove affordance. The screen decides
+  // (canRemoveMessage) and the server decides again; the bubble only offers
+  // a long-press — deliberately quiet: no button, no red, nothing a student
+  // ever sees.
+  canRemove?: boolean;
+  onRemove?: (message: ChatListMessage) => void;
 }
 
 // memo'd because the screen re-renders on every composer keystroke (draft
@@ -41,6 +52,9 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
   isFirstInGroup,
   isLastInGroup,
   onRetry,
+  seenLabel = null,
+  canRemove = false,
+  onRemove,
 }: ChatMessageBubbleProps) {
   // Phase 49 — memo() blocks prop-driven re-renders, but NOT context
   // updates; without this subscription this component would keep its
@@ -59,10 +73,14 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
     : null;
 
   const roleLabel = message.senderRole === "teacher" ? "Öğretmen" : "Öğrenci";
+  const isRemoved = message.deleted;
+  const body = isRemoved ? REMOVED_MESSAGE_PLACEHOLDER : message.text;
   // Own/incoming must not be conveyed by colour and alignment alone.
-  const accessibilityLabel = isOwnMessage
-    ? `Senin mesajın: ${message.text}${time ? `, ${time}` : ""}`
-    : `${message.senderName}, ${roleLabel}: ${message.text}${time ? `, ${time}` : ""}`;
+  const accessibilityLabel =
+    (isOwnMessage ? `Senin mesajın: ${body}` : `${message.senderName}, ${roleLabel}: ${body}`) +
+    (time ? `, ${time}` : "") +
+    (seenLabel ? `, ${seenLabel}` : "");
+  const offersRemove = canRemove && !isRemoved && Boolean(onRemove);
 
   return (
     <View
@@ -94,17 +112,38 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
           </View>
         ) : null}
 
-        <View
+        <Pressable
           accessible
           accessibilityLabel={accessibilityLabel}
+          // A long-press is the remove gesture on every platform (web
+          // included); the accessibility action makes the same thing
+          // reachable from a screen reader's actions menu.
+          onLongPress={offersRemove ? () => onRemove?.(message) : undefined}
+          accessibilityActions={offersRemove ? [{ name: "longpress", label: REMOVE_MESSAGE_ACTION_LABEL }] : undefined}
+          onAccessibilityAction={
+            offersRemove
+              ? (event) => {
+                  if (event.nativeEvent.actionName === "longpress") onRemove?.(message);
+                }
+              : undefined
+          }
           style={[
             styles.bubble,
             isOwnMessage ? styles.bubbleOwn : styles.bubbleOther,
             tailStyle,
             isFailed ? styles.bubbleFailed : null,
+            isRemoved ? styles.bubbleRemoved : null,
           ]}
         >
-          <Text style={[styles.text, isOwnMessage ? styles.textOwn : null]}>{message.text}</Text>
+          <Text
+            style={[
+              styles.text,
+              isOwnMessage ? styles.textOwn : null,
+              isRemoved ? (isOwnMessage ? styles.textRemovedOwn : styles.textRemoved) : null,
+            ]}
+          >
+            {body}
+          </Text>
 
           {/* Timestamp only on the newest bubble of a run — repeating the
               same minute on every bubble of a burst is noise. */}
@@ -120,7 +159,13 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
               )}
             </View>
           ) : null}
-        </View>
+        </Pressable>
+
+        {seenLabel ? (
+          <Text style={styles.seen} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+            {seenLabel}
+          </Text>
+        ) : null}
 
         {isFailed ? (
           <Pressable
@@ -211,6 +256,10 @@ const styles = themedStyles(() => ({
   bubbleFailed: {
     opacity: 0.6,
   },
+  // A removed message keeps its place and its time; only the words are gone.
+  bubbleRemoved: {
+    opacity: 0.7,
+  },
   text: {
     ...typography.body,
     fontSize: 15,
@@ -219,6 +268,21 @@ const styles = themedStyles(() => ({
   },
   textOwn: {
     color: colors.textInverse,
+  },
+  textRemoved: {
+    fontStyle: "italic",
+    color: colors.textSecondary,
+  },
+  textRemovedOwn: {
+    fontStyle: "italic",
+  },
+  seen: {
+    ...typography.label,
+    fontSize: 10,
+    fontWeight: "500",
+    color: colors.textTertiary,
+    alignSelf: "flex-end",
+    paddingRight: spacing.xxs,
   },
   metaRow: {
     flexDirection: "row",

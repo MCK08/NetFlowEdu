@@ -4,6 +4,7 @@ import { useCallback, useMemo } from "react";
 import { ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { AppBackButton } from "@components/ui/AppBackButton";
 import { EmptyState } from "@components/ui/EmptyState";
 import { LoadingSkeleton } from "@components/ui/LoadingSkeleton";
 import { PrimaryButton } from "@components/ui/PrimaryButton";
@@ -100,6 +101,10 @@ export function StudentLearningStoryScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.column}>
+          <View style={styles.navRow}>
+            <AppBackButton fallbackHref={ROUTES.studentStudy} style={styles.backButton} />
+            <Text style={styles.navTitle}>İlerleme Hikâyem</Text>
+          </View>
           <View style={styles.hero}>
             <Text style={styles.heroTitle}>{story.headline}</Text>
             {story.subheadline ? (
@@ -180,6 +185,20 @@ const styles = themedStyles(() => ({
     width: "100%",
     maxWidth: contentWidth.readable,
     gap: spacing.md,
+  },
+  navRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xxs,
+  },
+  backButton: {
+    marginLeft: -spacing.sm,
+  },
+  navTitle: {
+    ...typography.subtitle,
+    color: colors.textSecondary,
+    flex: 1,
+    minWidth: 0,
   },
   hero: {
     gap: spacing.xxs,

@@ -7,6 +7,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { EmptyState } from "@components/ui/EmptyState";
 import { LoadingSkeleton } from "@components/ui/LoadingSkeleton";
 import { PrimaryButton } from "@components/ui/PrimaryButton";
+import { AppBackButton } from "@components/ui/AppBackButton";
 import { ROUTES } from "@constants/routes";
 import { useAuth } from "@features/authentication";
 import { useStudentAssignments } from "@features/assignments/hooks/useStudentAssignments";
@@ -140,15 +141,7 @@ export function LearningAtlasScreen() {
         <View style={[styles.column, isWide ? styles.columnWide : null]}>
           <View style={styles.header}>
             <View style={styles.headerRow}>
-              <Pressable
-                onPress={() => router.back()}
-                style={styles.backButton}
-                accessibilityRole="button"
-                accessibilityLabel="Geri"
-                hitSlop={8}
-              >
-                <Ionicons name="chevron-back" size={iconSize.md} color={colors.textPrimary} />
-              </Pressable>
+              <AppBackButton fallbackHref={ROUTES.studentStudy} style={styles.backButton} />
               <Text style={styles.title}>Öğrenme Atlasım</Text>
             </View>
             <Text style={styles.subtitle}>

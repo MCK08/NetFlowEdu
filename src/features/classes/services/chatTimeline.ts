@@ -108,10 +108,14 @@ export function buildChatTimeline(
 // keystroke in the composer and hand FlatList a brand-new data array each
 // time. Keying the memo on this signature instead means typing a draft no
 // longer rebuilds or re-renders the message list.
+//
+// Phase 102 — `deleted` is part of the signature: a teacher's removal
+// changes nothing about a message's id, time or status, and the list must
+// still redraw that bubble as the removed placeholder.
 export function chatTimelineSignature(messages: ChatListMessage[]): string {
   let signature = "";
   for (const message of messages) {
-    signature += `${message.id}:${message.createdAt}:${message.status ?? ""}|`;
+    signature += `${message.id}:${message.createdAt}:${message.status ?? ""}${message.deleted ? ":x" : ""}|`;
   }
   return signature;
 }

@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, FlatList, Keyboard, KeyboardAvoidingView, ListRenderItemInfo, NativeScrollEvent, NativeSyntheticEvent, Platform, Pressable, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -19,12 +19,17 @@ import { ChatErrorBanner } from "../components/ChatErrorBanner";
 import { ChatHeader } from "../components/ChatHeader";
 import { ChatLoadingSkeleton } from "../components/ChatLoadingSkeleton";
 import { ChatMessageBubble } from "../components/ChatMessageBubble";
+import { RemoveMessageSheet } from "../components/RemoveMessageSheet";
 import { ChatSender, useClassChat } from "../hooks/useClassChat";
+import { useClassChatReads } from "../hooks/useClassChatReads";
+import { latestOwnMessage, seenCount, seenLabel } from "../services/chatReadReceipts";
 import {
   buildChatTimeline,
   chatTimelineSignature,
   ChatTimelineItem,
 } from "../services/chatTimeline";
+import { canRemoveMessage } from "../services/messageModeration";
+import { ChatListMessage } from "@/types/message";
 
 interface ClassChatScreenProps {
   classId: string;
@@ -56,6 +61,7 @@ export function ClassChatScreen({ classId }: ClassChatScreenProps) {
 
   const {
     messages,
+    newestLive,
     isLoading,
     error,
     hasMoreOlder,
@@ -67,7 +73,14 @@ export function ClassChatScreen({ classId }: ClassChatScreenProps) {
     sendError,
     send,
     retryFailed,
+    removeMessage,
+    moderationError,
   } = useClassChat({ classId, sender });
+
+  // Phase 102 — read cursors. Marks this member's cursor only while the
+  // conversation is open in the foreground; the label below is derived from
+  // every OTHER member's cursor, so it is per recipient (this is a group).
+  const { cursors } = useClassChatReads({ classId, uid: firebaseUser?.uid, newest: newestLive });
 
   // Auto-scroll to the newest message ONLY when the user is already at the
   // bottom — otherwise (they're reading history) surface the "Yeni Mesaj"
@@ -129,6 +142,32 @@ export function ClassChatScreen({ classId }: ClassChatScreenProps) {
 
   const ownUid = firebaseUser?.uid;
 
+  // "Görüldü" belongs to ONE bubble: the sender's newest confirmed message.
+  const latestOwn = latestOwnMessage(messages, ownUid);
+  const latestOwnId = latestOwn?.id ?? null;
+  const latestOwnSeen = latestOwn ? seenLabel(seenCount(latestOwn, cursors)) : null;
+
+  // Phase 102 — the class teacher's remove flow: long-press → sheet →
+  // confirm → removeClassMessage. canRemoveMessage gates what is drawn; the
+  // server checks classes/{classId}.teacherId again regardless.
+  const viewerRole = sender?.role ?? null;
+  const [removalTarget, setRemovalTarget] = useState<ChatListMessage | null>(null);
+  const [isRemoving, setIsRemoving] = useState(false);
+  const handleRemoveRequest = useCallback((message: ChatListMessage) => setRemovalTarget(message), []);
+  const removeMessageRef = useRef(removeMessage);
+  removeMessageRef.current = removeMessage;
+
+  async function confirmRemoval(message: ChatListMessage) {
+    if (isRemoving) return;
+    setIsRemoving(true);
+    try {
+      await removeMessageRef.current(message.id);
+    } finally {
+      setIsRemoving(false);
+      setRemovalTarget(null);
+    }
+  }
+
   const keyExtractor = useCallback((item: ChatTimelineItem) => item.id, []);
 
   const renderItem = useCallback(
@@ -142,9 +181,15 @@ export function ClassChatScreen({ classId }: ClassChatScreenProps) {
           isFirstInGroup={item.isFirstInGroup}
           isLastInGroup={item.isLastInGroup}
           onRetry={handleRetry}
+          seenLabel={item.message.id === latestOwnId ? latestOwnSeen : null}
+          canRemove={canRemoveMessage(
+            ownUid && viewerRole ? { uid: ownUid, role: viewerRole } : null,
+            item.message,
+          )}
+          onRemove={handleRemoveRequest}
         />
       ),
-    [ownUid, handleRetry],
+    [ownUid, viewerRole, handleRetry, latestOwnId, latestOwnSeen, handleRemoveRequest],
   );
 
   const handleEndReached = useCallback(() => {
@@ -159,7 +204,13 @@ export function ClassChatScreen({ classId }: ClassChatScreenProps) {
         // behavior, Android's default windowSoftInputMode already resizes.
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <ChatHeader onBack={() => router.back()} />
+        <ChatHeader
+          fallbackHref={
+            profile?.role === "teacher"
+              ? { pathname: "/(teacher)/class/[classId]", params: { classId } }
+              : { pathname: "/(student)/class/[classId]", params: { classId } }
+          }
+        />
 
         {isLoading ? (
           <ChatLoadingSkeleton />
@@ -220,9 +271,19 @@ export function ClassChatScreen({ classId }: ClassChatScreenProps) {
         )}
 
         {sendError ? <ChatErrorBanner message={sendError} /> : null}
+        {moderationError ? <ChatErrorBanner message={moderationError} /> : null}
 
         <ChatComposer draft={draft} onChangeDraft={setDraft} isSending={isSending} onSend={send} />
       </KeyboardAvoidingView>
+
+      <RemoveMessageSheet
+        message={removalTarget}
+        isRemoving={isRemoving}
+        onConfirm={confirmRemoval}
+        onClose={() => {
+          if (!isRemoving) setRemovalTarget(null);
+        }}
+      />
     </SafeAreaView>
   );
 }

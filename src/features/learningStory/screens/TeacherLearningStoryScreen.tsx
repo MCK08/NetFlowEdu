@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { AppBackButton } from "@components/ui/AppBackButton";
 import { Card } from "@components/ui/Card";
 import { EmptyState } from "@components/ui/EmptyState";
 import { LoadingSkeleton } from "@components/ui/LoadingSkeleton";
@@ -75,6 +76,13 @@ export function TeacherLearningStoryScreen({ classId }: TeacherLearningStoryScre
     <SafeAreaView style={styles.flex} edges={["top"]}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.column}>
+          <View style={styles.navRow}>
+            <AppBackButton
+              fallbackHref={{ pathname: "/(teacher)/class/[classId]", params: { classId } }}
+              style={styles.backButton}
+            />
+            <Text style={styles.navTitle}>Sınıfın İlerleme Hikâyesi</Text>
+          </View>
           <View style={styles.hero}>
             <Text style={styles.heroTitle}>{story.headline}</Text>
             {story.subheadline ? (
@@ -170,6 +178,20 @@ const styles = themedStyles(() => ({
     // the two.
     maxWidth: contentWidth.readable,
     gap: spacing.md,
+  },
+  navRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xxs,
+  },
+  backButton: {
+    marginLeft: -spacing.sm,
+  },
+  navTitle: {
+    ...typography.subtitle,
+    color: colors.textSecondary,
+    flex: 1,
+    minWidth: 0,
   },
   hero: {
     gap: spacing.xxs,

@@ -213,6 +213,14 @@ describe("chatTimelineSignature", () => {
     expect(confirmed).not.toBe(local);
   });
 
+  it("changes when a message is removed by the class teacher (Phase 102)", () => {
+    // Removal keeps the id, the timestamp and the (absent) status — only
+    // `deleted` flips — and the bubble must still redraw as the placeholder.
+    const live = chatTimelineSignature([message({ id: "a", createdAt: NOW })]);
+    const removed = chatTimelineSignature([message({ id: "a", createdAt: NOW, deleted: true, text: "" })]);
+    expect(removed).not.toBe(live);
+  });
+
   it("is empty for an empty list", () => {
     expect(chatTimelineSignature([])).toBe("");
   });
