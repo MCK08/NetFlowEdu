@@ -276,6 +276,10 @@ const styles = themedStyles(() => ({
     minHeight: 44,
     justifyContent: "center",
     marginLeft: -12,
+    // Phase 103 — this header is a column, which stretches its children, and
+    // IconButton centres its icon; without this the Phase 102 back chevron
+    // sat in the middle of the row instead of at the leading edge.
+    alignSelf: "flex-start",
   },
   title: {
     fontSize: 22,

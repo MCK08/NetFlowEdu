@@ -140,10 +140,14 @@ function toSocialMeta(data: DocumentData | undefined): SocialMetaSummary {
 export function subscribeToOwnSocialMeta(
   uid: string,
   onChange: (summary: SocialMetaSummary) => void,
+  // Phase 103 — a listener failure is reported separately. It used to be
+  // delivered as EMPTY_SOCIAL_META, which is indistinguishable from "no
+  // friendship activity yet" and so rendered as a confident 0.
+  onError?: () => void,
 ): Unsubscribe {
   return onSnapshot(
     doc(db, "users", uid, "socialMeta", "summary"),
     (snapshot) => onChange(toSocialMeta(snapshot.exists() ? snapshot.data() : undefined)),
-    () => onChange(EMPTY_SOCIAL_META),
+    () => (onError ? onError() : onChange(EMPTY_SOCIAL_META)),
   );
 }

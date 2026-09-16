@@ -100,10 +100,10 @@ export function ProfileScreen() {
         friendCount: socialMeta.friendCount,
         incomingRequestCount: socialMeta.incomingRequestCount,
         totalPoints: profile?.totalPoints,
-        // socialMeta starts at all-zero before its listener delivers the
-        // first snapshot; updatedAt is 0 only in that pre-load state, so
-        // the counters render as skeletons instead of a confident "0".
-        isSocialMetaLoading: socialMeta.updatedAt === 0,
+        // Phase 103 — skeletons only until the listener answers. updatedAt
+        // was used as that signal, but it is also 0 for every user with no
+        // friendship activity, so their counters never left the skeleton.
+        socialMetaStatus: socialMeta.status,
       }),
     [socialMeta, profile?.totalPoints],
   );

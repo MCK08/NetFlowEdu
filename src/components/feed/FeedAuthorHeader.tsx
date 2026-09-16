@@ -3,7 +3,7 @@ import { Text, View } from "react-native";
 
 import { AnimatedPressable } from "@components/ui/AnimatedPressable";
 import { Avatar } from "@components/ui/Avatar";
-import { colors } from "@theme/colors";
+import { IMMERSIVE_FOREGROUND } from "@theme/immersive";
 import { minTouchTarget } from "@theme/sizes";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
@@ -94,12 +94,12 @@ const styles = themedStyles(() => ({
   name: {
     ...typography.subtitle,
     fontWeight: "700",
-    color: colors.textInverse,
+    color: IMMERSIVE_FOREGROUND,
     flexShrink: 1,
   },
   handle: {
     ...typography.caption,
-    color: colors.textInverse,
+    color: IMMERSIVE_FOREGROUND,
     opacity: 0.75,
   },
   metaRow: {

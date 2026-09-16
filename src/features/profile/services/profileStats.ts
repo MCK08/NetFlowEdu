@@ -43,15 +43,24 @@ export function statValue(value: number | null | undefined): ProfileStatState {
 }
 
 // Own profile: friendCount and the two request counters all come from the
-// same live socialMeta document, so they share one loading flag.
+// same live socialMeta document, so they share one status.
+//
+// Phase 103 — a status rather than a boolean: "loading" until the listener
+// answers, the real value once it has (a user with no summary document has
+// genuinely 0 friends), and "unavailable" if the listener failed, so a
+// failure is never shown as a confident 0.
 export function ownProfileStats(params: {
   friendCount: number;
   incomingRequestCount: number;
   totalPoints: number | null | undefined;
-  isSocialMetaLoading: boolean;
+  socialMetaStatus: "loading" | "ready" | "error";
 }): ProfileStat[] {
   const social = (value: number): ProfileStatState =>
-    params.isSocialMetaLoading ? { kind: "loading" } : { kind: "value", value };
+    params.socialMetaStatus === "loading"
+      ? { kind: "loading" }
+      : params.socialMetaStatus === "error"
+        ? { kind: "unavailable" }
+        : { kind: "value", value };
 
   return [
     { key: "friends", label: "Arkadaş", state: social(params.friendCount) },

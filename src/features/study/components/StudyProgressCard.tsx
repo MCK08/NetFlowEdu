@@ -30,7 +30,10 @@ function Stat({ icon, value, label }: StatProps) {
     <View style={styles.stat} accessible accessibilityLabel={`${value} ${label}`}>
       <Ionicons name={icon} size={18} color={colors.primary} />
       <Text style={styles.statValue}>{value}</Text>
-      <Text style={styles.statLabel} numberOfLines={1}>
+      {/* Phase 103 — shrink to fit, not ellipsize: at a large OS text size
+          "tekrar bekliyor" was clipped to "tekrar bekli…" in its third-width
+          column. */}
+      <Text style={styles.statLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.5}>
         {label}
       </Text>
     </View>

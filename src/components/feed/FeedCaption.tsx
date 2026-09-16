@@ -1,7 +1,7 @@
 import { memo } from "react";
 import { Text, View } from "react-native";
 
-import { colors } from "@theme/colors";
+import { IMMERSIVE_FOREGROUND } from "@theme/immersive";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
 import { themedStyles } from "@theme/themeRuntime";
@@ -47,7 +47,7 @@ const styles = themedStyles(() => ({
   },
   text: {
     ...typography.body,
-    color: colors.textInverse,
+    color: IMMERSIVE_FOREGROUND,
     opacity: 0.94,
   },
 }));

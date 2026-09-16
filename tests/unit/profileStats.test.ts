@@ -59,7 +59,7 @@ describe("ownProfileStats", () => {
     friendCount: 3,
     incomingRequestCount: 2,
     totalPoints: 120,
-    isSocialMetaLoading: false,
+    socialMetaStatus: "ready" as const,
   };
 
   it("exposes friends, incoming requests and points", () => {
@@ -73,7 +73,7 @@ describe("ownProfileStats", () => {
   });
 
   it("marks the socialMeta-backed stats as loading, never as zero, before they arrive", () => {
-    const stats = ownProfileStats({ ...base, friendCount: 0, incomingRequestCount: 0, isSocialMetaLoading: true });
+    const stats = ownProfileStats({ ...base, friendCount: 0, incomingRequestCount: 0, socialMetaStatus: "loading" });
     expect(stats[0]?.state).toEqual({ kind: "loading" });
     expect(stats[1]?.state).toEqual({ kind: "loading" });
     expect(formatStatValue(stats[0]!.state)).not.toBe("0");
@@ -83,6 +83,26 @@ describe("ownProfileStats", () => {
     const stats = ownProfileStats({ ...base, friendCount: 0 });
     expect(stats[0]?.state).toEqual({ kind: "value", value: 0 });
     expect(formatStatValue(stats[0]!.state)).toBe("0");
+  });
+
+  // Phase 103 — found on the simulator with a freshly seeded student: a user
+  // with no friendship activity has no socialMeta document, so the summary
+  // stays all-zero with updatedAt 0. Profile read that as "still loading" and
+  // showed placeholder pills forever. A missing document is an answer.
+  it("shows a user with no friendship activity as 0, not as loading forever", () => {
+    const stats = ownProfileStats({ ...base, friendCount: 0, incomingRequestCount: 0, socialMetaStatus: "ready" });
+    expect(stats[0]?.state).toEqual({ kind: "value", value: 0 });
+    expect(stats[1]?.state).toEqual({ kind: "value", value: 0 });
+    expect(formatStatValue(stats[0]!.state)).toBe("0");
+  });
+
+  it("shows a failed socialMeta listener as unavailable, never as a confident 0", () => {
+    const stats = ownProfileStats({ ...base, friendCount: 0, incomingRequestCount: 0, socialMetaStatus: "error" });
+    expect(stats[0]?.state).toEqual({ kind: "unavailable" });
+    expect(stats[1]?.state).toEqual({ kind: "unavailable" });
+    expect(formatStatValue(stats[0]!.state)).toBe(UNAVAILABLE_STAT_TEXT);
+    // Points do not come from socialMeta and are unaffected.
+    expect(stats[2]?.state).toEqual({ kind: "value", value: 120 });
   });
 
   it("marks points unavailable when the profile has no points field", () => {

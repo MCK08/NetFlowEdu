@@ -33,7 +33,11 @@ export function ActionTile({ icon, label, onPress, style }: ActionTileProps) {
       accessibilityLabel={label}
     >
       <Ionicons name={icon} size={iconSize.lg} color={colors.primary} />
-      <Text style={styles.label} numberOfLines={1}>
+      {/* Phase 103 — one line that shrinks to fit rather than ellipsizing:
+          tiles sit in equal-width rows, so at a large OS text size a label
+          like "Hesap Değiştir" was clipped to "Hesap De…". Wrapping is not an
+          option because single long Turkish words would break mid-word. */}
+      <Text style={styles.label} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.5}>
         {label}
       </Text>
     </AnimatedPressable>

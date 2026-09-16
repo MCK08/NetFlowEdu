@@ -2,7 +2,7 @@ import { Image, ImageContentFit } from "expo-image";
 import { memo, useState } from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 
-import { colors } from "@theme/colors";
+import { IMMERSIVE_FOREGROUND } from "@theme/immersive";
 import { duration } from "@theme/animation";
 import { themedStyles } from "@theme/themeRuntime";
 import { useThemeSubscription } from "@theme/ThemeProvider";
@@ -40,7 +40,7 @@ export const FeedImage = memo(function FeedImage({
     <View style={styles.container}>
       {isLoading ? (
         <View style={styles.loadingLayer} pointerEvents="none">
-          <ActivityIndicator color={colors.textInverse} />
+          <ActivityIndicator color={IMMERSIVE_FOREGROUND} />
         </View>
       ) : null}
 

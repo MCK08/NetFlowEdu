@@ -148,9 +148,11 @@ export function TeacherLearningStoryScreen({ classId }: TeacherLearningStoryScre
                   size={14}
                   color={colors.textTertiary}
                 />
-                <Text style={styles.footnoteText}>
-                  Bu özet yalnızca bu sınıfın kayıtlı çalışma sonuçlarına dayanır.
-                </Text>
+                <View style={styles.footnoteBody}>
+                  <Text style={styles.footnoteText}>
+                    Bu özet yalnızca bu sınıfın kayıtlı çalışma sonuçlarına dayanır.
+                  </Text>
+                </View>
               </View>
             </View>
           )}
@@ -252,13 +254,20 @@ const styles = themedStyles(() => ({
   },
   footnote: {
     flexDirection: "row",
-    alignItems: "center",
+    // Phase 103 — top-aligned, with the sentence in its own flex column: the
+    // same shape as ProfileScreen's tour row, which wraps correctly at a
+    // large OS text size. A bare Text sized inside the row (by shrink or by
+    // flex alone) was clipped mid-word on one line instead of wrapping.
+    alignItems: "flex-start",
     gap: spacing.xxs,
     paddingTop: spacing.xs,
+  },
+  footnoteBody: {
+    flex: 1,
+    minWidth: 0,
   },
   footnoteText: {
     ...typography.caption,
     color: colors.textTertiary,
-    flexShrink: 1,
   },
 }));

@@ -16,7 +16,8 @@ import { useAuth } from "@features/authentication";
 import { useProfileHandle } from "@features/profiles";
 import { useSavedQuestion } from "@features/questions";
 import { useLike } from "@features/social/likes";
-import { colors, darkColors } from "@theme/colors";
+import { darkColors } from "@theme/colors";
+import { IMMERSIVE_FOREGROUND } from "@theme/immersive";
 import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
@@ -191,7 +192,7 @@ const styles = themedStyles(() => ({
   },
   timestamp: {
     ...typography.label,
-    color: colors.textInverse,
+    color: IMMERSIVE_FOREGROUND,
     opacity: 0.7,
   },
   answerButton: {
@@ -203,7 +204,7 @@ const styles = themedStyles(() => ({
     minHeight: 48,
     paddingHorizontal: spacing.xl,
     borderRadius: radius.pill,
-    backgroundColor: colors.textInverse,
+    backgroundColor: IMMERSIVE_FOREGROUND,
   },
   answerButtonText: {
     ...typography.subtitle,

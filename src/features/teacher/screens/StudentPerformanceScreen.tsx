@@ -497,12 +497,23 @@ const styles = themedStyles(() => ({
   },
   bigValue: {
     ...typography.displayLg,
+    // Phase 103 (D11) — displayLg's 34pt line box belongs to its own 28pt
+    // size. Raising fontSize without raising lineHeight left a 40/34 box, and
+    // iOS clamps the line to that height: the ascender was trimmed and the
+    // top of the "%" glyph — the tallest thing on the line — was sliced off
+    // on device and in the simulator. The line box stays proportional to the
+    // size it is actually drawn at.
     fontSize: 40,
+    lineHeight: 50,
     color: colors.primary,
   },
   bigValueSmall: {
     ...typography.title,
+    // Same mismatch, less visible: title's 24pt line box exactly equalled this
+    // 24pt size, leaving no ascender room at all. It only escaped notice
+    // because both call sites render plain digits.
     fontSize: 24,
+    lineHeight: 30,
     color: colors.textPrimary,
   },
   bodyText: {

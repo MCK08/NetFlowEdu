@@ -162,7 +162,7 @@ export function ClassFeedScreen({ classId }: ClassFeedScreenProps) {
   if (isLoading) {
     return (
       <View style={styles.fullscreenCentered}>
-        <ActivityIndicator color={colors.textInverse} size="large" />
+        <ActivityIndicator color={IMMERSIVE_FOREGROUND} size="large" />
         <Text style={styles.stateSubtitle}>Sorular yükleniyor...</Text>
       </View>
     );
@@ -268,7 +268,7 @@ export function ClassFeedScreen({ classId }: ClassFeedScreenProps) {
 
       {isLoadingMore ? (
         <View style={[styles.paginationSpinner, { bottom: insets.bottom + 96 }]} pointerEvents="none">
-          <ActivityIndicator color={colors.textInverse} />
+          <ActivityIndicator color={IMMERSIVE_FOREGROUND} />
         </View>
       ) : null}
 

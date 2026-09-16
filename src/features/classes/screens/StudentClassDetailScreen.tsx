@@ -11,6 +11,7 @@ import { QuestionMetadataModal } from "@features/questions/components/QuestionMe
 import { useClassSemanticDefinitions } from "@features/questions/hooks/useClassSemanticDefinitions";
 import { QuestionGridItem } from "@features/profile/components/QuestionGridItem";
 import { colors, darkColors } from "@theme/colors";
+import { IMMERSIVE_FOREGROUND } from "@theme/immersive";
 import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
@@ -168,7 +169,7 @@ export function StudentClassDetailScreen({ classId }: StudentClassDetailScreenPr
                 accessibilityRole="button"
                 accessibilityLabel="Soru akışına gir"
               >
-                <Ionicons name="play-circle" size={20} color={colors.textInverse} />
+                <Ionicons name="play-circle" size={20} color={IMMERSIVE_FOREGROUND} />
                 <Text style={styles.feedButtonText}>Soru Akışına Gir</Text>
               </AnimatedPressable>
             )}
@@ -230,6 +231,10 @@ const styles = themedStyles(() => ({
     minHeight: 44,
     justifyContent: "center",
     marginLeft: -12,
+    // Phase 103 — this header is a column, which stretches its children, and
+    // IconButton centres its icon; without this the Phase 102 back chevron
+    // sat in the middle of the row instead of at the leading edge.
+    alignSelf: "flex-start",
   },
   title: {
     ...typography.displayLg,
@@ -304,7 +309,10 @@ const styles = themedStyles(() => ({
     marginBottom: spacing.sm,
   },
   feedButtonText: {
-    color: colors.textInverse,
+    // Phase 103 — the button is pinned dark in both themes, so its label is
+    // the constant immersive white; `colors.textInverse` flips to near-black
+    // in dark mode and hid "Soru Akışına Gir" against its own fill.
+    color: IMMERSIVE_FOREGROUND,
     fontSize: 15,
     fontWeight: "700",
   },

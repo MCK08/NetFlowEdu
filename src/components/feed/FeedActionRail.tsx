@@ -4,6 +4,7 @@ import { Text, View } from "react-native";
 
 import { AnimatedPressable } from "@components/ui/AnimatedPressable";
 import { colors } from "@theme/colors";
+import { IMMERSIVE_FOREGROUND } from "@theme/immersive";
 import { radius } from "@theme/radius";
 import { minTouchTarget } from "@theme/sizes";
 import { spacing } from "@theme/spacing";
@@ -48,7 +49,7 @@ interface ActionProps {
 // contrast regardless of what the image behind it looks like.
 function Action({ icon, activeIcon, active = false, activeColor, count, label, onPress }: ActionProps) {
   const glyph = active && activeIcon ? activeIcon : icon;
-  const tint = active && activeColor ? activeColor : colors.textInverse;
+  const tint = active && activeColor ? activeColor : IMMERSIVE_FOREGROUND;
 
   const body = (
     <>
@@ -162,6 +163,6 @@ const styles = themedStyles(() => ({
   },
   count: {
     ...typography.label,
-    color: colors.textInverse,
+    color: IMMERSIVE_FOREGROUND,
   },
 }));

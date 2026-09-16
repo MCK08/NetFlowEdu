@@ -14,7 +14,8 @@ import { useAuth } from "@features/authentication";
 import { useProfileHandle } from "@features/profiles";
 import { useSavedQuestion } from "@features/questions";
 import { useLike } from "@features/social/likes";
-import { colors, darkColors } from "@theme/colors";
+import { darkColors } from "@theme/colors";
+import { IMMERSIVE_FOREGROUND } from "@theme/immersive";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
 import { themedStyles } from "@theme/themeRuntime";
@@ -157,7 +158,7 @@ const styles = themedStyles(() => ({
   },
   timestamp: {
     ...typography.label,
-    color: colors.textInverse,
+    color: IMMERSIVE_FOREGROUND,
     opacity: 0.7,
   },
   solveRow: {

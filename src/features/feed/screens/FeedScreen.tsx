@@ -1,3 +1,4 @@
+import { useGuidedTour } from "@features/onboarding";
 import { Ionicons } from "@expo/vector-icons";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { router, useFocusEffect } from "expo-router";
@@ -228,6 +229,14 @@ export function FeedScreen() {
   // override is mounted only while focused: tabs keep their screens mounted,
   // and a permanent override would bleed onto Çalış/Sınıflarım/Profil.
   const [isFocused, setIsFocused] = useState(false);
+  // Phase 103 — the first-run guided tour is an opaque theme surface drawn over
+  // this screen. While it is up, this screen must not claim the status bar: its
+  // light (white-icon) bar is right for the dark immersive feed but left the
+  // clock and battery white-on-white over a Light tour. Yielding here lets the
+  // root layout's theme-matched bar apply regardless of mount order — found on
+  // the simulator, where the tour mounts before this screen finishes routing.
+  const guidedTour = useGuidedTour();
+  const isGuidedTourVisible = guidedTour?.presentation.kind === "visible";
   useFocusEffect(
     useCallback(() => {
       setIsFocused(true);
@@ -379,7 +388,7 @@ export function FeedScreen() {
   // for why it floats rather than taking flow space.
   const chrome = (
     <View style={[styles.chrome, { top: insets.top }]} pointerEvents="box-none">
-      {isFocused ? <StatusBar style="light" /> : null}
+      {isFocused && !isGuidedTourVisible ? <StatusBar style="light" /> : null}
       <View style={styles.chromeRow}>
         <BrandLockup size="compact" onDark />
         <View style={styles.chromeActions}>

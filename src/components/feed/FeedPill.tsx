@@ -3,6 +3,7 @@ import { memo } from "react";
 import { Text, View } from "react-native";
 
 import { colors } from "@theme/colors";
+import { IMMERSIVE_FOREGROUND } from "@theme/immersive";
 import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
@@ -30,10 +31,17 @@ export const FeedPill = memo(function FeedPill({ label, icon, tone = "translucen
   // updates; without this subscription this component would keep its
   // previous theme's styles after a live theme switch.
   useThemeSubscription();
+  // Phase 103 — the translucent and solid fills are white-on-image in BOTH
+  // themes, so their foreground is the constant immersive white:
+  // `colors.textInverse` flips to near-black in dark mode and left those
+  // pills unreadable. The accent fill is the theme's primary, where the
+  // theme's own inverse text is still the right pairing.
+  const foreground = tone === "accent" ? colors.textInverse : IMMERSIVE_FOREGROUND;
+
   return (
     <View style={[styles.container, TONE_STYLES[tone]]}>
-      {icon ? <Ionicons name={icon} size={11} color={colors.textInverse} /> : null}
-      <Text style={styles.label} numberOfLines={1}>
+      {icon ? <Ionicons name={icon} size={11} color={foreground} /> : null}
+      <Text style={[styles.label, { color: foreground }]} numberOfLines={1}>
         {label}
       </Text>
     </View>
@@ -53,7 +61,6 @@ const styles = themedStyles(() => ({
   },
   label: {
     ...typography.label,
-    color: colors.textInverse,
     flexShrink: 1,
   },
   translucent: {

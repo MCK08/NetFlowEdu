@@ -84,7 +84,9 @@ describe("the immersive feed surface carries its own chrome", () => {
 
   it("the feed forces a light status bar only while focused", () => {
     const feed = code(read("src/features/feed/screens/FeedScreen.tsx"));
-    expect(feed).toContain('{isFocused ? <StatusBar style="light" /> : null}');
+    // Phase 103 — and only while the first-run guided tour is not covering it;
+    // see tests/unit/guidedTourStatusBar.test.ts.
+    expect(feed).toContain('{isFocused && !isGuidedTourVisible ? <StatusBar style="light" /> : null}');
   });
 
   it("the teacher feed stays a themed surface", () => {

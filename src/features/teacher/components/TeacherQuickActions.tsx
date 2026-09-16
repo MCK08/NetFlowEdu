@@ -63,7 +63,8 @@ const styles = StyleSheet.create({
   // Equal-width cells, and `minWidth: 0` deliberately overrides
   // ActionTile's own 84pt minimum: with four tiles the row has to fit the
   // narrowest supported phone without horizontal overflow, so the labels
-  // ellipsize instead of pushing the row wider than the screen.
+  // shrink to fit (see ActionTile) instead of pushing the row wider than
+  // the screen.
   tile: {
     flex: 1,
     minWidth: 0,

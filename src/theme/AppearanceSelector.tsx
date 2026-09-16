@@ -51,7 +51,16 @@ export function AppearanceSelector() {
               accessibilityState={{ selected: isSelected }}
               accessibilityLabel={`Görünüm: ${option.label}`}
             >
-              <Text style={isSelected ? styles.labelSelected : styles.label}>{option.label}</Text>
+              {/* Phase 103 — shrink, never wrap: at accessibility text sizes
+                  "Sistem" otherwise broke mid-word into "Siste" / "m". */}
+              <Text
+                style={isSelected ? styles.labelSelected : styles.label}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.5}
+              >
+                {option.label}
+              </Text>
             </Pressable>
           );
         })}

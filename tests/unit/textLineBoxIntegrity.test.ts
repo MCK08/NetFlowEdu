@@ -1,0 +1,139 @@
+import { readdirSync, readFileSync, statSync } from "fs";
+import { join } from "path";
+
+// Phase 103 (D11) — a style that spreads a typography token and then raises
+// `fontSize` keeps the token's ORIGINAL `lineHeight` unless it overrides that
+// too. iOS clamps the line to `lineHeight`, so a box shorter than the glyphs
+// trims the ascender: StudentPerformanceScreen's hero percentage was drawn at
+// 40pt inside displayLg's 34pt box and the top of the "%" was sliced off, on
+// the physical iPhone and in the simulator alike.
+//
+// The guard below is deliberately about the RATIO, not about one screen: the
+// same mistake is invisible until a tall glyph (%, Ş, Ğ, an accented capital)
+// lands in the line. SF Pro's natural line height is ~1.19x the font size, so
+// anything at or below the font size has no ascender room whatsoever.
+
+const ROOT = join(__dirname, "..", "..");
+const SRC = join(ROOT, "src");
+
+// Below this, the line box leaves too little room for the font's ascent.
+// The app's own tokens sit at 1.21–1.43; the two header styles that ride at
+// 1.18 (ChatHeader, PublicProfileScreen) render correctly and are left alone.
+const MIN_SAFE_RATIO = 1.15;
+
+interface TypographyToken {
+  fontSize: number;
+  lineHeight: number | null;
+}
+
+function typographyTokens(): Map<string, TypographyToken> {
+  const source = readFileSync(join(SRC, "theme", "typography.ts"), "utf8");
+  const tokens = new Map<string, TypographyToken>();
+
+  for (const match of source.matchAll(/(\w+):\s*\{([^}]*)\}/g)) {
+    const body = match[2] ?? "";
+    const fontSize = body.match(/fontSize:\s*(\d+)/);
+    if (!fontSize) continue;
+    const lineHeight = body.match(/lineHeight:\s*(\d+)/);
+    tokens.set(match[1] ?? "", {
+      fontSize: Number(fontSize[1]),
+      lineHeight: lineHeight ? Number(lineHeight[1]) : null,
+    });
+  }
+
+  return tokens;
+}
+
+function sourceFiles(dir: string): string[] {
+  const found: string[] = [];
+
+  for (const entry of readdirSync(dir)) {
+    const path = join(dir, entry);
+    if (statSync(path).isDirectory()) {
+      found.push(...sourceFiles(path));
+    } else if (path.endsWith(".ts") || path.endsWith(".tsx")) {
+      found.push(path);
+    }
+  }
+
+  return found;
+}
+
+interface ResizedStyle {
+  file: string;
+  line: number;
+  name: string;
+  token: string;
+  fontSize: number;
+  lineHeight: number | null;
+  ratio: number | null;
+}
+
+function stylesThatResizeAToken(): ResizedStyle[] {
+  const tokens = typographyTokens();
+  const styles: ResizedStyle[] = [];
+
+  for (const file of sourceFiles(SRC)) {
+    const source = readFileSync(file, "utf8");
+
+    for (const match of source.matchAll(/^[ \t]+([A-Za-z]\w*):\s*\{([^{}]*)\}/gm)) {
+      const body = match[2] ?? "";
+      const spread = body.match(/\.\.\.typography\.(\w+)/);
+      const ownFontSize = body.match(/fontSize:\s*(\d+)/);
+      if (!spread || !ownFontSize) continue;
+
+      const token = tokens.get(spread[1] ?? "");
+      if (!token) continue;
+
+      const ownLineHeight = body.match(/lineHeight:\s*(\d+)/);
+      const fontSize = Number(ownFontSize[1]);
+      const lineHeight = ownLineHeight ? Number(ownLineHeight[1]) : token.lineHeight;
+
+      styles.push({
+        file: file.slice(ROOT.length + 1),
+        line: source.slice(0, match.index).split("\n").length,
+        name: match[1] ?? "",
+        token: spread[1] ?? "",
+        fontSize,
+        lineHeight,
+        // A token with no lineHeight leaves iOS its natural metrics, which
+        // never clip — those are safe by construction.
+        ratio: lineHeight === null ? null : lineHeight / fontSize,
+      });
+    }
+  }
+
+  return styles;
+}
+
+describe("text line box integrity", () => {
+  it("finds the styles that resize a typography token", () => {
+    const styles = stylesThatResizeAToken();
+
+    // Guard against the walk silently matching nothing (a refactor of the
+    // style syntax would otherwise make this whole suite vacuously pass).
+    expect(styles.length).toBeGreaterThanOrEqual(20);
+    expect(styles.some((style) => style.name === "bigValue")).toBe(true);
+  });
+
+  it("never leaves a resized style with a line box too short for its glyphs", () => {
+    const offenders = stylesThatResizeAToken()
+      .filter((style) => style.ratio !== null && style.ratio < MIN_SAFE_RATIO)
+      .map(
+        (style) =>
+          `${style.file}:${style.line} ${style.name} (...typography.${style.token}) ` +
+          `fontSize ${style.fontSize} / lineHeight ${style.lineHeight} = ${style.ratio?.toFixed(2)}`,
+      );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("pins the Student Performance hero values that D11 clipped", () => {
+    const styles = stylesThatResizeAToken();
+    const hero = styles.find((style) => style.name === "bigValue");
+    const secondary = styles.find((style) => style.name === "bigValueSmall");
+
+    expect(hero).toMatchObject({ fontSize: 40, lineHeight: 50 });
+    expect(secondary).toMatchObject({ fontSize: 24, lineHeight: 30 });
+  });
+});

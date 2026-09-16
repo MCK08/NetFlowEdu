@@ -85,9 +85,13 @@ export const StudyOutcomeButtons = memo(function StudyOutcomeButtons({
                   size={18}
                   color={isSelected ? colors.primary : colors.textSecondary}
                 />
+                {/* Phase 103 — shrink to fit, not ellipsize: at a large OS
+                    text size "Zorlandım" was clipped to "Zorland…". */}
                 <Text
                   style={[styles.buttonLabel, isSelected ? styles.buttonLabelSelected : null]}
                   numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.5}
                 >
                   {option.label}
                 </Text>
