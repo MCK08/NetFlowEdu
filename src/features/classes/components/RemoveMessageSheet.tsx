@@ -52,7 +52,16 @@ export function RemoveMessageSheet({ message, isRemoving, onConfirm, onClose }: 
             </Text>
           ) : null}
           <ListCard
-            leading={<Ionicons name="remove-circle-outline" size={20} color={colors.textPrimary} />}
+            // Phase 104 (H3) — decorative: ListCard announces its `title`
+            // ("Mesajı kaldır") as the row's accessible name.
+            leading={
+              <Ionicons
+                name="remove-circle-outline"
+                size={20}
+                color={colors.textPrimary}
+                accessibilityElementsHidden
+              />
+            }
             title={REMOVE_MESSAGE_ACTION_LABEL}
             onPress={() => setStep("confirm")}
           />

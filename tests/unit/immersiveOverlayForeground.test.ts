@@ -47,9 +47,17 @@ describe("immersive overlay foreground", () => {
   it("the class detail's pinned-dark feed entry uses the constant foreground for icon and label", () => {
     const source = read("src/features/classes/screens/StudentClassDetailScreen.tsx");
 
-    expect(source).toMatch(/name="play-circle"[^>]*color=\{IMMERSIVE_FOREGROUND\}/);
-    expect(source).toMatch(/feedButton:\s*\{[^}]*backgroundColor: darkColors\.background,/);
-    expect(source).toMatch(/feedButtonText:\s*\{[^}]*color: IMMERSIVE_FOREGROUND,/);
+    expect(source).toMatch(/name="play-circle"[\s\S]*?color=\{IMMERSIVE_FOREGROUND\}/);
+    // Phase 104 — the fill is now theme-aware, and that is the point: this
+    // button used to pin darkColors.background in BOTH themes, which is the
+    // dark theme's own page colour, so in dark mode the control dissolved
+    // into the page. The D10 guarantee this assertion exists to protect is
+    // unchanged — the pinned dark pill still carries the light theme — but it
+    // must no longer demand the unconditional fill that hid the button.
+    expect(source).toMatch(
+      /feedButton:\s*\{[\s\S]*?getActiveTheme\(\) === "dark" \? colors\.surface : darkColors\.background,/,
+    );
+    expect(source).toMatch(/feedButtonText:\s*\{[\s\S]*?color: IMMERSIVE_FOREGROUND,/);
   });
 
   it("the class feed's answer pill is white with dark text in both themes", () => {

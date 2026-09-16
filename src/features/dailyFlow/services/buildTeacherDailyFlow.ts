@@ -80,7 +80,10 @@ export function buildTeacherDailyFlow(params: TeacherDailyFlowParams): DailyFlow
       // reason — never a separate "persistently struggling" row and
       // "needs intervention" row for the same underlying concern.
       reason: card.insight.reasons[0],
-      actionLabel: "Öğrenciyi İncele",
+      // Phase 104 (M2) — one wording for one destination. This row and the
+      // Action Center row both open that student's performance screen, and
+      // they were offering the same journey under two different verbs.
+      actionLabel: "Öğrenciyi Gör",
       target: { kind: "student_performance", classId, studentUid: card.studentUid },
       priority: items.length,
       isAttention: card.insight.category === "needs_attention",

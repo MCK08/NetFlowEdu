@@ -54,7 +54,10 @@ function Action({ icon, activeIcon, active = false, activeColor, count, label, o
   const body = (
     <>
       <View style={[styles.puck, active ? styles.puckActive : null]}>
-        <Ionicons name={glyph} size={ICON_SIZE} color={tint} />
+        {/* Phase 104 (H3) — decorative. Both branches below wrap this in a
+            labelled node ("Beğen", "Yorumlar, 3", …), and the count beside
+            it is already part of that sentence. */}
+        <Ionicons name={glyph} size={ICON_SIZE} color={tint} accessibilityElementsHidden />
       </View>
       {count === undefined ? null : <Text style={styles.count}>{formatCount(count)}</Text>}
     </>

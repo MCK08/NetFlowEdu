@@ -23,7 +23,8 @@ export function CameraButton({ onPress, isLoading }: CameraButtonProps) {
       {isLoading ? (
         <ActivityIndicator color={colors.textPrimary} />
       ) : (
-        <Ionicons name="camera" size={30} color={colors.textPrimary} />
+        // Phase 104 (H3) — decorative; the button says "Fotoğraf çek".
+        <Ionicons name="camera" size={30} color={colors.textPrimary} accessibilityElementsHidden />
       )}
     </AnimatedPressable>
   );

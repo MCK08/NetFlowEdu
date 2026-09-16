@@ -32,7 +32,10 @@ export function ActionTile({ icon, label, onPress, style }: ActionTileProps) {
       accessibilityRole="button"
       accessibilityLabel={label}
     >
-      <Ionicons name={icon} size={iconSize.lg} color={colors.primary} />
+      {/* Phase 104 (H3) — decorative. The tile owns the accessible name
+          (accessibilityLabel={label}), so announcing the glyph too would
+          read the same action twice. */}
+      <Ionicons name={icon} size={iconSize.lg} color={colors.primary} accessibilityElementsHidden />
       {/* Phase 103 — one line that shrinks to fit rather than ellipsizing:
           tiles sit in equal-width rows, so at a large OS text size a label
           like "Hesap Değiştir" was clipped to "Hesap De…". Wrapping is not an

@@ -115,7 +115,14 @@ const ActionRow = memo(function ActionRow({
       <View style={[styles.marker, { backgroundColor: accent }]} />
       <View style={styles.body}>
         <View style={styles.labelRow}>
-          <Ionicons name={KIND_ICON[item.kind]} size={iconSize.xs} color={accent} />
+          {/* Phase 104 (H3) — decorative: the row's own label already joins
+              kind + title + reason + evidence + CTA into one sentence. */}
+          <Ionicons
+            name={KIND_ICON[item.kind]}
+            size={iconSize.xs}
+            color={accent}
+            accessibilityElementsHidden
+          />
           <Text style={[styles.kindLabel, { color: accent }]}>{label}</Text>
         </View>
         {/* Two lines: on a topic action the title IS the topic, so clipping
@@ -137,7 +144,15 @@ const ActionRow = memo(function ActionRow({
             150% text left the reason wrapping one word per line. */}
         <View style={styles.ctaWrap}>
           <Text style={styles.cta}>{cta}</Text>
-          <Ionicons name="chevron-forward" size={iconSize.xs} color={colors.textTertiary} />
+          {/* Phase 104 (H3) — decorative. The CTA text is already the last
+              clause of the row's composed label; announcing the chevron too
+              would read "… Öğrenciyi Gör, chevron forward". */}
+          <Ionicons
+            name="chevron-forward"
+            size={iconSize.xs}
+            color={colors.textTertiary}
+            accessibilityElementsHidden
+          />
         </View>
       </View>
     </Pressable>
@@ -183,7 +198,14 @@ export const TeacherActionCenterSection = memo(function TeacherActionCenterSecti
           style={styles.viewAll}
         >
           <Text style={styles.viewAllLabel}>{actionCenterViewAllLabel(viewAll.totalCount)}</Text>
-          <Ionicons name="chevron-forward" size={iconSize.xs} color={colors.primary} />
+          {/* Phase 104 (H3) — decorative; the pressable already announces
+              the spoken "view all" sentence with its count. */}
+          <Ionicons
+            name="chevron-forward"
+            size={iconSize.xs}
+            color={colors.primary}
+            accessibilityElementsHidden
+          />
         </Pressable>
       ) : null}
     </View>

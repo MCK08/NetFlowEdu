@@ -43,7 +43,10 @@ export function IconButton({
       hitSlop={8}
       style={[styles.hitArea, style]}
     >
-      <Ionicons name={icon} size={iconSize[size]} color={color} />
+      {/* Phase 104 (H3) — decorative by construction: `accessibilityLabel`
+          is a REQUIRED prop on this primitive, so the button always carries
+          the name and the glyph never has to. */}
+      <Ionicons name={icon} size={iconSize[size]} color={color} accessibilityElementsHidden />
     </AnimatedPressable>
   );
 }

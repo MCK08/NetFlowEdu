@@ -107,6 +107,23 @@ function stylesThatResizeAToken(): ResizedStyle[] {
 }
 
 describe("text line box integrity", () => {
+  // Phase 104 (H1) — the roles themselves, not only the styles that resize
+  // them. The Phase 103 guard below starts from a token and checks what a
+  // screen did to it; a role defined with too short a line box would sail
+  // straight past it and clip everywhere at once.
+  it("defines every typography role with a line box tall enough for its glyphs", () => {
+    const offenders = [...typographyTokens().entries()]
+      .filter(([, token]) => token.lineHeight !== null && token.lineHeight / token.fontSize < MIN_SAFE_RATIO)
+      .map(
+        ([name, token]) =>
+          `typography.${name}: ${token.fontSize}/${token.lineHeight} = ${(
+            (token.lineHeight ?? 0) / token.fontSize
+          ).toFixed(2)}`,
+      );
+
+    expect(offenders).toEqual([]);
+  });
+
   it("finds the styles that resize a typography token", () => {
     const styles = stylesThatResizeAToken();
 

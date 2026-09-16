@@ -189,7 +189,7 @@ export function ProfileScreen() {
             {/* Phase 49 — appearance sits above the account card: it is a
                 device setting anyone can use, including before any of the
                 account-specific rows below mean anything. */}
-            <View style={styles.sectionWrapper}>
+            <View style={styles.sectionGroupStart}>
               <AppearanceSelector />
             </View>
 
@@ -200,7 +200,7 @@ export function ProfileScreen() {
                 than it is worth. Hidden entirely for roles with no authored
                 tour rather than shown disabled. */}
             {guidedTour?.replayAudience ? (
-              <View style={styles.sectionWrapper}>
+              <View style={styles.sectionGroupStart}>
                 <Card>
                   <Pressable
                     onPress={guidedTour.replay}
@@ -341,6 +341,16 @@ const styles = themedStyles(() => ({
     flex: 1,
     backgroundColor: colors.background,
   },
+  // Phase 104 (M4) — rhythm, not more containers.
+  //
+  // Every group on this screen arrived at the same distance from the last
+  // one (md, md, md), so identity, preferences and account read as one
+  // undifferentiated stack of equally weighted panels. Nothing here is
+  // wrong individually — the Cards each group something real — but the
+  // spacing never said where one subject ended and the next began.
+  //
+  // The rule now: tight inside a group (xs/sm), and a clear gap before a new
+  // one (xl). No new wrappers, no new headings, no surface changes.
   primaryActionWrapper: {
     paddingHorizontal: spacing.lg,
     marginTop: spacing.md,
@@ -349,7 +359,8 @@ const styles = themedStyles(() => ({
     flexDirection: "row",
     gap: spacing.xs,
     paddingHorizontal: spacing.lg,
-    marginTop: spacing.sm,
+    // Still inside IDENTITY: the tiles belong with the button above them.
+    marginTop: spacing.xs,
   },
   quickActionTile: {
     flex: 1,
@@ -376,9 +387,21 @@ const styles = themedStyles(() => ({
     ...typography.caption,
     color: colors.textTertiary,
   },
+  // Within a semantic group: the account Card sits under the tour row it
+  // belongs with, at the same distance the groups above use internally.
   sectionWrapper: {
     paddingHorizontal: spacing.lg,
     marginTop: spacing.md,
+  },
+  // Phase 104 (M4) — the first member of a NEW semantic group.
+  //
+  // Only the opening member takes the wider gap; everything after it keeps
+  // sectionWrapper, so a group reads as one block rather than a run of
+  // equally spaced panels. Deliberately lg and not xl: this is a boundary
+  // cue, not a chapter break, and Profile should stay dense enough to scan.
+  sectionGroupStart: {
+    paddingHorizontal: spacing.lg,
+    marginTop: spacing.lg,
   },
   linkButtonWrapper: {
     marginTop: spacing.xs,

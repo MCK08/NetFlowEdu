@@ -15,7 +15,7 @@ import { IMMERSIVE_FOREGROUND } from "@theme/immersive";
 import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
-import { themedStyles } from "@theme/themeRuntime";
+import { getActiveTheme, themedStyles } from "@theme/themeRuntime";
 import { Question } from "@/types/question";
 
 import { ImageSourcePicker } from "../components/ImageSourcePicker";
@@ -128,7 +128,14 @@ export function StudentClassDetailScreen({ classId }: StudentClassDetailScreenPr
               accessibilityRole="button"
               accessibilityLabel="Sınıf sohbetini aç"
             >
-              <Ionicons name="chatbubble-outline" size={18} color={colors.textInverse} />
+              {/* Phase 104 (H3) — decorative; the button is labelled
+                  "Sınıf sohbetini aç". */}
+              <Ionicons
+                name="chatbubble-outline"
+                size={18}
+                color={colors.textInverse}
+                accessibilityElementsHidden
+              />
               <Text style={styles.chatButtonText}>Sınıf Sohbeti</Text>
             </AnimatedPressable>
 
@@ -153,7 +160,14 @@ export function StudentClassDetailScreen({ classId }: StudentClassDetailScreenPr
                 <ActivityIndicator color={colors.textInverse} />
               ) : (
                 <>
-                  <Ionicons name="camera" size={18} color={colors.textInverse} />
+                  {/* Phase 104 (H3) — decorative; the button is labelled
+                      "Soru paylaş". */}
+                  <Ionicons
+                    name="camera"
+                    size={18}
+                    color={colors.textInverse}
+                    accessibilityElementsHidden
+                  />
                   <Text style={styles.shareButtonText}>Soru Paylaş</Text>
                 </>
               )}
@@ -169,7 +183,14 @@ export function StudentClassDetailScreen({ classId }: StudentClassDetailScreenPr
                 accessibilityRole="button"
                 accessibilityLabel="Soru akışına gir"
               >
-                <Ionicons name="play-circle" size={20} color={IMMERSIVE_FOREGROUND} />
+                {/* Phase 104 (H3) — decorative; the button is labelled
+                    "Soru akışına gir". */}
+                <Ionicons
+                  name="play-circle"
+                  size={20}
+                  color={IMMERSIVE_FOREGROUND}
+                  accessibilityElementsHidden
+                />
                 <Text style={styles.feedButtonText}>Soru Akışına Gir</Text>
               </AnimatedPressable>
             )}
@@ -237,8 +258,10 @@ const styles = themedStyles(() => ({
     alignSelf: "flex-start",
   },
   title: {
-    ...typography.displayLg,
-    fontSize: 22,
+    // Phase 104 (H1) — the role, not displayLg trimmed to fit. Same 22pt this
+    // screen already chose, but with the 28pt line box the override never had
+    // (it inherited displayLg's 34, which is the shape D11 came from).
+    ...typography.screenTitleSm,
     color: colors.textPrimary,
   },
   memberCount: {
@@ -256,9 +279,10 @@ const styles = themedStyles(() => ({
     marginTop: spacing.xs,
   },
   chatButtonText: {
+    // Phase 104 (H1) — control label role; 15/600 is what this style already
+    // was, now with a line box and a name.
+    ...typography.button,
     color: colors.textInverse,
-    fontSize: 15,
-    fontWeight: "600",
   },
   leaveButton: {
     minHeight: 44,
@@ -269,6 +293,11 @@ const styles = themedStyles(() => ({
     justifyContent: "center",
     marginTop: spacing.xs,
   },
+  // Phase 104 (H1) — deliberately NOT migrated. 14/600 is a step quieter than
+  // the other controls on purpose: leaving a class is destructive and sits
+  // under a danger-bordered secondary button. Spreading `button` here and then
+  // overriding back to 14 would add indirection and claim a token adoption
+  // that changes nothing.
   leaveButtonText: {
     color: colors.danger,
     fontSize: 14,
@@ -288,9 +317,9 @@ const styles = themedStyles(() => ({
     opacity: 0.6,
   },
   shareButtonText: {
+    // Phase 104 (H1) — control label role; metrics unchanged at 15/600.
+    ...typography.button,
     color: colors.textInverse,
-    fontSize: 15,
-    fontWeight: "600",
   },
   sectionTitle: {
     ...typography.subtitle,
@@ -304,7 +333,19 @@ const styles = themedStyles(() => ({
     gap: spacing.xs,
     minHeight: 50,
     borderRadius: radius.lg,
-    backgroundColor: darkColors.background,
+    // Phase 104 — discovered by Wave-A runtime QA, pre-existing since before
+    // this phase: the fill was pinned to darkColors.background, which IS the
+    // dark theme's page background. In light mode that reads as the intended
+    // dark "way into the feed" pill; in dark mode the button dissolved into
+    // the page and only its label floated there.
+    //
+    // The pinned pill is kept where it means something (light), and dark uses
+    // the palette's own raised-container token — the same `surface` that Card,
+    // ClassCard and StudentClassCard sit on — so the control still reads as a
+    // control. getActiveTheme() is the APP's resolved theme (preference +
+    // system, via ThemeProvider), not RN's device scheme, and themedStyles
+    // re-runs this factory per resolved theme, so the switch is live.
+    backgroundColor: getActiveTheme() === "dark" ? colors.surface : darkColors.background,
     marginTop: spacing.xs,
     marginBottom: spacing.sm,
   },
@@ -312,8 +353,13 @@ const styles = themedStyles(() => ({
     // Phase 103 — the button is pinned dark in both themes, so its label is
     // the constant immersive white; `colors.textInverse` flips to near-black
     // in dark mode and hid "Soru Akışına Gir" against its own fill.
+    //
+    // Phase 104 (H1) — the control-label role, with the 700 kept on purpose:
+    // this is the screen's primary way into the class feed and is meant to
+    // read one step stronger than the chat/share controls above it. The role
+    // supplies the size and line box; the weight stays a deliberate override.
+    ...typography.button,
     color: IMMERSIVE_FOREGROUND,
-    fontSize: 15,
     fontWeight: "700",
   },
   loadingMore: {

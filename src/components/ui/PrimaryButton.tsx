@@ -3,6 +3,7 @@ import { ActivityIndicator, Pressable, Text } from "react-native";
 import { colors } from "@theme/colors";
 import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
+import { typography } from "@theme/typography";
 import { themedStyles } from "@theme/themeRuntime";
 
 interface PrimaryButtonProps {
@@ -67,14 +68,18 @@ const styles = themedStyles(() => ({
   disabled: {
     opacity: 0.6,
   },
+  // Phase 104 (H1) — the control-label role, not a private pair of numbers.
+  //
+  // Both styles wrote 16/600 by hand with no lineHeight at all, which is the
+  // shape that produced D11: a size with no line box of its own. `button`
+  // carries 15/600/20, so the label now scales and wraps under the same
+  // protection every other role has.
   primaryText: {
+    ...typography.button,
     color: colors.textInverse,
-    fontSize: 16,
-    fontWeight: "600",
   },
   secondaryText: {
+    ...typography.button,
     color: colors.primary,
-    fontSize: 16,
-    fontWeight: "600",
   },
 }));

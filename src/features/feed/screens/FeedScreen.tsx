@@ -466,7 +466,10 @@ export function FeedScreen() {
   if (error && questions.length === 0) {
     return (
       <View style={styles.centered}>
-        <SharedEmptyState icon="cloud-offline-outline" title={error} />
+        {/* Phase 104 (M5) — styles.centered is IMMERSIVE_SURFACE, so this
+            panel sits on the pinned-dark ground exactly like the two empty
+            branches below and needs the same pinned foreground. */}
+        <SharedEmptyState icon="cloud-offline-outline" title={error} tone="immersive" />
         <PrimaryButton label="Tekrar Dene" onPress={refresh} />
         {chrome}
         {sheets}
@@ -509,12 +512,14 @@ export function FeedScreen() {
                   icon="filter-outline"
                   title="Bu filtreye uyan soru yok"
                   description="Farklı bir ders, sınıf veya konu deneyebilirsin."
+                  tone="immersive"
                   style={{ width: "100%", height: pageHeight, backgroundColor: IMMERSIVE_SURFACE }}
                 />
               ) : descriptor ? (
                 <SharedEmptyState
                   icon="sparkles-outline"
                   title={descriptor.emptyTitle}
+                  tone="immersive"
                   style={{ width: "100%", height: pageHeight, backgroundColor: IMMERSIVE_SURFACE }}
                 />
               ) : (
