@@ -140,21 +140,13 @@ export function StudentClassDetailScreen({ classId }: StudentClassDetailScreenPr
             </AnimatedPressable>
 
             <AnimatedPressable
-              onPress={confirmLeave}
-              disabled={isLeaving}
-              style={styles.leaveButton}
-              accessibilityRole="button"
-              accessibilityLabel="Sınıftan ayrıl"
-            >
-              <Text style={styles.leaveButtonText}>{isLeaving ? "Ayrılıyor..." : "Sınıftan Ayrıl"}</Text>
-            </AnimatedPressable>
-
-            <AnimatedPressable
               onPress={openComposer}
               disabled={isUploading}
               style={[styles.shareButton, isUploading ? styles.shareButtonDisabled : null]}
               accessibilityRole="button"
               accessibilityLabel="Soru paylaş"
+              // Phase 104 (B6) — the spinner alone says nothing to a screen reader.
+              accessibilityState={{ busy: isUploading, disabled: isUploading }}
             >
               {isUploading ? (
                 <ActivityIndicator color={colors.textInverse} />
@@ -197,11 +189,30 @@ export function StudentClassDetailScreen({ classId }: StudentClassDetailScreenPr
           </View>
         }
         ListFooterComponent={
-          isLoadingMore ? (
-            <View style={styles.loadingMore}>
-              <ActivityIndicator color={colors.textPrimary} />
-            </View>
-          ) : null
+          <View style={styles.footer}>
+            {isLoadingMore ? (
+              <View style={styles.loadingMore}>
+                <ActivityIndicator color={colors.textPrimary} />
+              </View>
+            ) : null}
+            {/* Phase 104 (B2) — leaving the class is the one destructive,
+                rarely-used action on this screen. It used to sit BETWEEN the
+                two primary tasks (chat and share), which gave a red control the
+                same rank as the things a student comes here to do. It now
+                closes the page, after the class's questions — the same
+                "utility last" order the Profil screen settled on in Wave A.
+                Same button, same copy, same confirmation. */}
+            <AnimatedPressable
+              onPress={confirmLeave}
+              disabled={isLeaving}
+              style={styles.leaveButton}
+              accessibilityRole="button"
+              accessibilityLabel="Sınıftan ayrıl"
+              accessibilityState={{ busy: isLeaving, disabled: isLeaving }}
+            >
+              <Text style={styles.leaveButtonText}>{isLeaving ? "Ayrılıyor..." : "Sınıftan Ayrıl"}</Text>
+            </AnimatedPressable>
+          </View>
         }
       />
 
@@ -273,6 +284,10 @@ const styles = themedStyles(() => ({
     alignItems: "center",
     justifyContent: "center",
     gap: spacing.xs,
+    // Phase 104 (Dynamic Type) — a wrapped label used to take the whole row
+    // and push the icon onto the border; the inset keeps both inside.
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
     minHeight: 48,
     borderRadius: radius.md,
     backgroundColor: colors.primary,
@@ -283,6 +298,12 @@ const styles = themedStyles(() => ({
     // was, now with a line box and a name.
     ...typography.button,
     color: colors.textInverse,
+    flexShrink: 1,
+    textAlign: "center",
+  },
+  footer: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
   },
   leaveButton: {
     minHeight: 44,
@@ -291,7 +312,6 @@ const styles = themedStyles(() => ({
     borderColor: colors.danger,
     alignItems: "center",
     justifyContent: "center",
-    marginTop: spacing.xs,
   },
   // Phase 104 (H1) — deliberately NOT migrated. 14/600 is a step quieter than
   // the other controls on purpose: leaving a class is destructive and sits
@@ -308,6 +328,10 @@ const styles = themedStyles(() => ({
     alignItems: "center",
     justifyContent: "center",
     gap: spacing.xs,
+    // Phase 104 (Dynamic Type) — a wrapped label used to take the whole row
+    // and push the icon onto the border; the inset keeps both inside.
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
     minHeight: 48,
     borderRadius: radius.md,
     backgroundColor: colors.primary,
@@ -320,6 +344,8 @@ const styles = themedStyles(() => ({
     // Phase 104 (H1) — control label role; metrics unchanged at 15/600.
     ...typography.button,
     color: colors.textInverse,
+    flexShrink: 1,
+    textAlign: "center",
   },
   sectionTitle: {
     ...typography.subtitle,
@@ -331,6 +357,10 @@ const styles = themedStyles(() => ({
     alignItems: "center",
     justifyContent: "center",
     gap: spacing.xs,
+    // Phase 104 (Dynamic Type) — a wrapped label used to take the whole row
+    // and push the icon onto the border; the inset keeps both inside.
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
     minHeight: 50,
     borderRadius: radius.lg,
     // Phase 104 — discovered by Wave-A runtime QA, pre-existing since before
@@ -361,6 +391,8 @@ const styles = themedStyles(() => ({
     ...typography.button,
     color: IMMERSIVE_FOREGROUND,
     fontWeight: "700",
+    flexShrink: 1,
+    textAlign: "center",
   },
   loadingMore: {
     paddingVertical: spacing.xl,

@@ -1,18 +1,19 @@
-import { Ionicons } from "@expo/vector-icons";
-
 import { useCallback, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, FlatList, NativeScrollEvent, NativeSyntheticEvent, Pressable, Text, View, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppBackButton } from "@components/ui/AppBackButton";
+import { EmptyState } from "@components/ui/EmptyState";
 import { useAuth } from "@features/authentication";
 import { FeedItem } from "@features/classes/services/feedItems";
 import { RatingCard } from "@features/study/components/RatingCard";
 import { useInterleavedStudyFeed } from "@features/study/hooks/useInterleavedStudyFeed";
 import { useBackNavigation } from "@hooks/useBackNavigation";
-import { colors } from "@theme/colors";
-import { IMMERSIVE_FOREGROUND } from "@theme/immersive";
+import { IMMERSIVE_FOREGROUND, IMMERSIVE_SURFACE } from "@theme/immersive";
+import { darkColors } from "@theme/palettes";
+import { spacing } from "@theme/spacing";
 import { themedStyles } from "@theme/themeRuntime";
+import { typography } from "@theme/typography";
 
 import { ClassFeedCard } from "../components/ClassFeedCard";
 import { useClassFeed } from "../hooks/useClassFeed";
@@ -169,13 +170,23 @@ export function ClassFeedScreen({ classId }: ClassFeedScreenProps) {
   }
 
   // ---- error ---------------------------------------------------------
+  // Phase 104 (B4/B5) — the shared EmptyState on its immersive tone: this
+  // screen is pinned dark in both themes, and its own icon used a THEMED
+  // token (colors.textTertiary) that resolved to #666E7D on #0B0B0F in
+  // Light — the same mismatch Wave A fixed for the feed's empty panel. The
+  // real actions (retry when recoverable, back to the class) stay exactly
+  // as they were; EmptyState carries no CTA of its own.
   if (errorCode && questions.length === 0) {
     const recoverable = isRecoverableFeedError(errorCode);
     return (
       <View style={styles.fullscreenCentered}>
-        <Ionicons name="alert-circle-outline" size={44} color="#F97066" />
-        <Text style={styles.stateTitle}>Sorular yüklenemedi</Text>
-        <Text style={styles.stateSubtitle}>{mapClassFeedErrorToMessage(errorCode)}</Text>
+        <EmptyState
+          icon="alert-circle-outline"
+          title="Sorular yüklenemedi"
+          description={mapClassFeedErrorToMessage(errorCode)}
+          tone="immersive"
+          style={styles.statePanel}
+        />
         <View style={styles.stateActions}>
           {recoverable ? (
             <Pressable
@@ -204,11 +215,13 @@ export function ClassFeedScreen({ classId }: ClassFeedScreenProps) {
   if (questions.length === 0) {
     return (
       <View style={styles.fullscreenCentered}>
-        <Ionicons name="albums-outline" size={44} color={colors.textTertiary} />
-        <Text style={styles.stateTitle}>Henüz soru yok</Text>
-        <Text style={styles.stateSubtitle}>
-          Öğretmenin bu sınıfta henüz soru paylaşmadı. Yeni sorular eklendiğinde burada görünecek.
-        </Text>
+        <EmptyState
+          icon="albums-outline"
+          title="Henüz soru yok"
+          description="Öğretmenin bu sınıfta henüz soru paylaşmadı. Yeni sorular eklendiğinde burada görünecek."
+          tone="immersive"
+          style={styles.statePanel}
+        />
         <View style={styles.stateActions}>
           <Pressable
             onPress={goBack}
@@ -330,61 +343,62 @@ export function ClassFeedScreen({ classId }: ClassFeedScreenProps) {
 }
 
 const styles = themedStyles(() => ({
+  // Phase 104 (B5) — this screen is the immersive pager's sibling and is
+  // pinned dark in both themes; its state views now name that surface with
+  // the immersive tokens instead of private hex, and their text uses the
+  // type roles. Visually the same dark surface, white text and white/outlined
+  // actions; what changed is that nothing here can drift from the palette.
   flex: {
     flex: 1,
-    backgroundColor: "#0B0B0F",
+    backgroundColor: IMMERSIVE_SURFACE,
   },
   fullscreenCentered: {
     flex: 1,
-    backgroundColor: "#0B0B0F",
+    backgroundColor: IMMERSIVE_SURFACE,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 32,
-    gap: 12,
+    paddingHorizontal: spacing.xxl,
+    gap: spacing.sm,
   },
-  stateTitle: {
-    color: "white",
-    fontSize: 18,
-    fontWeight: "700",
-    textAlign: "center",
+  statePanel: {
+    paddingVertical: 0,
   },
   stateSubtitle: {
-    color: "#B4B8C0",
-    fontSize: 14,
+    ...typography.body,
+    color: IMMERSIVE_FOREGROUND,
+    opacity: 0.75,
     textAlign: "center",
-    lineHeight: 20,
   },
   stateActions: {
     flexDirection: "row",
-    gap: 12,
-    marginTop: 8,
+    gap: spacing.sm,
+    marginTop: spacing.xs,
   },
   primaryAction: {
     minHeight: 46,
-    paddingHorizontal: 20,
+    paddingHorizontal: spacing.lg,
     borderRadius: 12,
-    backgroundColor: "white",
+    backgroundColor: IMMERSIVE_FOREGROUND,
     alignItems: "center",
     justifyContent: "center",
   },
   primaryActionText: {
-    color: "#0B0B0F",
-    fontSize: 15,
+    ...typography.button,
+    color: IMMERSIVE_SURFACE,
     fontWeight: "700",
   },
   secondaryAction: {
     minHeight: 46,
-    paddingHorizontal: 20,
+    paddingHorizontal: spacing.lg,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.4)",
+    borderColor: darkColors.border,
     alignItems: "center",
     justifyContent: "center",
   },
   secondaryActionText: {
-    color: "white",
-    fontSize: 15,
-    fontWeight: "600",
+    ...typography.button,
+    color: IMMERSIVE_FOREGROUND,
   },
   header: {
     position: "absolute",
@@ -402,9 +416,8 @@ const styles = themedStyles(() => ({
   },
   headerTitle: {
     flex: 1,
-    color: "white",
-    fontSize: 16,
-    fontWeight: "700",
+    ...typography.cardTitle,
+    color: IMMERSIVE_FOREGROUND,
   },
   progressPill: {
     backgroundColor: "rgba(255,255,255,0.18)",
@@ -413,7 +426,7 @@ const styles = themedStyles(() => ({
     paddingVertical: 6,
   },
   progressText: {
-    color: "white",
+    color: IMMERSIVE_FOREGROUND,
     fontSize: 13,
     fontWeight: "700",
   },
@@ -431,7 +444,7 @@ const styles = themedStyles(() => ({
     gap: 12,
   },
   endBannerTitle: {
-    color: "white",
+    color: IMMERSIVE_FOREGROUND,
     fontSize: 14,
     fontWeight: "700",
     textAlign: "center",
@@ -449,8 +462,7 @@ const styles = themedStyles(() => ({
     justifyContent: "center",
   },
   endBannerButtonText: {
-    color: "white",
-    fontSize: 14,
-    fontWeight: "600",
+    ...typography.bodyStrong,
+    color: IMMERSIVE_FOREGROUND,
   },
 }));

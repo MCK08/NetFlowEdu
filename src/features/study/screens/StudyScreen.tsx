@@ -348,51 +348,63 @@ export function StudyScreen() {
         }
         ListHeaderComponent={
           <View style={styles.header}>
-            <Text style={styles.title}>Öğrenme Merkezi</Text>
-            {/* Phase 25 §10 — one deterministic sentence, real trend data,
-                no invented text. See learningMoment.ts. */}
-            {moment ? <Text style={styles.moment}>{moment}</Text> : null}
-            {/* Phase 39 §4 — the Hub's single headline answer, above the
-                per-category sections it summarizes. Those sections stay as
-                the breakdown; this one names the one next step. */}
-            <NextActionSection action={nextAction} onStart={handleStartNextAction} />
-            {/* Phase 61 — one line, and only when verified chronology actually
-                changed which question leads the plan (proved counterfactually
-                in chronologyExplanation.ts). If Phase 41's cumulative evidence
-                picked the question on its own, nothing is said rather than
-                crediting the timeline for a decision it did not make. */}
-            {chronologyReason ? (
-              <Text style={styles.chronologyReason}>{chronologyReason}</Text>
-            ) : null}
-            {/* Phase 56 — sits directly under the next action: that card says
-                what to do now, this one explains how learning is changing.
-                One restrained row, not an inline copy of the story. */}
-            <LearningStoryEntryCard
-              title="İlerleme Hikâyem"
-              description="Hangi konularda ilerlediğini gör"
-              onPress={() => router.push("/(student)/learning-story" as never)}
-            />
-            {/* Phase 76 — the Hub's single exploration entry, in the slot the
-                Phase 70 concept-map row used to hold.
+            {/* Phase 104 (B2) — the Hub's blocks used to sit one uniform gap
+                apart, so the title and its one-line reading, the next action
+                and its reason, the two lenses, and the progress card and the
+                goal that feeds it all looked equally unrelated. They are now
+                grouped: tight inside a pair, a step wider between blocks.
+                Nothing is added, removed or reordered. */}
+            <View style={styles.identity}>
+              <Text style={styles.title}>Öğrenme Merkezi</Text>
+              {/* Phase 25 §10 — one deterministic sentence, real trend data,
+                  no invented text. See learningMoment.ts. */}
+              {moment ? <Text style={styles.moment}>{moment}</Text> : null}
+            </View>
+            <View style={styles.pair}>
+              {/* Phase 39 §4 — the Hub's single headline answer, above the
+                  per-category sections it summarizes. Those sections stay as
+                  the breakdown; this one names the one next step. */}
+              <NextActionSection action={nextAction} onStart={handleStartNextAction} />
+              {/* Phase 61 — one line, and only when verified chronology actually
+                  changed which question leads the plan (proved counterfactually
+                  in chronologyExplanation.ts). If Phase 41's cumulative evidence
+                  picked the question on its own, nothing is said rather than
+                  crediting the timeline for a decision it did not make. */}
+              {chronologyReason ? (
+                <Text style={styles.chronologyReason}>{chronologyReason}</Text>
+              ) : null}
+            </View>
+            <View style={styles.lenses}>
+              {/* Phase 56 — sits directly under the next action: that card says
+                  what to do now, this one explains how learning is changing.
+                  One restrained row, not an inline copy of the story. */}
+              <LearningStoryEntryCard
+                title="İlerleme Hikâyem"
+                description="Hangi konularda ilerlediğini gör"
+                onPress={() => router.push("/(student)/learning-story" as never)}
+              />
+              {/* Phase 76 — the Hub's single exploration entry, in the slot the
+                  Phase 70 concept-map row used to hold.
 
-                The Atlas composes that map rather than competing with it: the
-                same nodes, verdicts and wording, placed alongside the current
-                focus, the evidence lenses and the ordered motion. Two rows a
-                thumb apart, one of them a strictly larger version of the
-                other, would have made the student choose between a screen and
-                its own superset. Öğrenme Haritam keeps its route and is one
-                tap away from inside the Atlas.
+                  The Atlas composes that map rather than competing with it: the
+                  same nodes, verdicts and wording, placed alongside the current
+                  focus, the evidence lenses and the ordered motion. Two rows a
+                  thumb apart, one of them a strictly larger version of the
+                  other, would have made the student choose between a screen and
+                  its own superset. Öğrenme Haritam keeps its route and is one
+                  tap away from inside the Atlas.
 
-                Still beside İlerleme Hikâyem, and still below the next-action
-                card: the story says how learning has changed, the Atlas says
-                how the signals stand right now, and neither may outshout the
-                one card that tells the student what to do. */}
-            <LearningAtlasEntryCard
-              conceptCount={conceptMap.totalConcepts}
-              attentionCount={conceptMap.conceptsNeedingAttention}
-              dueCount={conceptMap.conceptsDueForReview}
-              onPress={() => router.push(ROUTES.studentLearningAtlas as never)}
-            />
+                  Still beside İlerleme Hikâyem, and still below the next-action
+                  card: the story says how learning has changed, the Atlas says
+                  how the signals stand right now, and neither may outshout the
+                  one card that tells the student what to do. */}
+              <LearningAtlasEntryCard
+                conceptCount={conceptMap.totalConcepts}
+                attentionCount={conceptMap.conceptsNeedingAttention}
+                dueCount={conceptMap.conceptsDueForReview}
+                onPress={() => router.push(ROUTES.studentLearningAtlas as never)}
+              />
+            </View>
             <AssignedWorkSection cards={assignmentCards} onOpen={openAssignment} />
             <DailyPracticePlanSection plan={plan} onStart={handleStartPlan} />
             {/* Phase 62 — names the topics the scheduler has released. Sits
@@ -400,8 +412,12 @@ export function StudyScreen() {
                 what to do now, this only says what has become worth
                 revisiting. Renders nothing when nothing is due. */}
             <ReviewReadySection topics={reviewReadyTopics} onStart={handleStartReview} />
-            <StudyProgressCard summary={summary} dueCount={insights.dueCount} />
-            <DailyGoalEditor currentGoal={summary.dailyGoal} onSaved={handleRefresh} />
+            <View style={styles.pair}>
+              {/* The goal editor changes the "Bugünkü hedef" the progress card
+                  shows, so the two sit as one block. */}
+              <StudyProgressCard summary={summary} dueCount={insights.dueCount} />
+              <DailyGoalEditor currentGoal={summary.dailyGoal} onSaved={handleRefresh} />
+            </View>
             {error ? (
               <View style={styles.errorBanner} accessibilityRole="alert">
                 <Text style={styles.errorText}>{error}</Text>
@@ -452,9 +468,19 @@ const styles = themedStyles(() => ({
     paddingBottom: spacing.xxl,
   },
   header: {
-    gap: spacing.md,
+    // Phase 104 (B2) — the gap BETWEEN blocks; the pairs below step down.
+    gap: spacing.lg,
     paddingTop: spacing.sm,
     paddingBottom: spacing.lg,
+  },
+  identity: {
+    gap: spacing.xs,
+  },
+  pair: {
+    gap: spacing.xs,
+  },
+  lenses: {
+    gap: spacing.sm,
   },
   title: {
     // Phase 74 — was displayLg overridden to 26. The Hub is the student's

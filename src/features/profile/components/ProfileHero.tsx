@@ -58,7 +58,15 @@ export const ProfileHero = memo(function ProfileHero({
         ) : null}
       </View>
 
-      <RoleBadge role={role} />
+      {/* Phase 104 (B3) — Badge pins itself to the leading edge
+          (alignSelf: "flex-start") so it never stretches inside a row, and
+          that override beat this column's centring: on both profile screens
+          the role sat flush left under a centred avatar, name and handle.
+          A shrink-wrapping wrapper gives the badge a box exactly its own
+          width, which the column can then centre. */}
+      <View>
+        <RoleBadge role={role} />
+      </View>
 
       {children}
     </View>

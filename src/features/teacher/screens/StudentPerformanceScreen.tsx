@@ -5,6 +5,7 @@ import { ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { Card } from "@components/ui/Card";
+import { StatusLabel } from "@components/ui/StatusLabel";
 import { Chip } from "@components/ui/Chip";
 import { EmptyState } from "@components/ui/EmptyState";
 import { LoadingSkeleton } from "@components/ui/LoadingSkeleton";
@@ -27,6 +28,7 @@ import { InterventionOutcomeCard } from "../components/InterventionOutcomeCard";
 import { useInterventionEffectiveness } from "../hooks/useInterventionEffectiveness";
 import { useStudentPerformanceDetail } from "../hooks/useStudentPerformanceDetail";
 import { resolvePostInterventionAction } from "../services/postInterventionAction";
+import { learningTrendGlyph } from "../services/statusGlyphs";
 import { buildStudentAttentionInsight } from "../services/studentAttention";
 import { resolveStudentInterventionTopic } from "../services/teacherIntervention";
 
@@ -36,14 +38,16 @@ interface StudentPerformanceScreenProps {
   studentName?: string;
 }
 
+// Phase 104 — the words only; the mark comes from learningTrendGlyph, the
+// same vocabulary the class trend line and the verdict cards use.
 function trendLabel(trend: LearningTrend): string {
   switch (trend) {
     case "improving":
-      return "📈 Gelişiyor";
+      return "Gelişiyor";
     case "declining":
-      return "📉 Geriliyor";
+      return "Geriliyor";
     case "stable":
-      return "➡️ Sabit";
+      return "Sabit";
     case "insufficient_data":
       return "Henüz yeterli veri yok";
   }
@@ -177,6 +181,8 @@ export function StudentPerformanceScreen({ classId, studentId, studentName }: St
     router.push({ pathname: "/(teacher)/class/[classId]/assignment/create", params });
   }
 
+  const trendGlyph = snapshot ? learningTrendGlyph(snapshot.trend) : null;
+
   return (
     <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
       <View style={styles.header}>
@@ -211,197 +217,225 @@ export function StudentPerformanceScreen({ classId, studentId, studentName }: St
           contentContainerStyle={styles.content}
           showsVerticalScrollIndicator={false}
         >
-          <Card style={styles.summaryCard}>
-            <Text style={styles.sectionLabel}>Genel başarı</Text>
-            <Text style={styles.bigValue}>
-              {snapshot.successRatePercent === null ? "—" : `%${snapshot.successRatePercent}`}
-            </Text>
-          </Card>
-
-          {attention ? (
-            <Card style={styles.attentionCard}>
-              <Text style={styles.sectionLabel}>Öğretmen notu</Text>
-              {attention.reasons.map((reason) => (
-                <Text key={reason} style={styles.bodyText}>
-                  {reason}
-                </Text>
-              ))}
+          {/* Phase 104 (B2) — the same cards, in the groups a teacher reads
+              them in: who this is (hero + note), what is happening now (week,
+              today, counts), what happened in order (flow), what was done
+              about it (intervention verdict, next step, the one action), the
+              topics, and the record. Tight inside a group, a step wider between
+              groups; no card added, removed, renamed or reordered. */}
+          <View style={styles.group}>
+            <Card style={styles.summaryCard}>
+              <Text style={styles.sectionLabel}>Genel başarı</Text>
+              <Text style={styles.bigValue}>
+                {snapshot.successRatePercent === null ? "—" : `%${snapshot.successRatePercent}`}
+              </Text>
             </Card>
-          ) : null}
 
-          {/* Phase 32 — the question a teacher opens this screen to answer.
-              Placed ABOVE "bugünkü durum" because a student who studied
-              Monday–Thursday reads as completely inactive on a Friday if
-              "today" is the first thing shown. */}
-          <Card style={styles.card}>
-            <Text style={styles.sectionLabel}>Bu hafta</Text>
-            {snapshot.thisWeek.studiedThisWeek ? (
-              <>
-                <Text style={styles.bodyText}>
-                  {snapshot.thisWeek.reviewedThisWeek} soru · {snapshot.thisWeek.activeDaysThisWeek} gün
-                </Text>
-                <Text style={styles.bodyTextMuted}>{snapshot.thisWeek.solvedThisWeek} doğru</Text>
-                {snapshot.thisWeek.struggledThisWeek > 0 ? (
-                  <Text style={styles.bodyTextDanger}>
-                    {snapshot.thisWeek.struggledThisWeek} zorlanılan soru
+            {attention ? (
+              <Card style={styles.attentionCard}>
+                <Text style={styles.sectionLabel}>Öğretmen notu</Text>
+                {attention.reasons.map((reason) => (
+                  <Text key={reason} style={styles.bodyText}>
+                    {reason}
                   </Text>
-                ) : null}
-              </>
-            ) : (
-              <Text style={styles.bodyTextMuted}>Bu hafta bu sınıfta çalışmadı</Text>
-            )}
-          </Card>
-
-          <Card style={styles.card}>
-            <Text style={styles.sectionLabel}>Bugünkü durum</Text>
-            <Text style={styles.bodyText}>{snapshot.today.reviewedToday} soru çözüldü</Text>
-            <Text style={styles.bodyTextMuted}>{snapshot.today.solvedToday} doğru</Text>
-            {snapshot.today.struggledToday > 0 ? (
-              <Text style={styles.bodyTextDanger}>{snapshot.today.struggledToday} zorlanılan soru</Text>
+                ))}
+              </Card>
             ) : null}
-          </Card>
-
-          <View style={styles.row}>
-            <Card style={styles.halfCard}>
-              <Text style={styles.sectionLabel}>Tekrar durumu</Text>
-              <Text style={styles.bigValueSmall}>{snapshot.dueCount}</Text>
-              <Text style={styles.bodyTextMuted}>bekleyen tekrar</Text>
-            </Card>
-            <Card style={styles.halfCard}>
-              <Text style={styles.sectionLabel}>Bu sınıfta aktif gün</Text>
-              <Text style={styles.bigValueSmall}>{snapshot.daysActiveRecently}</Text>
-              <Text style={styles.bodyTextMuted}>son 14 gün içinde</Text>
-            </Card>
           </View>
 
-          {/* Phase 60 — chronological CONTEXT, placed between the aggregate
-              counts above and the intervention/action machinery below: a
-              teacher deciding what to do should see what actually happened,
-              in order, before they see the verdict and the button. It is
-              context only — Phase 42 remains the authority on the student's
-              state, and Phase 47 on the action. */}
-          <Card style={styles.card}>
-            <Text style={styles.sectionLabel}>Son öğrenme akışı</Text>
-            <TeacherLearningTimeline
-              timeline={timeline}
-              isLoading={isTimelineLoading}
-              hasError={hasTimelineError}
-            />
-          </Card>
-
-          {/* Phase 78 — repeated authored selections, directly under the flow
-              they were derived from. Rendered only when a pattern actually
-              qualified, so a student without one costs this screen nothing —
-              not a card, not a heading, not an empty state. */}
-          {choicePatterns.patterns.length > 0 ? (
+          <View style={styles.group}>
+            {/* Phase 32 — the question a teacher opens this screen to answer.
+                Placed ABOVE "bugünkü durum" because a student who studied
+                Monday–Thursday reads as completely inactive on a Friday if
+                "today" is the first thing shown. */}
             <Card style={styles.card}>
-              <Text style={styles.sectionLabel}>Tekrarlayan seçim örüntüleri</Text>
-              <VerifiedChoicePatternSection
-                intro="Son öğrenme kayıtlarında aynı doğrulanmış seçim anlamı farklı sorularda tekrarlandı."
-                patterns={choicePatterns.patterns}
-                compact
+              <Text style={styles.sectionLabel}>Bu hafta</Text>
+              {snapshot.thisWeek.studiedThisWeek ? (
+                <>
+                  <Text style={styles.bodyText}>
+                    {snapshot.thisWeek.reviewedThisWeek} soru · {snapshot.thisWeek.activeDaysThisWeek} gün
+                  </Text>
+                  <Text style={styles.bodyTextMuted}>{snapshot.thisWeek.solvedThisWeek} doğru</Text>
+                  {snapshot.thisWeek.struggledThisWeek > 0 ? (
+                    <Text style={styles.bodyTextDanger}>
+                      {snapshot.thisWeek.struggledThisWeek} zorlanılan soru
+                    </Text>
+                  ) : null}
+                </>
+              ) : (
+                <Text style={styles.bodyTextMuted}>Bu hafta bu sınıfta çalışmadı</Text>
+              )}
+            </Card>
+
+            <Card style={styles.card}>
+              <Text style={styles.sectionLabel}>Bugünkü durum</Text>
+              <Text style={styles.bodyText}>{snapshot.today.reviewedToday} soru çözüldü</Text>
+              <Text style={styles.bodyTextMuted}>{snapshot.today.solvedToday} doğru</Text>
+              {snapshot.today.struggledToday > 0 ? (
+                <Text style={styles.bodyTextDanger}>{snapshot.today.struggledToday} zorlanılan soru</Text>
+              ) : null}
+            </Card>
+
+            <View style={styles.row}>
+              <Card style={styles.halfCard}>
+                <Text style={styles.sectionLabel}>Tekrar durumu</Text>
+                <Text style={styles.bigValueSmall}>{snapshot.dueCount}</Text>
+                <Text style={styles.bodyTextMuted}>bekleyen tekrar</Text>
+              </Card>
+              <Card style={styles.halfCard}>
+                <Text style={styles.sectionLabel}>Bu sınıfta aktif gün</Text>
+                <Text style={styles.bigValueSmall}>{snapshot.daysActiveRecently}</Text>
+                <Text style={styles.bodyTextMuted}>son 14 gün içinde</Text>
+              </Card>
+            </View>
+          </View>
+
+          <View style={styles.group}>
+            {/* Phase 60 — chronological CONTEXT, placed between the aggregate
+                counts above and the intervention/action machinery below: a
+                teacher deciding what to do should see what actually happened,
+                in order, before they see the verdict and the button. It is
+                context only — Phase 42 remains the authority on the student's
+                state, and Phase 47 on the action. */}
+            <Card style={styles.card}>
+              <Text style={styles.sectionLabel}>Son öğrenme akışı</Text>
+              <TeacherLearningTimeline
+                timeline={timeline}
+                isLoading={isTimelineLoading}
+                hasError={hasTimelineError}
               />
             </Card>
-          ) : null}
 
-          {/* Phase 44 — the result of the LAST intervention, placed directly
-              above the diagnosis that offers to create the next one: a
-              teacher deciding whether to intervene again should first see
-              whether the previous one landed. Rendered only when this
-              student was actually targeted by a delivered assignment. */}
-          {intervention && interventionOutcome ? (
-            <>
-              <InterventionOutcomeCard result={interventionOutcome} title={intervention.title} />
-              {/* Phase 47 — "şimdi ne yapmalıyım?", right under the verdict
-                  that answers "işe yaradı mı?". Same observational tone as
-                  the card above it; never a claim about what caused the
-                  result. */}
-              {postInterventionAction ? (
-                <Card style={styles.card}>
-                  <Text style={styles.sectionLabel}>Sonraki adım</Text>
-                  <Text style={styles.bodyText}>{postInterventionAction.reason}</Text>
-                </Card>
-              ) : null}
-            </>
-          ) : null}
+            {/* Phase 78 — repeated authored selections, directly under the flow
+                they were derived from. Rendered only when a pattern actually
+                qualified, so a student without one costs this screen nothing —
+                not a card, not a heading, not an empty state. */}
+            {choicePatterns.patterns.length > 0 ? (
+              <Card style={styles.card}>
+                <Text style={styles.sectionLabel}>Tekrarlayan seçim örüntüleri</Text>
+                <VerifiedChoicePatternSection
+                  intro="Son öğrenme kayıtlarında aynı doğrulanmış seçim anlamı farklı sorularda tekrarlandı."
+                  patterns={choicePatterns.patterns}
+                  compact
+                />
+              </Card>
+            ) : null}
+          </View>
 
-          {/* Phase 42 — the distinction the dashboard could not previously
-              draw: repeated, unresolved struggle on the SAME question vs a
-              handful of one-off slips. Rendered only when there is real
-              evidence; a student whose items all predate the counters shows
-              nothing here rather than a zero. */}
-          {snapshot.persistentStruggleCount > 0 ? (
-            <Card style={styles.card}>
-              <Text style={styles.sectionLabel}>Tekrarlayan zorlanma</Text>
-              <Text style={styles.bodyTextDanger}>
-                {snapshot.persistentStruggleCount} soruda tekrar tekrar zorlanıyor
-              </Text>
-              {snapshot.maxItemStruggleEvents !== null ? (
-                <Text style={styles.bodyTextMuted}>
-                  En çok zorlandığı soruda {snapshot.maxItemStruggleEvents} kez zorlandı
-                </Text>
-              ) : null}
-              {/* Phase 43 — the screen's first action. Diagnosis, the real
-                  evidence behind it, and the one thing to do about it, in
-                  the same card. Rendered only when a topic is actually
-                  resolvable: a persistent struggle on a question whose
-                  subject/topic could not be resolved still shows the counts
-                  above, but has nothing honest to prefill a composer with. */}
-              {interventionTopic ? (
+          {(intervention && interventionOutcome) || snapshot.persistentStruggleCount > 0 ? (
+            <View style={styles.group}>
+              {/* Phase 44 — the result of the LAST intervention, placed directly
+                  above the diagnosis that offers to create the next one: a
+                  teacher deciding whether to intervene again should first see
+                  whether the previous one landed. Rendered only when this
+                  student was actually targeted by a delivered assignment. */}
+              {intervention && interventionOutcome ? (
                 <>
-                  <Text style={styles.bodyTextMuted}>
-                    {interventionTopic.subject} · {interventionTopic.topic}
-                  </Text>
-                  {/* Phase 47 §7 — this button used to render unconditionally
-                      whenever interventionTopic resolved, which is a LIFETIME
-                      signal that never clears even after a student recovers.
-                      Suppressed only when a real verdict says so ("monitor"
-                      — improved, or evidence too thin to act on); with no
-                      verdict at all (postInterventionAction === null), this
-                      renders exactly as it always has. */}
-                  {!postInterventionAction || postInterventionAction.kind !== "monitor" ? (
-                    <PrimaryButton
-                      label="Takip Ödevi Oluştur"
-                      onPress={openInterventionForStudent}
-                      accessibilityHint={`${interventionTopic.topic} konusunda bu öğrenci için ödev oluşturur`}
-                    />
+                  <InterventionOutcomeCard result={interventionOutcome} title={intervention.title} />
+                  {/* Phase 47 — "şimdi ne yapmalıyım?", right under the verdict
+                      that answers "işe yaradı mı?". Same observational tone as
+                      the card above it; never a claim about what caused the
+                      result. */}
+                  {postInterventionAction ? (
+                    <Card style={styles.card}>
+                      <Text style={styles.sectionLabel}>Sonraki adım</Text>
+                      <Text style={styles.bodyText}>{postInterventionAction.reason}</Text>
+                    </Card>
                   ) : null}
                 </>
               ) : null}
-            </Card>
+
+              {/* Phase 42 — the distinction the dashboard could not previously
+                  draw: repeated, unresolved struggle on the SAME question vs a
+                  handful of one-off slips. Rendered only when there is real
+                  evidence; a student whose items all predate the counters shows
+                  nothing here rather than a zero. */}
+              {snapshot.persistentStruggleCount > 0 ? (
+                <Card style={styles.card}>
+                  <Text style={styles.sectionLabel}>Tekrarlayan zorlanma</Text>
+                  <Text style={styles.bodyTextDanger}>
+                    {snapshot.persistentStruggleCount} soruda tekrar tekrar zorlanıyor
+                  </Text>
+                  {snapshot.maxItemStruggleEvents !== null ? (
+                    <Text style={styles.bodyTextMuted}>
+                      En çok zorlandığı soruda {snapshot.maxItemStruggleEvents} kez zorlandı
+                    </Text>
+                  ) : null}
+                  {/* Phase 43 — the screen's first action. Diagnosis, the real
+                      evidence behind it, and the one thing to do about it, in
+                      the same card. Rendered only when a topic is actually
+                      resolvable: a persistent struggle on a question whose
+                      subject/topic could not be resolved still shows the counts
+                      above, but has nothing honest to prefill a composer with. */}
+                  {interventionTopic ? (
+                    <>
+                      <Text style={styles.bodyTextMuted}>
+                        {interventionTopic.subject} · {interventionTopic.topic}
+                      </Text>
+                      {/* Phase 47 §7 — this button used to render unconditionally
+                          whenever interventionTopic resolved, which is a LIFETIME
+                          signal that never clears even after a student recovers.
+                          Suppressed only when a real verdict says so ("monitor"
+                          — improved, or evidence too thin to act on); with no
+                          verdict at all (postInterventionAction === null), this
+                          renders exactly as it always has. */}
+                      {!postInterventionAction || postInterventionAction.kind !== "monitor" ? (
+                        <PrimaryButton
+                          label="Takip Ödevi Oluştur"
+                          onPress={openInterventionForStudent}
+                          accessibilityHint={`${interventionTopic.topic} konusunda bu öğrenci için ödev oluşturur`}
+                        />
+                      ) : null}
+                    </>
+                  ) : null}
+                </Card>
+              ) : null}
+            </View>
           ) : null}
 
-          {snapshot.weakTopics.length > 0 ? (
+          {snapshot.weakTopics.length > 0 || snapshot.strongTopics.length > 0 ? (
+            <View style={styles.group}>
+              {snapshot.weakTopics.length > 0 ? (
+                <Card style={styles.card}>
+                  <Text style={styles.sectionLabel}>Zayıf konular</Text>
+                  <View style={styles.chipRow}>
+                    {snapshot.weakTopics.map((topic) => (
+                      <Chip key={`${topic.subject}-${topic.topic}`} label={topicChipLabel(topic)} />
+                    ))}
+                  </View>
+                </Card>
+              ) : null}
+
+              {snapshot.strongTopics.length > 0 ? (
+                <Card style={styles.card}>
+                  <Text style={styles.sectionLabel}>Güçlü konular</Text>
+                  <View style={styles.chipRow}>
+                    {snapshot.strongTopics.map((topic) => (
+                      <Chip key={`${topic.subject}-${topic.topic}`} label={`${topic.topic} (${topic.subject})`} />
+                    ))}
+                  </View>
+                </Card>
+              ) : null}
+            </View>
+          ) : null}
+
+          <View style={styles.group}>
             <Card style={styles.card}>
-              <Text style={styles.sectionLabel}>Zayıf konular</Text>
-              <View style={styles.chipRow}>
-                {snapshot.weakTopics.map((topic) => (
-                  <Chip key={`${topic.subject}-${topic.topic}`} label={topicChipLabel(topic)} />
-                ))}
-              </View>
+              <Text style={styles.sectionLabel}>Son çalışma</Text>
+              <Text style={styles.bodyText}>{formatLastStudied(snapshot.lastStudiedAt)}</Text>
             </Card>
-          ) : null}
 
-          {snapshot.strongTopics.length > 0 ? (
             <Card style={styles.card}>
-              <Text style={styles.sectionLabel}>Güçlü konular</Text>
-              <View style={styles.chipRow}>
-                {snapshot.strongTopics.map((topic) => (
-                  <Chip key={`${topic.subject}-${topic.topic}`} label={`${topic.topic} (${topic.subject})`} />
-                ))}
-              </View>
+              <Text style={styles.sectionLabel}>Son 14 günlük trend</Text>
+              {trendGlyph ? (
+                <StatusLabel icon={trendGlyph.icon} tone={trendGlyph.tone} textStyle={styles.bodyText}>
+                  {trendLabel(snapshot.trend)}
+                </StatusLabel>
+              ) : (
+                <Text style={styles.bodyText}>{trendLabel(snapshot.trend)}</Text>
+              )}
             </Card>
-          ) : null}
-
-          <Card style={styles.card}>
-            <Text style={styles.sectionLabel}>Son çalışma</Text>
-            <Text style={styles.bodyText}>{formatLastStudied(snapshot.lastStudiedAt)}</Text>
-          </Card>
-
-          <Card style={styles.card}>
-            <Text style={styles.sectionLabel}>Son 14 günlük trend</Text>
-            <Text style={styles.bodyText}>{trendLabel(snapshot.trend)}</Text>
-          </Card>
+          </View>
         </ScrollView>
       )}
     </SafeAreaView>
@@ -468,7 +502,11 @@ const styles = themedStyles(() => ({
   },
   content: {
     padding: spacing.lg,
-    gap: spacing.md,
+    // Phase 104 (B2) — the gap BETWEEN groups; `group` steps down inside one.
+    gap: spacing.lg,
+  },
+  group: {
+    gap: spacing.sm,
   },
   summaryCard: {
     alignItems: "center",

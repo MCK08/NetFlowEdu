@@ -474,7 +474,9 @@ describe("one Action Center, two places", () => {
     // A static label: nothing counted, measured or summarised is interpolated
     // into the entry. (Not a bare digit check — the icon's size={18} is fine.)
     expect(entry).not.toMatch(/totalCount|Badge|badge|\.length|summary|actionCenter\./);
-    expect(entry).toContain("<Text style={styles.performanceButtonText}>Bugün Öne Çıkanlar</Text>");
+    // Phase 104 (B1/B2) — the shared secondary-control style; the label is
+    // still static text.
+    expect(entry).toContain("<Text style={styles.secondaryButtonText}>Bugün Öne Çıkanlar</Text>");
   });
 
   it("U20 nothing on the navigation path writes", () => {

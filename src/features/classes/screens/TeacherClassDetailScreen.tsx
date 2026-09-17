@@ -1,14 +1,17 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { ActivityIndicator, FlatList, Pressable, Text, useWindowDimensions, View } from "react-native";
+import { ActivityIndicator, FlatList, Text, useWindowDimensions, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { EmptyState } from "@components/ui/EmptyState";
+import { AnimatedPressable } from "@components/ui/AnimatedPressable";
 import { AppBackButton } from "@components/ui/AppBackButton";
+import { EmptyState } from "@components/ui/EmptyState";
 import { useAuth } from "@features/authentication";
 import { QuestionGridItem } from "@features/profile/components/QuestionGridItem";
 import { useNavigationGuard } from "@hooks/useNavigationGuard";
 import { colors } from "@theme/colors";
+import { spacing } from "@theme/spacing";
+import { typography } from "@theme/typography";
 import { themedStyles } from "@theme/themeRuntime";
 import { Question } from "@/types/question";
 
@@ -115,130 +118,163 @@ export function TeacherClassDetailScreen({ classId }: TeacherClassDetailScreenPr
         contentContainerStyle={styles.listContent}
         ListHeaderComponent={
           <View style={styles.header}>
-            <AppBackButton fallbackHref="/(teacher)/(tabs)/classes" style={styles.backButton} />
+            {/* Phase 104 (B2) — the same seven controls, now in the groups a
+                teacher actually thinks in: the room's conversation, three ways
+                of looking at the class, the two review queues, and adding
+                content. Tight inside a group, a step wider between groups;
+                no new cards, no new headings, nothing renamed or moved
+                between groups. Identity (title, code) sits above them all. */}
+            <View style={styles.identity}>
+              <AppBackButton fallbackHref="/(teacher)/(tabs)/classes" style={styles.backButton} />
 
-            <Text style={styles.title}>{classRoom.name}</Text>
+              <Text style={styles.title}>{classRoom.name}</Text>
 
-            <View style={styles.codeRow}>
-              <Text style={styles.codeLabel}>Sınıf Kodu</Text>
-              <Text style={styles.code}>{classRoom.joinCode}</Text>
-              <Pressable
-                onPress={regenerateCode}
-                disabled={isMutating}
-                style={styles.regenerateButton}
-                accessibilityRole="button"
-                accessibilityLabel="Kodu yenile"
-              >
-                <Ionicons name="refresh" size={16} color={colors.primary} />
-                <Text style={styles.regenerateText}>Yenile</Text>
-              </Pressable>
+              <View style={styles.codeRow}>
+                {/* Phase 104 (B3/Dynamic Type) — one Text with the code nested
+                    in it, so at large text the label wraps at its space and
+                    the code stays one whole token instead of "DE / MO / 01";
+                    the two were separate flex children before. Same read
+                    order, same words. */}
+                <Text style={styles.codeLabel}>
+                  Sınıf Kodu <Text style={styles.code}>{classRoom.joinCode}</Text>
+                </Text>
+                <AnimatedPressable
+                  onPress={regenerateCode}
+                  disabled={isMutating}
+                  style={styles.regenerateButton}
+                  accessibilityRole="button"
+                  accessibilityLabel="Kodu yenile"
+                >
+                  {/* Phase 104 (H3) — decorative; the button is labelled "Kodu yenile". */}
+                  <Ionicons name="refresh" size={16} color={colors.primary} accessibilityElementsHidden />
+                  <Text style={styles.regenerateText}>Yenile</Text>
+                </AnimatedPressable>
+              </View>
+
+              {errorMessage ? (
+                <Text style={styles.error} accessibilityRole="alert">
+                  {errorMessage}
+                </Text>
+              ) : null}
             </View>
 
-            {errorMessage ? <Text style={styles.error}>{errorMessage}</Text> : null}
-
-            <Pressable
+            <AnimatedPressable
               onPress={openChat}
               style={styles.chatButton}
               accessibilityRole="button"
               accessibilityLabel="Sınıf sohbetini aç"
             >
-              <Ionicons name="chatbubble-outline" size={18} color={colors.textInverse} />
+              {/* Phase 104 (H3) — decorative; the button is labelled "Sınıf sohbetini aç". */}
+              <Ionicons name="chatbubble-outline" size={18} color={colors.textInverse} accessibilityElementsHidden />
               <Text style={styles.chatButtonText}>Sınıf Sohbeti</Text>
-            </Pressable>
+            </AnimatedPressable>
 
-            {/* Phase 101 — the Phase 73 Action Center, one tap from the class.
-                Until now it was reachable only inside "Sınıf Performansı", a
-                name that reads as analytics rather than "what should I look at
-                today". Same restrained secondary shape as its neighbours, and
-                deliberately no count or badge: the class page never shouts
-                about students. */}
-            <Pressable
-              onPress={openActionCenter}
-              style={styles.performanceButton}
-              accessibilityRole="button"
-              accessibilityLabel="Bugün öne çıkanları aç"
-              accessibilityHint="Bu sınıfta şu an öne çıkan takip, müdahale ve öğrenci aksiyonlarını görürsün"
-            >
-              <Ionicons name="today-outline" size={18} color={colors.primary} />
-              <Text style={styles.performanceButtonText}>Bugün Öne Çıkanlar</Text>
-            </Pressable>
+            {/* Three ways of looking at the same class: what needs attention
+                today, the numbers, and the story over them. */}
+            <View style={styles.group}>
+              {/* Phase 101 — the Phase 73 Action Center, one tap from the class.
+                  Until now it was reachable only inside "Sınıf Performansı", a
+                  name that reads as analytics rather than "what should I look at
+                  today". Same restrained secondary shape as its neighbours, and
+                  deliberately no count or badge: the class page never shouts
+                  about students. */}
+              <AnimatedPressable
+                onPress={openActionCenter}
+                style={styles.secondaryButton}
+                accessibilityRole="button"
+                accessibilityLabel="Bugün öne çıkanları aç"
+                accessibilityHint="Bu sınıfta şu an öne çıkan takip, müdahale ve öğrenci aksiyonlarını görürsün"
+              >
+                <Ionicons name="today-outline" size={18} color={colors.primary} accessibilityElementsHidden />
+                <Text style={styles.secondaryButtonText}>Bugün Öne Çıkanlar</Text>
+              </AnimatedPressable>
 
-            {/* Phase 27 — read-only class performance dashboard. */}
-            <Pressable
-              onPress={openPerformance}
-              style={styles.performanceButton}
-              accessibilityRole="button"
-              accessibilityLabel="Sınıf performansını görüntüle"
-            >
-              <Ionicons name="stats-chart-outline" size={18} color={colors.primary} />
-              <Text style={styles.performanceButtonText}>Sınıf Performansı</Text>
-            </Pressable>
+              {/* Phase 27 — read-only class performance dashboard. */}
+              <AnimatedPressable
+                onPress={openPerformance}
+                style={styles.secondaryButton}
+                accessibilityRole="button"
+                accessibilityLabel="Sınıf performansını görüntüle"
+              >
+                <Ionicons name="stats-chart-outline" size={18} color={colors.primary} accessibilityElementsHidden />
+                <Text style={styles.secondaryButtonText}>Sınıf Performansı</Text>
+              </AnimatedPressable>
 
-            {/* Phase 56 — the class story sits next to Class Performance:
-                performance is the detail, this is the narrative over it. */}
-            <Pressable
-              onPress={openLearningStory}
-              style={styles.performanceButton}
-              accessibilityRole="button"
-              accessibilityLabel="Sınıfın ilerleme hikâyesini görüntüle"
-            >
-              <Ionicons name="trail-sign-outline" size={18} color={colors.primary} />
-              <Text style={styles.performanceButtonText}>Sınıfın İlerleme Hikâyesi</Text>
-            </Pressable>
+              {/* Phase 56 — the class story sits next to Class Performance:
+                  performance is the detail, this is the narrative over it. */}
+              <AnimatedPressable
+                onPress={openLearningStory}
+                style={styles.secondaryButton}
+                accessibilityRole="button"
+                accessibilityLabel="Sınıfın ilerleme hikâyesini görüntüle"
+              >
+                <Ionicons name="trail-sign-outline" size={18} color={colors.primary} accessibilityElementsHidden />
+                <Text style={styles.secondaryButtonText}>Sınıfın İlerleme Hikâyesi</Text>
+              </AnimatedPressable>
+            </View>
 
-            <Pressable
-              onPress={openAnswerReviews}
-              style={styles.performanceButton}
-              accessibilityRole="button"
-              accessibilityLabel="Yanıt incelemelerini aç"
-              accessibilityHint="Otomatik incelemenin karar veremediği öğrenci yanıtlarını kontrol edersin"
-            >
-              <Ionicons name="shield-checkmark-outline" size={18} color={colors.primary} />
-              <Text style={styles.performanceButtonText}>Yanıt İncelemeleri</Text>
-            </Pressable>
+            {/* The two review queues — the same job on two kinds of content. */}
+            <View style={styles.group}>
+              <AnimatedPressable
+                onPress={openAnswerReviews}
+                style={styles.secondaryButton}
+                accessibilityRole="button"
+                accessibilityLabel="Yanıt incelemelerini aç"
+                accessibilityHint="Otomatik incelemenin karar veremediği öğrenci yanıtlarını kontrol edersin"
+              >
+                <Ionicons name="shield-checkmark-outline" size={18} color={colors.primary} accessibilityElementsHidden />
+                <Text style={styles.secondaryButtonText}>Yanıt İncelemeleri</Text>
+              </AnimatedPressable>
 
-            <Pressable
-              onPress={openCommentReviews}
-              style={styles.performanceButton}
-              accessibilityRole="button"
-              accessibilityLabel="Yorum incelemelerini aç"
-              accessibilityHint="Otomatik incelemenin karar veremediği öğrenci yorumlarını kontrol edersin"
-            >
-              <Ionicons name="chatbox-ellipses-outline" size={18} color={colors.primary} />
-              <Text style={styles.performanceButtonText}>Yorum İncelemeleri</Text>
-            </Pressable>
+              <AnimatedPressable
+                onPress={openCommentReviews}
+                style={styles.secondaryButton}
+                accessibilityRole="button"
+                accessibilityLabel="Yorum incelemelerini aç"
+                accessibilityHint="Otomatik incelemenin karar veremediği öğrenci yorumlarını kontrol edersin"
+              >
+                <Ionicons name="chatbox-ellipses-outline" size={18} color={colors.primary} accessibilityElementsHidden />
+                <Text style={styles.secondaryButtonText}>Yorum İncelemeleri</Text>
+              </AnimatedPressable>
+            </View>
 
-            <Pressable
+            <AnimatedPressable
               onPress={capture}
               disabled={isUploading}
-              style={[styles.uploadButton, isUploading ? styles.uploadButtonDisabled : null]}
+              style={styles.uploadButton}
               accessibilityRole="button"
               accessibilityLabel="Bu sınıfa soru ekle"
+              // Phase 104 (B6) — the spinner alone says nothing to a screen reader.
+              accessibilityState={{ busy: isUploading, disabled: isUploading }}
             >
               {isUploading ? (
                 <ActivityIndicator color={colors.textInverse} />
               ) : (
                 <>
-                  <Ionicons name="camera" size={18} color={colors.textInverse} />
+                  <Ionicons name="camera" size={18} color={colors.textInverse} accessibilityElementsHidden />
                   <Text style={styles.uploadButtonText}>Sınıfa Soru Ekle</Text>
                 </>
               )}
-            </Pressable>
+            </AnimatedPressable>
 
-            <Text style={styles.sectionTitle}>Üyeler ({members.length})</Text>
-            {members.map((member) => (
-              <ClassMemberRow
-                key={member.uid}
-                member={member}
-                canRemove={!isMutating}
-                onRemove={removeMember}
-              />
-            ))}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Üyeler ({members.length})</Text>
+              {members.map((member) => (
+                <ClassMemberRow
+                  key={member.uid}
+                  member={member}
+                  canRemove={!isMutating}
+                  onRemove={removeMember}
+                />
+              ))}
+            </View>
 
-            <Text style={styles.sectionTitle}>Sınıf Soruları</Text>
-            {questions.length === 0 ? (
-              <EmptyState icon="help-circle-outline" title="Henüz bu sınıfa soru eklenmedi" />
-            ) : null}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Sınıf Soruları</Text>
+              {questions.length === 0 ? (
+                <EmptyState icon="help-circle-outline" title="Henüz bu sınıfa soru eklenmedi" />
+              ) : null}
+            </View>
           </View>
         }
         ListFooterComponent={
@@ -265,11 +301,23 @@ const styles = themedStyles(() => ({
     backgroundColor: colors.background,
   },
   listContent: {
-    paddingBottom: 24,
+    paddingBottom: spacing.xl,
   },
   header: {
-    paddingHorizontal: 20,
-    gap: 12,
+    paddingHorizontal: spacing.lg,
+    // Phase 104 (B2) — the gap BETWEEN groups. Inside a group, `group` below
+    // steps down to xs so related controls read as one cluster.
+    gap: spacing.md,
+  },
+  identity: {
+    gap: spacing.sm,
+  },
+  group: {
+    gap: spacing.xs,
+  },
+  section: {
+    gap: spacing.xs,
+    marginTop: spacing.xs,
   },
   backButton: {
     minWidth: 44,
@@ -282,94 +330,116 @@ const styles = themedStyles(() => ({
     alignSelf: "flex-start",
   },
   title: {
-    fontSize: 22,
-    fontWeight: "700",
+    // Phase 104 (B1) — the role the student sibling already uses (Wave A):
+    // same 22pt, now with the 28pt line box a hand-written pair never had.
+    ...typography.screenTitleSm,
     color: colors.textPrimary,
   },
   codeRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    gap: spacing.xs,
   },
   codeLabel: {
-    fontSize: 13,
+    ...typography.caption,
+    fontWeight: "400",
+    // The nested code is cardTitle-sized; the outer line box must be tall
+    // enough for it (the line box is what iOS clips to — see D11).
+    lineHeight: typography.cardTitle.lineHeight,
     color: colors.textTertiary,
+    flex: 1,
   },
   code: {
-    fontSize: 16,
-    fontWeight: "700",
+    // Phase 104 (B1) — a join code is a short machine token read aloud to a
+    // room, not a heading: cardTitle's size and weight with the tracking kept.
+    ...typography.cardTitle,
     color: colors.textPrimary,
     letterSpacing: 2,
-    flex: 1,
   },
   regenerateButton: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    minHeight: 32,
+    gap: spacing.xxs,
+    minHeight: 44,
+    paddingHorizontal: spacing.xxs,
   },
   regenerateText: {
-    fontSize: 13,
+    ...typography.caption,
     fontWeight: "600",
     color: colors.primary,
   },
   error: {
+    ...typography.caption,
+    fontWeight: "400",
     color: colors.danger,
-    fontSize: 13,
   },
   chatButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
+    gap: spacing.xs,
+    // Phase 104 (Dynamic Type) — a wrapped label used to take the whole row
+    // and push the icon onto the border; the inset keeps both inside.
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
     minHeight: 48,
     borderRadius: 10,
     backgroundColor: colors.primary,
   },
   chatButtonText: {
+    // Phase 104 (B1) — control label role; 15/600 is what this style already
+    // was, now with a line box and a name (Wave A did the same on the
+    // student's class detail).
+    ...typography.button,
     color: colors.textInverse,
-    fontSize: 15,
-    fontWeight: "600",
+    flexShrink: 1,
+    textAlign: "center",
   },
-  performanceButton: {
+  secondaryButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
+    gap: spacing.xs,
+    // Phase 104 (Dynamic Type) — a wrapped label used to take the whole row
+    // and push the icon onto the border; the inset keeps both inside.
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
     minHeight: 48,
     borderRadius: 10,
     borderWidth: 1.5,
     borderColor: colors.primary,
   },
-  performanceButtonText: {
+  secondaryButtonText: {
+    ...typography.button,
     color: colors.primary,
-    fontSize: 15,
-    fontWeight: "600",
+    flexShrink: 1,
+    textAlign: "center",
   },
   uploadButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
+    gap: spacing.xs,
+    // Phase 104 (Dynamic Type) — a wrapped label used to take the whole row
+    // and push the icon onto the border; the inset keeps both inside.
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
     minHeight: 48,
     borderRadius: 10,
     backgroundColor: colors.primary,
   },
-  uploadButtonDisabled: {
-    opacity: 0.6,
-  },
   uploadButtonText: {
+    ...typography.button,
     color: colors.textInverse,
-    fontSize: 15,
-    fontWeight: "600",
+    flexShrink: 1,
+    textAlign: "center",
   },
   sectionTitle: {
-    fontSize: 15,
-    fontWeight: "700",
+    // Phase 104 (B1) — the same section role the student sibling uses.
+    ...typography.subtitle,
     color: colors.textPrimary,
-    marginTop: 12,
   },
   loadingMore: {
-    paddingVertical: 24,
+    paddingVertical: spacing.xl,
   },
 }));

@@ -1,7 +1,9 @@
 import { Text, View } from "react-native";
 
 import { Card } from "@components/ui/Card";
+import { StatusLabel } from "@components/ui/StatusLabel";
 import { colors } from "@theme/colors";
+import { iconSize } from "@theme/sizes";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
 import { themedStyles } from "@theme/themeRuntime";
@@ -11,6 +13,7 @@ import {
   InterventionEffectiveness,
   InterventionEffectivenessResult,
 } from "../services/interventionEffectiveness";
+import { interventionEffectivenessGlyph } from "../services/statusGlyphs";
 
 // Phase 44 — the answer to "did the follow-up assignment I created actually
 // help?", on the same screen that offers to create one.
@@ -26,12 +29,13 @@ interface InterventionOutcomeCardProps {
   title: string;
 }
 
-// Same emoji-prefixed shape as the screen's own trendLabel, so the two
-// verdict lines on this screen read as one vocabulary.
+// Phase 104 — the words only. The mark beside them comes from
+// interventionEffectivenessGlyph, the same vocabulary the screen's trend line
+// and the class summary use, so the verdict lines on this screen read as one.
 const EFFECTIVENESS_LABEL: Record<InterventionEffectiveness, string> = {
-  improved: "✅ İşe yaradı",
-  no_change: "➡️ Değişiklik yok",
-  worsened: "⚠️ Geriledi",
+  improved: "İşe yaradı",
+  no_change: "Değişiklik yok",
+  worsened: "Geriledi",
   // Deliberately not a verdict: there is nothing to claim yet, and the
   // explanation line below says why.
   insufficient_data: "Sonuç için erken",
@@ -53,15 +57,27 @@ function effectivenessStyle(effectiveness: InterventionEffectiveness) {
 }
 
 export function InterventionOutcomeCard({ result, title }: InterventionOutcomeCardProps) {
+  const glyph = interventionEffectivenessGlyph(result.effectiveness);
   return (
     <Card style={styles.card}>
       <Text style={styles.sectionLabel}>Müdahale sonucu</Text>
       <Text style={styles.title} numberOfLines={2}>
         {title}
       </Text>
-      <Text style={effectivenessStyle(result.effectiveness)}>
-        {EFFECTIVENESS_LABEL[result.effectiveness]}
-      </Text>
+      {glyph ? (
+        <StatusLabel
+          icon={glyph.icon}
+          tone={glyph.tone}
+          size={iconSize.sm}
+          textStyle={effectivenessStyle(result.effectiveness)}
+        >
+          {EFFECTIVENESS_LABEL[result.effectiveness]}
+        </StatusLabel>
+      ) : (
+        <Text style={effectivenessStyle(result.effectiveness)}>
+          {EFFECTIVENESS_LABEL[result.effectiveness]}
+        </Text>
+      )}
       <Text style={styles.bodyText}>{result.explanation}</Text>
       <View style={styles.evidenceRow}>
         <Text style={styles.bodyTextMuted}>

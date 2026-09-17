@@ -11,6 +11,7 @@ import { LoadingSkeleton } from "@components/ui/LoadingSkeleton";
 import { PrimaryButton } from "@components/ui/PrimaryButton";
 import { SectionHeader } from "@components/ui/SectionHeader";
 import { AppBackButton } from "@components/ui/AppBackButton";
+import { StatusLabel } from "@components/ui/StatusLabel";
 import { useAuth } from "@features/authentication";
 import { useClassAssignments } from "@features/assignments/hooks/useClassAssignments";
 import { resolveAssignmentDisplayStatus } from "@features/assignments/services/assignmentStatus";
@@ -42,6 +43,7 @@ import { useClassSemanticCohorts } from "../hooks/useClassSemanticCohorts";
 import { useClassTopicComposer } from "../hooks/useClassTopicComposer";
 import { ClassSemanticCohort } from "../services/classSemanticCohorts";
 import { ClassTopicHotspot } from "../services/classTopicInsights";
+import { attentionCategoryGlyph, learningTrendGlyph } from "../services/statusGlyphs";
 import {
   AttentionCategory,
   StudentAttentionCard,
@@ -68,21 +70,6 @@ const FILTERS: { value: FilterValue; label: string }[] = [
   { value: "insufficient_data", label: "Yetersiz veri" },
 ];
 
-function categoryEmoji(category: AttentionCategory): string {
-  switch (category) {
-    case "needs_attention":
-      return "🔴";
-    case "watch":
-      return "🟠";
-    case "progressing":
-      return "🟢";
-    case "strong":
-      return "🌟";
-    case "insufficient_data":
-      return "⚪";
-  }
-}
-
 function categoryLabel(category: AttentionCategory): string {
   switch (category) {
     case "needs_attention":
@@ -98,16 +85,34 @@ function categoryLabel(category: AttentionCategory): string {
   }
 }
 
+// Phase 104 — the words only; the mark comes from learningTrendGlyph so the
+// class line and the student line draw the same trend the same way.
 function classTrendLabel(trend: LearningTrend): string {
   switch (trend) {
     case "improving":
-      return "📈 Sınıf geneli gelişiyor";
+      return "Sınıf geneli gelişiyor";
     case "declining":
-      return "📉 Sınıf geneli geriliyor";
+      return "Sınıf geneli geriliyor";
     case "stable":
-      return "➡️ Sınıf geneli sabit";
+      return "Sınıf geneli sabit";
     case "insufficient_data":
       return "Sınıf trendi için henüz yeterli veri yok";
+  }
+}
+
+// Phase 104 (B6) — the status word an assignment row shows AND speaks. The
+// accessibility label used to read the raw enum ("past_due", "draft") to a
+// screen reader while the eye saw "Süresi geçti".
+function assignmentStatusLabel(status: ReturnType<typeof resolveAssignmentDisplayStatus>): string {
+  switch (status) {
+    case "draft":
+      return "Taslak";
+    case "archived":
+      return "Arşivlendi";
+    case "past_due":
+      return "Süresi geçti";
+    default:
+      return "Aktif";
   }
 }
 
@@ -412,6 +417,8 @@ export function ClassPerformanceScreen({ classId }: ClassPerformanceScreenProps)
     );
   }
 
+  const trendGlyph = learningTrendGlyph(trend);
+
   return (
     <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
       <View style={styles.header}>
@@ -510,17 +517,34 @@ export function ClassPerformanceScreen({ classId }: ClassPerformanceScreenProps)
                     tone={summary.needsSupportCount > 0 ? "danger" : "neutral"}
                   />
                 </View>
-                <Text style={styles.trendLine}>{classTrendLabel(trend)}</Text>
+                {trendGlyph ? (
+                  <StatusLabel icon={trendGlyph.icon} tone={trendGlyph.tone} textStyle={styles.trendLine}>
+                    {classTrendLabel(trend)}
+                  </StatusLabel>
+                ) : (
+                  <Text style={styles.trendLine}>{classTrendLabel(trend)}</Text>
+                )}
               </View>
 
               <View style={styles.healthRow}>
                 {(Object.keys(categoryCounts) as AttentionCategory[])
                   .filter((category) => category !== "insufficient_data" || categoryCounts[category] > 0)
                   .map((category) => (
-                    <View key={category} style={styles.healthChip}>
-                      <Text style={styles.healthChipValue}>
-                        {categoryEmoji(category)} {categoryCounts[category]}
-                      </Text>
+                    <View
+                      key={category}
+                      style={styles.healthChip}
+                      // Phase 104 (B6) — one spoken unit per chip, count and
+                      // category together, instead of two loose text nodes.
+                      accessible
+                      accessibilityLabel={`${categoryCounts[category]} ${categoryLabel(category)}`}
+                    >
+                      <StatusLabel
+                        icon={attentionCategoryGlyph(category).icon}
+                        tone={attentionCategoryGlyph(category).tone}
+                        textStyle={styles.healthChipValue}
+                      >
+                        {String(categoryCounts[category])}
+                      </StatusLabel>
                       <Text style={styles.healthChipLabel}>{categoryLabel(category)}</Text>
                     </View>
                   ))}
@@ -540,6 +564,10 @@ export function ClassPerformanceScreen({ classId }: ClassPerformanceScreenProps)
                             onPress={() => setExpandedHotspot(expanded ? null : key)}
                             accessibilityRole="button"
                             accessibilityLabel={`${hotspot.topic}. ${hotspot.strugglingStudents} öğrenci zorlanıyor.`}
+                            // Phase 104 (B6) — the row toggles the student
+                            // chips beneath it; say so.
+                            accessibilityState={{ expanded }}
+                            accessibilityHint="Zorlanan öğrencileri gösterir veya gizler"
                           >
                             <Text style={styles.hotspotTopic}>
                               {hotspot.subject} · {hotspot.topic}
@@ -621,11 +649,17 @@ export function ClassPerformanceScreen({ classId }: ClassPerformanceScreenProps)
                         onPress={() => openStudent(student.studentUid)}
                         style={styles.priorityRow}
                         accessibilityRole="button"
-                        accessibilityLabel={`${student.displayName}. ${student.insight.reasons[0] ?? ""}`}
+                        // Phase 104 (B6) — the category used to be conveyed
+                        // by the emoji alone; the spoken row now names it.
+                        accessibilityLabel={`${student.displayName}. ${categoryLabel(student.insight.category)}. ${student.insight.reasons[0] ?? ""}`}
                       >
-                        <Text style={styles.priorityName}>
-                          {categoryEmoji(student.insight.category)} {student.displayName}
-                        </Text>
+                        <StatusLabel
+                          icon={attentionCategoryGlyph(student.insight.category).icon}
+                          tone={attentionCategoryGlyph(student.insight.category).tone}
+                          textStyle={styles.priorityName}
+                        >
+                          {student.displayName}
+                        </StatusLabel>
                         <Text style={styles.priorityReason}>{student.insight.reasons[0]}</Text>
                       </Pressable>
                     ))}
@@ -655,18 +689,12 @@ export function ClassPerformanceScreen({ classId }: ClassPerformanceScreenProps)
                           onPress={() => openAssignmentDetail(assignmentItem.id)}
                           style={styles.priorityRow}
                           accessibilityRole="button"
-                          accessibilityLabel={`${assignmentItem.title}. ${displayStatus}`}
+                          accessibilityLabel={`${assignmentItem.title}. ${assignmentStatusLabel(displayStatus)}`}
                         >
                           <Text style={styles.priorityName}>{assignmentItem.title}</Text>
                           <Text style={styles.priorityReason}>
                             {assignmentItem.subject} · {assignmentItem.topic} · {assignmentItem.targetCount} soru ·{" "}
-                            {displayStatus === "draft"
-                              ? "Taslak"
-                              : displayStatus === "archived"
-                                ? "Arşivlendi"
-                                : displayStatus === "past_due"
-                                  ? "Süresi geçti"
-                                  : "Aktif"}
+                            {assignmentStatusLabel(displayStatus)}
                           </Text>
                         </Pressable>
                       );

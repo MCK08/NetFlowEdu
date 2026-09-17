@@ -34,7 +34,9 @@ describe("immersive overlay foreground", () => {
     const source = read(file);
 
     expect(source).not.toContain("colors.textInverse");
-    expect(source).toContain('import { IMMERSIVE_FOREGROUND } from "@theme/immersive";');
+    // Phase 104 (B5) — a pinned overlay may also name the surface it sits on
+    // (ClassFeedScreen imports IMMERSIVE_SURFACE alongside the foreground).
+    expect(source).toMatch(/import \{ IMMERSIVE_FOREGROUND(?:, IMMERSIVE_SURFACE)? \} from "@theme\/immersive";/);
   });
 
   it("FeedPill pins the on-image fills but keeps the theme pairing on the primary accent fill", () => {

@@ -8,6 +8,8 @@ import { EmptyState } from "@components/ui/EmptyState";
 import { LoadingSkeleton } from "@components/ui/LoadingSkeleton";
 import { PrimaryButton } from "@components/ui/PrimaryButton";
 import { AppBackButton } from "@components/ui/AppBackButton";
+import { StatusLabel } from "@components/ui/StatusLabel";
+import { assignmentEffectivenessGlyph } from "@features/teacher/services/statusGlyphs";
 import { colors } from "@theme/colors";
 import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
@@ -44,14 +46,16 @@ function statusColor(status: StudentAssignmentStatus): string {
   return colors.textTertiary;
 }
 
+// Phase 104 — the words only; the mark comes from assignmentEffectivenessGlyph,
+// the same vocabulary the teacher's other verdict lines use.
 function effectivenessLabel(effectiveness: AssignmentEffectiveness): string {
   switch (effectiveness) {
     case "effective":
-      return "🟢 Çoğu öğrenci ilerledi";
+      return "Çoğu öğrenci ilerledi";
     case "mixed":
-      return "🟡 Sonuçlar karışık";
+      return "Sonuçlar karışık";
     case "needs_follow_up":
-      return "🔴 Bu konuda hâlâ zorlanılıyor";
+      return "Bu konuda hâlâ zorlanılıyor";
     case "insufficient_data":
       return "Yeterli veri yok";
   }
@@ -69,6 +73,7 @@ const FOLLOW_UP_REASON_LABEL: Record<FollowUpReason, string> = {
 export function AssignmentDetailScreen({ assignmentId }: AssignmentDetailScreenProps) {
   const { assignment, progress, outcomeInsights, followUp, isLoading, error, refresh } =
     useAssignmentDetail(assignmentId);
+  const outcomeGlyph = outcomeInsights ? assignmentEffectivenessGlyph(outcomeInsights.effectiveness) : null;
 
   // System only ever SUGGESTS a follow-up (§12 "DO NOT AUTO-PUBLISH") — this
   // navigates to the exact same CreateAssignmentScreen a teacher would open
@@ -159,7 +164,13 @@ export function AssignmentDetailScreen({ assignmentId }: AssignmentDetailScreenP
               {outcomeInsights && outcomeInsights.effectiveness !== "insufficient_data" ? (
                 <View style={styles.summaryCard}>
                   <Text style={styles.sectionTitle}>Bu Ödevde Ne Oldu?</Text>
-                  <Text style={styles.previewLine}>{effectivenessLabel(outcomeInsights.effectiveness)}</Text>
+                  {outcomeGlyph ? (
+                    <StatusLabel icon={outcomeGlyph.icon} tone={outcomeGlyph.tone} textStyle={styles.previewLine}>
+                      {effectivenessLabel(outcomeInsights.effectiveness)}
+                    </StatusLabel>
+                  ) : (
+                    <Text style={styles.previewLine}>{effectivenessLabel(outcomeInsights.effectiveness)}</Text>
+                  )}
                   {outcomeInsights.topicOutcome.struggleRate !== null ? (
                     <Text style={styles.previewLine}>
                       {Math.round(outcomeInsights.topicOutcome.struggleRate * 100)}% zorlanma oranı
