@@ -21,6 +21,14 @@ const APP = path.join(REPO, "app");
 const ROOT_ROUTES = new Set([
   "app/index.tsx",
   "app/unknown-role.tsx",
+  // Phase 105 — expo-router's unmatched-route fallback, placed here
+  // deliberately per the rule above. It is a terminal state, not a pushed
+  // screen: the URL that reached it never resolved to a node in the tree, so
+  // there is no canonical parent for AppBackButton's fallbackHref to declare.
+  // Like unknown-role.tsx it ships exactly one recovery action instead
+  // ("Ana sayfaya dön" -> "/", resolved by RouteGuard), which is what the
+  // "every pushed screen has a way out" rule actually protects.
+  "app/+not-found.tsx",
   "app/(admin)/index.tsx",
   "app/(student)/(tabs)/index.tsx",
   "app/(student)/(tabs)/study.tsx",
