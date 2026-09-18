@@ -6,9 +6,10 @@ import { Text, View } from "react-native";
 import { ClassRoom } from "@/types/class";
 import { AnimatedPressable } from "@components/ui/AnimatedPressable";
 import { Avatar } from "@components/ui/Avatar";
+import { Badge } from "@components/ui/Badge";
 import { colors } from "@theme/colors";
 import { radius } from "@theme/radius";
-import { shadows } from "@theme/shadows";
+import { iconSize, minTouchTarget } from "@theme/sizes";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
 import { themedStyles } from "@theme/themeRuntime";
@@ -21,29 +22,40 @@ interface StudentClassCardProps {
 // memo'd: rendered from StudentClassesScreen's FlatList — same reasoning
 // as ClassCard's memo (join-modal state changes shouldn't re-render every
 // card whose `classRoom` prop reference is unchanged).
+//
+// Phase 106 — the row shows only what the class document actually holds:
+// its initial, its name, its member count and — when the teacher has
+// archived it — that status as a word. No "last active", no teacher name
+// (not on the document; fetching one per row is a read this list does not
+// make today), no activity feed.
 export const StudentClassCard = memo(function StudentClassCard({ classRoom }: StudentClassCardProps) {
   // Phase 49 — memo() blocks prop-driven re-renders, but NOT context
   // updates; without this subscription this component would keep its
   // previous theme's styles after a live theme switch.
   useThemeSubscription();
+  const isArchived = classRoom.status === "archived";
+  const memberLabel = `${classRoom.memberCount} üye`;
+
   return (
     <AnimatedPressable
-      style={[styles.card, shadows.sm]}
+      style={[styles.card, isArchived ? styles.cardArchived : null]}
       onPress={() => router.push({ pathname: "/(student)/class/[classId]", params: { classId: classRoom.id } })}
       accessibilityRole="button"
-      accessibilityLabel={`${classRoom.name} sınıfını aç`}
+      accessibilityLabel={`${classRoom.name} sınıfını aç. ${memberLabel}${isArchived ? ". Arşivlendi" : ""}`}
     >
       <Avatar displayName={classRoom.name} size="lg" />
       <View style={styles.textColumn}>
-        <Text style={styles.name} numberOfLines={1}>
+        <Text style={styles.name} numberOfLines={2}>
           {classRoom.name}
         </Text>
-        <View style={styles.memberRow}>
-          <Ionicons name="people-outline" size={14} color={colors.textTertiary} />
-          <Text style={styles.memberCount}>{classRoom.memberCount} üye</Text>
+        <View style={styles.metaRow}>
+          {/* Decorative: the row's own label already says the count. */}
+          <Ionicons name="people-outline" size={iconSize.xs} color={colors.textTertiary} accessibilityElementsHidden />
+          <Text style={styles.memberCount}>{memberLabel}</Text>
+          {isArchived ? <Badge label="Arşivlendi" variant="neutral" /> : null}
         </View>
       </View>
-      <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+      <Ionicons name="chevron-forward" size={iconSize.sm} color={colors.textTertiary} accessibilityElementsHidden />
     </AnimatedPressable>
   );
 });
@@ -53,22 +65,30 @@ const styles = themedStyles(() => ({
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.sm,
+    minHeight: minTouchTarget,
     backgroundColor: colors.surface,
     borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.divider,
     padding: spacing.md,
+  },
+  cardArchived: {
+    opacity: 0.7,
   },
   textColumn: {
     flex: 1,
+    minWidth: 0,
     gap: 2,
   },
   name: {
     ...typography.subtitle,
     color: colors.textPrimary,
   },
-  memberRow: {
+  metaRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
+    flexWrap: "wrap",
+    gap: spacing.xxs,
   },
   memberCount: {
     ...typography.caption,

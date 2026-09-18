@@ -3,6 +3,7 @@ import { StyleSheet, Text, View } from "react-native";
 
 import { Card } from "@components/ui/Card";
 import { SectionHeader } from "@components/ui/SectionHeader";
+import { StatusLabel } from "@components/ui/StatusLabel";
 import { colors } from "@theme/colors";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
@@ -32,7 +33,7 @@ export const SubjectBreakdownSection = memo(function SubjectBreakdownSection({
   return (
     <View style={styles.container}>
       <SectionHeader title="Derslere göre durum" />
-      <Card style={styles.card}>
+      <Card variant="outlined" style={styles.card}>
         {subjects.map((subject, index) => (
           <View
             key={subject.subject}
@@ -43,11 +44,18 @@ export const SubjectBreakdownSection = memo(function SubjectBreakdownSection({
             <Text style={styles.subject} numberOfLines={1}>
               {subject.subject}
             </Text>
+            {/* Phase 106 — the two counts as mark + words (the same
+                StatusLabel vocabulary the teacher surfaces use), so neither
+                depends on its colour to be understood. */}
             <View style={styles.countsColumn}>
               {subject.dueCount > 0 ? (
-                <Text style={styles.dueText}>{subject.dueCount} tekrar gerekiyor</Text>
+                <StatusLabel icon="time-outline" tone="danger" textStyle={styles.dueText}>
+                  {`${subject.dueCount} tekrar gerekiyor`}
+                </StatusLabel>
               ) : null}
-              <Text style={styles.masteredText}>{subject.masteredCount} öğrenildi</Text>
+              <StatusLabel icon="checkmark-circle-outline" tone="success" textStyle={styles.masteredText}>
+                {`${subject.masteredCount} öğrenildi`}
+              </StatusLabel>
             </View>
           </View>
         ))}
@@ -62,6 +70,7 @@ const styles = themedStyles(() => ({
   },
   card: {
     gap: 0,
+    paddingVertical: 0,
   },
   row: {
     flexDirection: "row",
@@ -81,7 +90,8 @@ const styles = themedStyles(() => ({
   },
   countsColumn: {
     alignItems: "flex-end",
-    gap: 1,
+    gap: 2,
+    flexShrink: 0,
   },
   dueText: {
     ...typography.caption,

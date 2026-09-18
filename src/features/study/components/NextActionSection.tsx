@@ -2,10 +2,11 @@ import { Ionicons } from "@expo/vector-icons";
 import { memo } from "react";
 import { Text, View } from "react-native";
 
-import { Card } from "@components/ui/Card";
 import { PrimaryButton } from "@components/ui/PrimaryButton";
 import { SectionHeader } from "@components/ui/SectionHeader";
 import { colors } from "@theme/colors";
+import { radius } from "@theme/radius";
+import { iconSize } from "@theme/sizes";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
 import { themedStyles } from "@theme/themeRuntime";
@@ -55,9 +56,15 @@ function actionColors(): Record<StudentNextActionKind, string> {
 
 // "Şimdi Ne Yapmalısın?" — the Hub's single headline answer. Deliberately
 // NOT a replacement for "Bugünkü Plan" below it: this card names the one
-// next step and why, the plan stays the day's full breakdown. Same Card /
-// SectionHeader / PrimaryButton vocabulary as every sibling section, so it
-// reads as part of the existing Hub rather than a new design.
+// next step and why, the plan stays the day's full breakdown.
+//
+// Phase 106 — the one card on the Hub allowed to be loud. It sits on the
+// theme's blue-tinted panel (`primaryMuted`: the soft light-blue in Light,
+// the elevated navy in Dark) so it reads as the focus of the page, with the
+// action's mark in a tinted disc, the topic as a real title, and the CTA as
+// the only filled button in the first screenful. Same copy, same routing,
+// same "never hides itself" rule: "nothing to do" is a real, useful answer
+// to the question it asks.
 //
 // Unlike its siblings this section never hides itself. "Nothing to do" is a
 // real, useful answer to the question it asks — silently disappearing is
@@ -78,13 +85,15 @@ export const NextActionSection = memo(function NextActionSection({
   return (
     <View style={styles.container}>
       <SectionHeader title="Şimdi Ne Yapmalısın?" />
-      <Card style={styles.card}>
+      <View style={styles.card}>
         <View
           style={styles.row}
           accessible
           accessibilityLabel={`${copy.label}. ${copy.title}. ${copy.detail}.`}
         >
-          <Ionicons name={icon} size={22} color={tint} accessibilityElementsHidden />
+          <View style={styles.iconDisc}>
+            <Ionicons name={icon} size={iconSize.md} color={tint} accessibilityElementsHidden />
+          </View>
           <View style={styles.text}>
             <Text style={[styles.label, { color: tint }]}>{copy.label}</Text>
             <Text style={styles.title} numberOfLines={2}>
@@ -101,7 +110,7 @@ export const NextActionSection = memo(function NextActionSection({
             accessibilityHint="Önerilen çalışmayı açar"
           />
         ) : null}
-      </Card>
+      </View>
     </View>
   );
 });
@@ -111,12 +120,23 @@ const styles = themedStyles(() => ({
     gap: spacing.xs,
   },
   card: {
-    gap: spacing.sm,
+    backgroundColor: colors.primaryMuted,
+    borderRadius: radius.xxl,
+    padding: spacing.md,
+    gap: spacing.md,
   },
   row: {
     flexDirection: "row",
     alignItems: "flex-start",
     gap: spacing.sm,
+  },
+  iconDisc: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.pill,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.surface,
   },
   text: {
     flex: 1,
@@ -125,13 +145,14 @@ const styles = themedStyles(() => ({
   },
   label: {
     ...typography.caption,
+    fontWeight: "600",
   },
   title: {
-    ...typography.bodyStrong,
+    ...typography.title,
     color: colors.textPrimary,
   },
   detail: {
-    ...typography.caption,
-    color: colors.textTertiary,
+    ...typography.body,
+    color: colors.textSecondary,
   },
 }));

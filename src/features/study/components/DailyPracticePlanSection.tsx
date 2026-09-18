@@ -6,12 +6,14 @@ import { Card } from "@components/ui/Card";
 import { PrimaryButton } from "@components/ui/PrimaryButton";
 import { SectionHeader } from "@components/ui/SectionHeader";
 import { colors } from "@theme/colors";
+import { radius } from "@theme/radius";
+import { iconSize } from "@theme/sizes";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
 import { themedStyles } from "@theme/themeRuntime";
 
 import { DailyPracticePlan } from "../services/dailyPracticePlan";
-import { goalProgressLabel, planReasonLabel } from "../services/studyPresentation";
+import { goalProgress, goalProgressLabel, planReasonLabel } from "../services/studyPresentation";
 import { useThemeSubscription } from "@theme/ThemeProvider";
 
 interface DailyPracticePlanSectionProps {
@@ -42,10 +44,15 @@ function PlanRow({ icon, color, title, detail, reasonLabel }: PlanRowProps) {
       accessible
       accessibilityLabel={`${title}. ${detail}. ${reasonLabel}`}
     >
-      <Ionicons name={icon} size={20} color={color} />
+      {/* Phase 106 — the mark sits in a small tinted disc so the three
+          plan parts read as a list of steps rather than loose icons; still
+          decorative, the row's own label says everything it says. */}
+      <View style={styles.rowIcon}>
+        <Ionicons name={icon} size={iconSize.sm} color={color} accessibilityElementsHidden />
+      </View>
       <View style={styles.rowText}>
         <Text style={styles.rowTitle}>{title}</Text>
-        <Text style={styles.rowDetail} numberOfLines={1}>
+        <Text style={styles.rowDetail} numberOfLines={2}>
           {detail}
         </Text>
       </View>
@@ -92,11 +99,12 @@ export const DailyPracticePlanSection = memo(function DailyPracticePlanSection({
   // decided live by the caller (see onStart / studyDueCheck.ts) — that
   // decision must never be stale, since it changes what screen opens.
   const handleStart = plan.dueCount > 0 || plan.planItems.length > 0 ? onStart : undefined;
+  const progressPercent: `${number}%` = `${Math.round(goalProgress(plan.reviewedToday, plan.dailyGoal) * 100)}%`;
 
   return (
     <View style={styles.container}>
       <SectionHeader title="Bugünkü Plan" />
-      <Card style={styles.card}>
+      <Card variant="outlined" style={styles.card}>
         <View style={styles.rows}>
           {plan.dueCount > 0 ? (
             <PlanRow
@@ -127,9 +135,23 @@ export const DailyPracticePlanSection = memo(function DailyPracticePlanSection({
           ) : null}
         </View>
 
-        <Text style={styles.progressCaption}>
-          {goalProgressLabel(plan.reviewedToday, plan.dailyGoal)} tamamlandı
-        </Text>
+        {/* Phase 106 — the day's progress as a bar with its count, the same
+            real numbers the caption carried before; the goal surface below
+            the plan owns the streak and the stats, so nothing is repeated. */}
+        <View style={styles.progressBlock}>
+          <View
+            style={styles.progressTrack}
+            accessible
+            accessibilityRole="progressbar"
+            accessibilityLabel={`Bugünkü plan ilerlemesi ${progressPercent}`}
+            accessibilityValue={{ min: 0, max: plan.dailyGoal, now: plan.reviewedToday }}
+          >
+            <View style={[styles.progressFill, { width: progressPercent }]} />
+          </View>
+          <Text style={styles.progressCaption}>
+            {goalProgressLabel(plan.reviewedToday, plan.dailyGoal)} tamamlandı
+          </Text>
+        </View>
 
         {handleStart ? (
           <PrimaryButton
@@ -148,7 +170,7 @@ const styles = themedStyles(() => ({
     gap: spacing.xs,
   },
   card: {
-    gap: spacing.sm,
+    gap: spacing.md,
   },
   rows: {
     gap: spacing.sm,
@@ -157,6 +179,14 @@ const styles = themedStyles(() => ({
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.sm,
+  },
+  rowIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.surfaceMuted,
   },
   rowText: {
     flex: 1,
@@ -169,7 +199,21 @@ const styles = themedStyles(() => ({
   },
   rowDetail: {
     ...typography.caption,
-    color: colors.textTertiary,
+    color: colors.textSecondary,
+  },
+  progressBlock: {
+    gap: spacing.xs,
+  },
+  progressTrack: {
+    height: 6,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceMuted,
+    overflow: "hidden",
+  },
+  progressFill: {
+    height: "100%",
+    borderRadius: radius.pill,
+    backgroundColor: colors.primary,
   },
   progressCaption: {
     ...typography.caption,

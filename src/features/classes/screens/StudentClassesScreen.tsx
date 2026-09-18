@@ -1,10 +1,11 @@
-import { useCallback, useState } from "react";
-import { FlatList, Text, View } from "react-native";
+import { useCallback, useMemo, useState } from "react";
+import { SectionList, SectionListData, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { EmptyState } from "@components/ui/EmptyState";
 import { LoadingSkeleton } from "@components/ui/LoadingSkeleton";
 import { PrimaryButton } from "@components/ui/PrimaryButton";
+import { SectionHeader } from "@components/ui/SectionHeader";
 import { useAuth } from "@features/authentication";
 import { NotificationBellButton } from "@features/notifications";
 import { ROUTES } from "@constants/routes";
@@ -40,6 +41,22 @@ function Separator() {
   return <View style={styles.separator} />;
 }
 
+interface ClassSection {
+  title: string;
+  data: ClassRoom[];
+}
+
+// Phase 106 — one contextual line under the title, from the list itself.
+// Never a slogan: it says how many classes the student is in, or how to
+// join one when they are in none. Loading says nothing rather than "0".
+function subtitleFor(classes: readonly ClassRoom[], isLoading: boolean): string | null {
+  if (isLoading) return null;
+  const active = classes.filter((room) => room.status !== "archived").length;
+  if (classes.length === 0) return "Öğretmeninden aldığın kodla bir sınıfa katıl.";
+  if (active === 1) return "Bir sınıfta birlikte öğreniyorsun.";
+  return `${active} sınıfta birlikte öğreniyorsun.`;
+}
+
 export function StudentClassesScreen() {
   const { firebaseUser } = useAuth();
   const { classes, isLoading, isJoining, errorMessage, joinByCode } = useStudentClasses(
@@ -55,18 +72,50 @@ export function StudentClassesScreen() {
     [joinByCode],
   );
 
+  // Phase 106 — the class document's own `status` splits the list: the
+  // classes still running, then any the teacher has archived. A student is
+  // still a member of an archived class (its questions and chat remain
+  // readable), so it is not hidden — only moved under its own heading and
+  // drawn a step quieter. Empty groups render no heading at all.
+  const sections = useMemo<ClassSection[]>(() => {
+    const active = classes.filter((room) => room.status !== "archived");
+    const archived = classes.filter((room) => room.status === "archived");
+    const result: ClassSection[] = [];
+    if (active.length > 0) result.push({ title: "Aktif Sınıflarım", data: active });
+    if (archived.length > 0) result.push({ title: "Geçmiş Sınıflar", data: archived });
+    return result;
+  }, [classes]);
+
+  const subtitle = subtitleFor(classes, isLoading);
+
+  const renderSectionHeader = useCallback(
+    ({ section }: { section: SectionListData<ClassRoom, ClassSection> }) => (
+      <View style={styles.sectionHeader}>
+        <SectionHeader title={section.title} />
+      </View>
+    ),
+    [],
+  );
+
   return (
     <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
-      <FlatList
-        data={classes}
+      <SectionList
+        sections={sections}
         keyExtractor={keyExtractor}
         renderItem={renderItem}
+        renderSectionHeader={renderSectionHeader}
         contentContainerStyle={styles.list}
         ItemSeparatorComponent={Separator}
+        SectionSeparatorComponent={Separator}
+        stickySectionHeadersEnabled={false}
+        showsVerticalScrollIndicator={false}
         ListHeaderComponent={
           <View style={styles.header}>
             <View style={styles.headerTitleRow}>
-              <Text style={styles.title}>Sınıflarım</Text>
+              <View style={styles.headerText}>
+                <Text style={styles.title}>Sınıflarım</Text>
+                {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+              </View>
               <NotificationBellButton
                 uid={firebaseUser?.uid}
                 route={ROUTES.studentNotifications}
@@ -111,20 +160,33 @@ const styles = themedStyles(() => ({
   header: {
     gap: spacing.md,
     paddingTop: spacing.md,
-    paddingBottom: spacing.lg,
+    paddingBottom: spacing.sm,
   },
   headerTitleRow: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     justifyContent: "space-between",
+    gap: spacing.sm,
+  },
+  headerText: {
+    flex: 1,
+    minWidth: 0,
+    gap: spacing.xxs,
   },
   title: {
     ...typography.displayLg,
     fontSize: 26,
     color: colors.textPrimary,
   },
+  subtitle: {
+    ...typography.body,
+    color: colors.textSecondary,
+  },
+  sectionHeader: {
+    paddingTop: spacing.xs,
+  },
   separator: {
-    height: spacing.sm,
+    height: spacing.xs,
   },
   skeletonList: {
     gap: spacing.sm,

@@ -26,3 +26,10 @@ export const minTouchTarget = 44;
 // value instead of each hardcoding 16. Text still scales with the OS font
 // setting — this is the base size, not a cap.
 export const inputFontSize = 16;
+
+// Phase 106 — the OS text scale at which a side-by-side pair stops fitting a
+// phone and must stack. iOS "Accessibility Medium" and above (≈1.6): the
+// first category where two half-width tiles or a name beside an avatar no
+// longer hold a single Turkish word without breaking it mid-word. The same
+// threshold TeacherDashboardHeader's identity row already stacks at.
+export const stackAtFontScale = 1.6;

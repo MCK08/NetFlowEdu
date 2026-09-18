@@ -14,7 +14,15 @@ interface CardProps {
   // "flat" matches the existing borderless `#F7F7F8` panel style already
   // used by ProfileScreen's info card; "elevated" adds a soft shadow for
   // surfaces that need to visually float (e.g. a modal's content).
-  variant?: "flat" | "elevated";
+  //
+  // Phase 106 — "outlined" adds a one-point edge in the theme's divider
+  // token: on the dark ground a flat surface and the page behind it are only
+  // a few steps apart, and a grouped list (assignments, struggling topics)
+  // reads as one object with an edge rather than a soft patch. Light keeps
+  // the same rule, where the edge is the quiet cool grey the dividers use.
+  // (A one-point line, not a hairline: the hairline-plus-radius.xl pairing is
+  // StudyOutcomeCard's own signature and is guarded as such.)
+  variant?: "flat" | "elevated" | "outlined";
 }
 
 // Generic container the app currently re-implements per-screen as an
@@ -27,7 +35,14 @@ export const Card = memo(function Card({ children, style, variant = "flat" }: Ca
   // previous theme's styles after a live theme switch.
   useThemeSubscription();
   return (
-    <View style={[styles.base, variant === "elevated" ? shadows.md : null, style]}>
+    <View
+      style={[
+        styles.base,
+        variant === "elevated" ? shadows.md : null,
+        variant === "outlined" ? styles.outlined : null,
+        style,
+      ]}
+    >
       {children}
     </View>
   );
@@ -38,5 +53,9 @@ const styles = themedStyles(() => ({
     backgroundColor: colors.surface,
     borderRadius: radius.xl,
     padding: spacing.md,
+  },
+  outlined: {
+    borderWidth: 1,
+    borderColor: colors.divider,
   },
 }));

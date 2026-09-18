@@ -1,3 +1,4 @@
+import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useRef, useState } from "react";
 import { Text, TextInput, View } from "react-native";
 
@@ -6,7 +7,7 @@ import { FormError } from "@components/ui/FormError";
 import { PrimaryButton } from "@components/ui/PrimaryButton";
 import { colors } from "@theme/colors";
 import { radius } from "@theme/radius";
-import { inputFontSize, minTouchTarget } from "@theme/sizes";
+import { iconSize, inputFontSize, minTouchTarget } from "@theme/sizes";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
 import { themedStyles } from "@theme/themeRuntime";
@@ -73,7 +74,13 @@ export function DailyGoalEditor({ currentGoal, onSaved }: DailyGoalEditorProps) 
         accessibilityLabel={`Günlük hedefi değiştir, şu an ${currentGoal}`}
         accessibilityHint="Günlük tekrar hedefini düzenlemeni sağlar"
       >
+        {/* Phase 106 — a quiet navigation row at the foot of the goal
+            surface: the words, the current value, a chevron. It must not
+            compete with "Çalışmaya Başla", so it is text on the surface,
+            never a button. */}
         <Text style={styles.triggerText}>Hedefi değiştir</Text>
+        <Text style={styles.triggerValue}>{currentGoal} soru</Text>
+        <Ionicons name="chevron-forward" size={iconSize.sm} color={colors.textTertiary} accessibilityElementsHidden />
       </AnimatedPressable>
     );
   }
@@ -142,15 +149,22 @@ export function DailyGoalEditor({ currentGoal, onSaved }: DailyGoalEditorProps) 
 const styles = themedStyles(() => ({
   trigger: {
     minHeight: minTouchTarget,
-    justifyContent: "center",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
   },
   triggerText: {
+    ...typography.bodyStrong,
+    color: colors.textPrimary,
+    flex: 1,
+  },
+  triggerValue: {
     ...typography.caption,
-    color: colors.primary,
-    fontWeight: "600",
+    color: colors.textSecondary,
   },
   editor: {
     gap: spacing.xs,
+    paddingVertical: spacing.sm,
   },
   label: {
     ...typography.caption,

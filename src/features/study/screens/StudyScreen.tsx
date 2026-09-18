@@ -1,6 +1,6 @@
 import { router, useFocusEffect } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
-import { FlatList, RefreshControl, Text, View } from "react-native";
+import { FlatList, RefreshControl, Text, useWindowDimensions, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { EmptyState } from "@components/ui/EmptyState";
@@ -11,6 +11,7 @@ import { useNavigationGuard } from "@hooks/useNavigationGuard";
 import { colors } from "@theme/colors";
 import { contentWidth } from "@theme/layout";
 import { radius } from "@theme/radius";
+import { stackAtFontScale } from "@theme/sizes";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
 import { themedStyles } from "@theme/themeRuntime";
@@ -85,6 +86,8 @@ export function StudyScreen() {
   const chronologyReason = chronologyExplanationText(chronologyExplanation);
   const { cards: assignmentCards, refresh: refreshAssignments } = useStudentAssignments(uid);
   const guardedNavigate = useNavigationGuard();
+  const { fontScale } = useWindowDimensions();
+  const stackedLenses = fontScale >= stackAtFontScale;
 
   // Per-card busy/error state, keyed by questionId — a failure on one card
   // must never blank out the whole session.
@@ -374,7 +377,10 @@ export function StudyScreen() {
                 <Text style={styles.chronologyReason}>{chronologyReason}</Text>
               ) : null}
             </View>
-            <View style={styles.lenses}>
+            {/* Phase 106 — the two insight tiles sit side by side; at the
+                accessibility text sizes they stack so neither wraps a
+                Turkish word mid-way. */}
+            <View style={stackedLenses ? styles.lensesStacked : styles.lenses}>
               {/* Phase 56 — sits directly under the next action: that card says
                   what to do now, this one explains how learning is changing.
                   One restrained row, not an inline copy of the story. */}
@@ -412,12 +418,12 @@ export function StudyScreen() {
                 what to do now, this only says what has become worth
                 revisiting. Renders nothing when nothing is due. */}
             <ReviewReadySection topics={reviewReadyTopics} onStart={handleStartReview} />
-            <View style={styles.pair}>
-              {/* The goal editor changes the "Bugünkü hedef" the progress card
-                  shows, so the two sit as one block. */}
-              <StudyProgressCard summary={summary} dueCount={insights.dueCount} />
+            {/* Phase 106 — one goal surface: the progress, the streak and the
+                stats, with "Hedefi değiştir" as its last row. The editor
+                changes the very number the card shows, so it lives inside it. */}
+            <StudyProgressCard summary={summary} dueCount={insights.dueCount}>
               <DailyGoalEditor currentGoal={summary.dailyGoal} onSaved={handleRefresh} />
-            </View>
+            </StudyProgressCard>
             {error ? (
               <View style={styles.errorBanner} accessibilityRole="alert">
                 <Text style={styles.errorText}>{error}</Text>
@@ -480,6 +486,11 @@ const styles = themedStyles(() => ({
     gap: spacing.xs,
   },
   lenses: {
+    flexDirection: "row",
+    alignItems: "stretch",
+    gap: spacing.sm,
+  },
+  lensesStacked: {
     gap: spacing.sm,
   },
   title: {

@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { memo } from "react";
+import { memo, ReactNode } from "react";
 import { Text, View } from "react-native";
 
 import { colors } from "@theme/colors";
@@ -15,6 +15,10 @@ import { useThemeSubscription } from "@theme/ThemeProvider";
 interface StudyProgressCardProps {
   summary: StudySummary;
   dueCount: number;
+  // Phase 106 — the goal editor renders INSIDE this surface (as its last
+  // row), so "Bugünkü hedef" and "Hedefi değiştir" are one grouped thing
+  // rather than a card with a loose link under it.
+  children?: ReactNode;
 }
 
 interface StatProps {
@@ -28,7 +32,7 @@ function Stat({ icon, value, label }: StatProps) {
     // One accessible node per stat: a screen reader reads "12, tekrar
     // bekliyor" rather than two disconnected fragments.
     <View style={styles.stat} accessible accessibilityLabel={`${value} ${label}`}>
-      <Ionicons name={icon} size={18} color={colors.primary} />
+      <Ionicons name={icon} size={18} color={colors.primary} accessibilityElementsHidden />
       <Text style={styles.statValue}>{value}</Text>
       {/* Phase 103 — shrink to fit, not ellipsize: at a large OS text size
           "tekrar bekliyor" was clipped to "tekrar bekli…" in its third-width
@@ -45,6 +49,7 @@ function Stat({ icon, value, label }: StatProps) {
 export const StudyProgressCard = memo(function StudyProgressCard({
   summary,
   dueCount,
+  children,
 }: StudyProgressCardProps) {
   // Phase 49 — memo() blocks prop-driven re-renders, but NOT context
   // updates; without this subscription this component would keep its
@@ -81,6 +86,8 @@ export const StudyProgressCard = memo(function StudyProgressCard({
       <Text style={styles.streakCaption}>
         {streakLabel(summary.currentStreak)} · En uzun seri: {summary.longestStreak}
       </Text>
+
+      {children ? <View style={styles.footer}>{children}</View> : null}
     </View>
   );
 });
@@ -89,8 +96,17 @@ const styles = themedStyles(() => ({
   card: {
     backgroundColor: colors.surface,
     borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.divider,
     padding: spacing.md,
     gap: spacing.sm,
+  },
+  footer: {
+    borderTopWidth: 1,
+    borderTopColor: colors.divider,
+    marginTop: spacing.xxs,
+    marginHorizontal: -spacing.md,
+    paddingHorizontal: spacing.md,
   },
   headerRow: {
     flexDirection: "row",
@@ -119,12 +135,16 @@ const styles = themedStyles(() => ({
   statsRow: {
     flexDirection: "row",
     gap: spacing.xs,
+    paddingVertical: spacing.xxs,
   },
   stat: {
     flex: 1,
     minWidth: 0,
     alignItems: "center",
     gap: 2,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surfaceMuted,
   },
   statValue: {
     ...typography.title,

@@ -2,6 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { memo } from "react";
 import { Pressable, Text, View } from "react-native";
 
+import { Card } from "@components/ui/Card";
 import { colors } from "@theme/colors";
 import { radius } from "@theme/radius";
 import { iconSize, minTouchTarget } from "@theme/sizes";
@@ -62,49 +63,50 @@ export const LearningAtlasEntryCard = memo(function LearningAtlasEntryCard({
       accessibilityHint="Öğrenme kanıtlarının tek görünümünü açar"
       style={styles.pressable}
     >
-      <View style={styles.card}>
-        <View style={styles.row}>
+      {/* Phase 106 — the same compact tile shape as İlerleme Hikâyem beside
+          it; the Atlas keeps its slightly stronger mark (a filled tinted
+          square in the brand blue) because it is the entry to the product's
+          one landscape surface. Same counts, same wording, same route. */}
+      <Card variant="outlined" style={styles.card}>
+        <View style={styles.topRow}>
           <View style={styles.iconWrap}>
-            <Ionicons name="git-network-outline" size={iconSize.md} color={colors.primary} />
+            <Ionicons name="git-network-outline" size={iconSize.sm} color={colors.primary} accessibilityElementsHidden />
           </View>
-          <View style={styles.text}>
-            <Text style={styles.title}>Öğrenme Atlasım</Text>
-            <Text style={styles.description}>{description}</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={iconSize.sm} color={colors.primary} />
+          <Ionicons name="chevron-forward" size={iconSize.sm} color={colors.primary} accessibilityElementsHidden />
         </View>
-      </View>
+        <View style={styles.text}>
+          <Text style={styles.title}>Öğrenme Atlasım</Text>
+          <Text style={styles.description}>{description}</Text>
+        </View>
+      </Card>
     </Pressable>
   );
 });
 
 const styles = themedStyles(() => ({
   pressable: {
+    flex: 1,
+    minWidth: 0,
     minHeight: minTouchTarget,
   },
   card: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.xl,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.md,
-  },
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
+    flex: 1,
     gap: spacing.sm,
   },
+  topRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
   iconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: radius.lg,
+    width: 36,
+    height: 36,
+    borderRadius: radius.md,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: colors.primaryMuted,
   },
   text: {
-    flex: 1,
-    minWidth: 0,
     gap: 2,
   },
   title: {

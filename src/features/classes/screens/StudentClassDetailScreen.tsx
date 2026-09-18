@@ -4,20 +4,23 @@ import { Alert, ActivityIndicator, FlatList, Text, useWindowDimensions, View } f
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AnimatedPressable } from "@components/ui/AnimatedPressable";
-import { EmptyState } from "@components/ui/EmptyState";
 import { AppBackButton } from "@components/ui/AppBackButton";
+import { Avatar } from "@components/ui/Avatar";
+import { Badge } from "@components/ui/Badge";
+import { EmptyState } from "@components/ui/EmptyState";
 import { useAuth } from "@features/authentication";
 import { QuestionMetadataModal } from "@features/questions/components/QuestionMetadataModal";
 import { useClassSemanticDefinitions } from "@features/questions/hooks/useClassSemanticDefinitions";
-import { QuestionGridItem } from "@features/profile/components/QuestionGridItem";
 import { colors, darkColors } from "@theme/colors";
 import { IMMERSIVE_FOREGROUND } from "@theme/immersive";
 import { radius } from "@theme/radius";
+import { iconSize, minTouchTarget, stackAtFontScale } from "@theme/sizes";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
 import { getActiveTheme, themedStyles } from "@theme/themeRuntime";
 import { Question } from "@/types/question";
 
+import { ClassQuestionTile } from "../components/ClassQuestionTile";
 import { ImageSourcePicker } from "../components/ImageSourcePicker";
 import { useClassQuestions } from "../hooks/useClassQuestions";
 import { useLeaveClass } from "../hooks/useLeaveClass";
@@ -29,10 +32,13 @@ interface StudentClassDetailScreenProps {
   classId: string;
 }
 
-const GRID_COLUMNS = 3;
+// Phase 106 — two columns of real question previews (image, role, topic,
+// counts) instead of three bare squares; see ClassQuestionTile.
+const GRID_COLUMNS = 2;
+const GRID_GAP = spacing.sm;
 
 export function StudentClassDetailScreen({ classId }: StudentClassDetailScreenProps) {
-  const { width } = useWindowDimensions();
+  const { width, fontScale } = useWindowDimensions();
   const { firebaseUser } = useAuth();
   const { classRoom, isLoading } = useStudentClassInfo(classId);
   const { questions, isLoadingMore, hasMore, loadMore, prepend } = useClassQuestions(classId);
@@ -99,7 +105,14 @@ export function StudentClassDetailScreen({ classId }: StudentClassDetailScreenPr
     );
   }
 
-  const itemSize = width / GRID_COLUMNS;
+  // Two tiles across, inside the page's own horizontal inset, with one gutter
+  // between them. Computed from the real window so the columns are exact on
+  // every phone width.
+  const tileWidth = (width - spacing.lg * 2 - GRID_GAP) / GRID_COLUMNS;
+  // At the accessibility text sizes the two quick actions stack — a half-width
+  // tile cannot hold "Sınıf Sohbeti" at ~200% without breaking the word.
+  const stackedActions = fontScale >= stackAtFontScale;
+  const isArchived = classRoom.status === "archived";
 
   return (
     <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
@@ -107,9 +120,8 @@ export function StudentClassDetailScreen({ classId }: StudentClassDetailScreenPr
         data={questions}
         keyExtractor={(item: Question) => item.id}
         numColumns={GRID_COLUMNS}
-        renderItem={({ item }) => (
-          <QuestionGridItem question={item} size={itemSize} showPosterRoleBadge />
-        )}
+        columnWrapperStyle={styles.gridRow}
+        renderItem={({ item }) => <ClassQuestionTile question={item} width={tileWidth} />}
         onEndReachedThreshold={0.5}
         onEndReached={() => {
           if (hasMore) loadMore();
@@ -117,75 +129,106 @@ export function StudentClassDetailScreen({ classId }: StudentClassDetailScreenPr
         contentContainerStyle={styles.listContent}
         ListHeaderComponent={
           <View style={styles.header}>
+            {/* Phase 106 — the class's identity as a hero, then its two
+                primary actions as a balanced pair, then the way into the feed
+                as a quieter dark entry, then the questions. Every function
+                the screen had is still here; what changed is the hierarchy:
+                a class page used to be a column of five full-width buttons. */}
             <AppBackButton fallbackHref="/(student)/(tabs)/classes" style={styles.backButton} />
 
-            <Text style={styles.title}>{classRoom.name}</Text>
-            <Text style={styles.memberCount}>{classRoom.memberCount} üye</Text>
+            <View style={styles.hero}>
+              <Avatar displayName={classRoom.name} size="xl" />
+              <Text style={styles.title}>{classRoom.name}</Text>
+              <View style={styles.heroMeta}>
+                <Text style={styles.memberCount}>{classRoom.memberCount} üye</Text>
+                {/* The class document's own status, as a word: "Aktif" while
+                    it runs, "Arşivlendi" once the teacher closes it. */}
+                <Badge label={isArchived ? "Arşivlendi" : "Aktif"} variant={isArchived ? "neutral" : "primary"} />
+              </View>
+            </View>
 
-            <AnimatedPressable
-              onPress={openChat}
-              style={styles.chatButton}
-              accessibilityRole="button"
-              accessibilityLabel="Sınıf sohbetini aç"
-            >
-              {/* Phase 104 (H3) — decorative; the button is labelled
-                  "Sınıf sohbetini aç". */}
-              <Ionicons
-                name="chatbubble-outline"
-                size={18}
-                color={colors.textInverse}
-                accessibilityElementsHidden
-              />
-              <Text style={styles.chatButtonText}>Sınıf Sohbeti</Text>
-            </AnimatedPressable>
-
-            <AnimatedPressable
-              onPress={openComposer}
-              disabled={isUploading}
-              style={[styles.shareButton, isUploading ? styles.shareButtonDisabled : null]}
-              accessibilityRole="button"
-              accessibilityLabel="Soru paylaş"
-              // Phase 104 (B6) — the spinner alone says nothing to a screen reader.
-              accessibilityState={{ busy: isUploading, disabled: isUploading }}
-            >
-              {isUploading ? (
-                <ActivityIndicator color={colors.textInverse} />
-              ) : (
-                <>
-                  {/* Phase 104 (H3) — decorative; the button is labelled
-                      "Soru paylaş". */}
+            <View style={stackedActions ? styles.actionsStacked : styles.actions}>
+              <AnimatedPressable
+                onPress={openChat}
+                style={styles.chatButton}
+                accessibilityRole="button"
+                accessibilityLabel="Sınıf sohbetini aç"
+              >
+                {/* Phase 104 (H3) — decorative; the button is labelled
+                    "Sınıf sohbetini aç". */}
+                <View style={styles.actionIcon}>
                   <Ionicons
-                    name="camera"
-                    size={18}
-                    color={colors.textInverse}
+                    name="chatbubble-outline"
+                    size={iconSize.md}
+                    color={colors.primary}
                     accessibilityElementsHidden
                   />
-                  <Text style={styles.shareButtonText}>Soru Paylaş</Text>
-                </>
-              )}
-            </AnimatedPressable>
+                </View>
+                <Text style={styles.chatButtonText}>Sınıf Sohbeti</Text>
+              </AnimatedPressable>
 
-            <Text style={styles.sectionTitle}>Sınıf Soruları</Text>
-            {questions.length === 0 ? (
-              <EmptyState icon="help-circle-outline" title="Bu sınıfta henüz soru yok" />
-            ) : (
+              <AnimatedPressable
+                onPress={openComposer}
+                disabled={isUploading}
+                style={[styles.shareButton, isUploading ? styles.shareButtonDisabled : null]}
+                accessibilityRole="button"
+                accessibilityLabel="Soru paylaş"
+                // Phase 104 (B6) — the spinner alone says nothing to a screen reader.
+                accessibilityState={{ busy: isUploading, disabled: isUploading }}
+              >
+                <View style={styles.actionIcon}>
+                  {isUploading ? (
+                    <ActivityIndicator color={colors.primary} />
+                  ) : (
+                    /* Phase 104 (H3) — decorative; the button is labelled
+                       "Soru paylaş". */
+                    <Ionicons
+                      name="camera"
+                      size={iconSize.md}
+                      color={colors.primary}
+                      accessibilityElementsHidden
+                    />
+                  )}
+                </View>
+                <Text style={styles.shareButtonText}>Soru Paylaş</Text>
+              </AnimatedPressable>
+            </View>
+
+            {questions.length > 0 ? (
               <AnimatedPressable
                 onPress={openFeed}
                 style={styles.feedButton}
                 accessibilityRole="button"
                 accessibilityLabel="Soru akışına gir"
+                accessibilityHint="Sınıfın sorularını akışta tek tek açar"
               >
                 {/* Phase 104 (H3) — decorative; the button is labelled
                     "Soru akışına gir". */}
+                <View style={styles.feedIcon}>
+                  <Ionicons
+                    name="play-circle"
+                    size={iconSize.md}
+                    color={IMMERSIVE_FOREGROUND}
+                    accessibilityElementsHidden
+                  />
+                </View>
+                <View style={styles.feedText}>
+                  <Text style={styles.feedButtonText}>Soru Akışına Gir</Text>
+                  <Text style={styles.feedButtonDetail}>Sınıfın sorularını akışta çöz</Text>
+                </View>
                 <Ionicons
-                  name="play-circle"
-                  size={20}
+                  name="chevron-forward"
+                  size={iconSize.sm}
                   color={IMMERSIVE_FOREGROUND}
                   accessibilityElementsHidden
                 />
-                <Text style={styles.feedButtonText}>Soru Akışına Gir</Text>
               </AnimatedPressable>
-            )}
+            ) : null}
+
+            <Text style={styles.sectionTitle}>Sınıf Soruları</Text>
+            {questions.length === 0 ? (
+              <EmptyState icon="help-circle-outline" title="Bu sınıfta henüz soru yok" />
+            ) : null}
           </View>
         }
         ListFooterComponent={
@@ -256,7 +299,15 @@ const styles = themedStyles(() => ({
   },
   header: {
     paddingHorizontal: spacing.lg,
-    gap: spacing.xs,
+    // Phase 106 — the gap BETWEEN the hero, the action pair, the feed entry
+    // and the questions; the pair and the hero step down inside.
+    gap: spacing.md,
+    paddingBottom: spacing.xs,
+  },
+  gridRow: {
+    paddingHorizontal: spacing.lg,
+    gap: GRID_GAP,
+    marginBottom: GRID_GAP,
   },
   backButton: {
     minWidth: 44,
@@ -268,43 +319,162 @@ const styles = themedStyles(() => ({
     // sat in the middle of the row instead of at the leading edge.
     alignSelf: "flex-start",
   },
+  hero: {
+    alignItems: "center",
+    gap: spacing.xs,
+    paddingBottom: spacing.xs,
+  },
+  heroMeta: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+  },
   title: {
     // Phase 104 (H1) — the role, not displayLg trimmed to fit. Same 22pt this
     // screen already chose, but with the 28pt line box the override never had
     // (it inherited displayLg's 34, which is the shape D11 came from).
     ...typography.screenTitleSm,
     color: colors.textPrimary,
+    textAlign: "center",
   },
   memberCount: {
     ...typography.caption,
     color: colors.textSecondary,
   },
-  chatButton: {
+  actions: {
     flexDirection: "row",
+    alignItems: "stretch",
+    gap: spacing.sm,
+  },
+  actionsStacked: {
+    gap: spacing.sm,
+  },
+  actionIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.lg,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.primaryMuted,
+  },
+  chatButton: {
+    flex: 1,
+    minWidth: 0,
     alignItems: "center",
     justifyContent: "center",
     gap: spacing.xs,
     // Phase 104 (Dynamic Type) — a wrapped label used to take the whole row
     // and push the icon onto the border; the inset keeps both inside.
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    minHeight: 48,
-    borderRadius: radius.md,
-    backgroundColor: colors.primary,
-    marginTop: spacing.xs,
+    paddingVertical: spacing.sm,
+    minHeight: minTouchTarget,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.divider,
+    backgroundColor: colors.surface,
   },
   chatButtonText: {
     // Phase 104 (H1) — control label role; 15/600 is what this style already
     // was, now with a line box and a name.
     ...typography.button,
-    color: colors.textInverse,
+    color: colors.textPrimary,
     flexShrink: 1,
     textAlign: "center",
+  },
+  shareButton: {
+    flex: 1,
+    minWidth: 0,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.xs,
+    // Phase 104 (Dynamic Type) — a wrapped label used to take the whole row
+    // and push the icon onto the border; the inset keeps both inside.
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    minHeight: minTouchTarget,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.divider,
+    backgroundColor: colors.surface,
+  },
+  shareButtonDisabled: {
+    opacity: 0.6,
+  },
+  shareButtonText: {
+    // Phase 104 (H1) — control label role; metrics unchanged at 15/600.
+    ...typography.button,
+    color: colors.textPrimary,
+    flexShrink: 1,
+    textAlign: "center",
+  },
+  sectionTitle: {
+    ...typography.subtitle,
+    color: colors.textPrimary,
+    marginTop: spacing.xs,
+  },
+  feedButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    // Phase 104 (Dynamic Type) — a wrapped label used to take the whole row
+    // and push the icon onto the border; the inset keeps both inside.
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    minHeight: 50,
+    borderRadius: radius.xl,
+    // Phase 104 — discovered by Wave-A runtime QA, pre-existing since before
+    // this phase: the fill was pinned to darkColors.background, which IS the
+    // dark theme's page background. In light mode that reads as the intended
+    // dark "way into the feed" pill; in dark mode the button dissolved into
+    // the page and only its label floated there.
+    //
+    // The pinned pill is kept where it means something (light), and dark uses
+    // the palette's own raised-container token — the same `surface` that Card,
+    // ClassCard and StudentClassCard sit on — so the control still reads as a
+    // control. getActiveTheme() is the APP's resolved theme (preference +
+    // system, via ThemeProvider), not RN's device scheme, and themedStyles
+    // re-runs this factory per resolved theme, so the switch is live.
+    backgroundColor: getActiveTheme() === "dark" ? colors.surface : darkColors.background,
+  },
+  feedIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.pill,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: darkColors.surfaceMuted,
+  },
+  feedText: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  feedButtonText: {
+    // Phase 103 — the button is pinned dark in both themes, so its label is
+    // the constant immersive white; `colors.textInverse` flips to near-black
+    // in dark mode and hid "Soru Akışına Gir" against its own fill.
+    //
+    // Phase 104 (H1) — the control-label role, with the 700 kept on purpose:
+    // this is the screen's way into the class feed and is meant to read one
+    // step stronger than the chat/share tiles above it. The role supplies the
+    // size and line box; the weight stays a deliberate override.
+    ...typography.button,
+    color: IMMERSIVE_FOREGROUND,
+    fontWeight: "700",
+    flexShrink: 1,
+  },
+  feedButtonDetail: {
+    ...typography.caption,
+    color: darkColors.textSecondary,
   },
   footer: {
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.lg,
   },
+  // Phase 106 — the destructive action stays last and quiet: an outline in
+  // the danger colour, the same restrained 14/600 label (Wave A lock), the
+  // same confirmation. It closes the page; nothing above it competes with
+  // it and it competes with nothing.
   leaveButton: {
     minHeight: 44,
     borderRadius: radius.md,
@@ -322,77 +492,6 @@ const styles = themedStyles(() => ({
     color: colors.danger,
     fontSize: 14,
     fontWeight: "600",
-  },
-  shareButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: spacing.xs,
-    // Phase 104 (Dynamic Type) — a wrapped label used to take the whole row
-    // and push the icon onto the border; the inset keeps both inside.
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    minHeight: 48,
-    borderRadius: radius.md,
-    backgroundColor: colors.primary,
-    marginTop: spacing.xs,
-  },
-  shareButtonDisabled: {
-    opacity: 0.6,
-  },
-  shareButtonText: {
-    // Phase 104 (H1) — control label role; metrics unchanged at 15/600.
-    ...typography.button,
-    color: colors.textInverse,
-    flexShrink: 1,
-    textAlign: "center",
-  },
-  sectionTitle: {
-    ...typography.subtitle,
-    color: colors.textPrimary,
-    marginTop: spacing.md,
-  },
-  feedButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: spacing.xs,
-    // Phase 104 (Dynamic Type) — a wrapped label used to take the whole row
-    // and push the icon onto the border; the inset keeps both inside.
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    minHeight: 50,
-    borderRadius: radius.lg,
-    // Phase 104 — discovered by Wave-A runtime QA, pre-existing since before
-    // this phase: the fill was pinned to darkColors.background, which IS the
-    // dark theme's page background. In light mode that reads as the intended
-    // dark "way into the feed" pill; in dark mode the button dissolved into
-    // the page and only its label floated there.
-    //
-    // The pinned pill is kept where it means something (light), and dark uses
-    // the palette's own raised-container token — the same `surface` that Card,
-    // ClassCard and StudentClassCard sit on — so the control still reads as a
-    // control. getActiveTheme() is the APP's resolved theme (preference +
-    // system, via ThemeProvider), not RN's device scheme, and themedStyles
-    // re-runs this factory per resolved theme, so the switch is live.
-    backgroundColor: getActiveTheme() === "dark" ? colors.surface : darkColors.background,
-    marginTop: spacing.xs,
-    marginBottom: spacing.sm,
-  },
-  feedButtonText: {
-    // Phase 103 — the button is pinned dark in both themes, so its label is
-    // the constant immersive white; `colors.textInverse` flips to near-black
-    // in dark mode and hid "Soru Akışına Gir" against its own fill.
-    //
-    // Phase 104 (H1) — the control-label role, with the 700 kept on purpose:
-    // this is the screen's primary way into the class feed and is meant to
-    // read one step stronger than the chat/share controls above it. The role
-    // supplies the size and line box; the weight stays a deliberate override.
-    ...typography.button,
-    color: IMMERSIVE_FOREGROUND,
-    fontWeight: "700",
-    flexShrink: 1,
-    textAlign: "center",
   },
   loadingMore: {
     paddingVertical: spacing.xl,
