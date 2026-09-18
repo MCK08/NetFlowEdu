@@ -48,6 +48,19 @@ export default function StudentTabsLayout() {
           ),
         }}
       />
+      {/* Phase 107 — Kişisel Analiz: the student's own learning history and
+          the "Çözemediğim Sorular" archive. Beside Çalış so the two learning
+          surfaces sit together — Çalış decides what to do now, Analiz shows
+          what has happened. A fifth tab rather than a Hub row: the archive is
+          a destination the student returns to, and the Hub already carries
+          the next action it must not bury. Inherits the themed chrome above. */}
+      <Tabs.Screen
+        name="analytics"
+        options={{
+          title: "Analiz",
+          tabBarIcon: ({ color, size }) => <Ionicons name="analytics" color={color} size={size} />,
+        }}
+      />
       <Tabs.Screen
         name="classes"
         options={{

@@ -32,6 +32,9 @@ const ROOT_ROUTES = new Set([
   "app/(admin)/index.tsx",
   "app/(student)/(tabs)/index.tsx",
   "app/(student)/(tabs)/study.tsx",
+  // Phase 107 — the Analiz tab. A root, so it carries no back button; its
+  // pushed readings (analytics/*) are nested and each reaches AppBackButton.
+  "app/(student)/(tabs)/analytics.tsx",
   "app/(student)/(tabs)/classes.tsx",
   "app/(student)/(tabs)/profile.tsx",
   "app/(teacher)/(tabs)/index.tsx",
