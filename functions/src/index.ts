@@ -41,6 +41,9 @@ export {
 } from "./friends";
 export { markAllNotificationsRead, markNotificationRead } from "./notifications";
 export { recordStudyOutcome, setStudyDailyGoal, removeStudyItem } from "./study";
+// Phase 108 — "Toplulukta Zorlayıcı Sorular": anonymous aggregate difficulty,
+// filtered to what the caller may read; no uid, name or answer ever leaves.
+export { listCommunityDifficultQuestions } from "./study";
 export { submitQuestionCommentForModeration, submitAnswerForModeration } from "./moderation";
 // Phase 88 — the authoritative question-revision gateway. Client writes to a
 // question's authoring fields are denied by firestore.rules; this is the path.

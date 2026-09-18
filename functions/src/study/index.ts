@@ -1,6 +1,8 @@
 export { recordStudyOutcome } from "./recordStudyOutcome";
 export { setStudyDailyGoal } from "./setStudyDailyGoal";
 export { removeStudyItem } from "./removeStudyItem";
+// Phase 108 — anonymous community difficulty (aggregate stats only).
+export { listCommunityDifficultQuestions } from "./communityDifficulty";
 export { isValidOperationId, hasProcessedOperation, appendOperationId, MAX_TRACKED_OPERATION_IDS } from "./operationId";
 export {
   scheduleNextReview,

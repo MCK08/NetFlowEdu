@@ -1015,6 +1015,26 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ---- questionStats/{questionId} ----------------------------------------
+    // Phase 108 — the anonymous community cohort for one question: how many
+    // DISTINCT students recorded an outcome on it and how many of those have
+    // struggle evidence, plus the band derived from them. Maintained only by
+    // recordStudyOutcome (Admin SDK) inside the outcome's own transaction; no
+    // client can write, so a cohort can never be inflated or a band forged.
+    //
+    // Read is a single-document get, gated on the SAME question access the
+    // question itself has (canReadQuestionData): a student who cannot open a
+    // question learns nothing about how hard it was for others. No list
+    // query is provable under this rule, and none is offered — discovery
+    // goes through the listCommunityDifficultQuestions callable, which
+    // filters by the caller's access server-side. The document contains no
+    // uid, name, answer or history — nothing in it names a person.
+    match /questionStats/{questionId} {
+      allow get: if isSignedIn() && canReadQuestionData(questionData(questionId));
+      allow list: if false;
+      allow write: if false;
+    }
+
     // ---- users/{uid}/studyDays/{dayKey} ------------------------------------
     // Per-calendar-day counters. The day key itself is derived SERVER-side
     // from server time plus a validated IANA timezone (see

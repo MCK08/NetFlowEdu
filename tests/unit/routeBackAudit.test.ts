@@ -105,8 +105,10 @@ function screenFileFor(routeFile: string): string | null {
 function hasBackAffordance(screenFile: string): boolean {
   const text = fs.readFileSync(screenFile, "utf8");
   if (/AppBackButton|useBackNavigation/.test(text)) return true;
-  // A header component in the same feature (ChatHeader, QuestionHeader) may own it.
-  const imports = [...text.matchAll(/import \{[^}]*\} from "(\.\.?\/[^"]+)"/g)].map((m) => m[1] ?? "");
+  // A header component in the same feature (ChatHeader, QuestionHeader) may
+  // own it — or, since Phase 108, a shared header another feature exports
+  // (studyPlan and communityDifficulty screens reuse AnalyticsHeader).
+  const imports = [...text.matchAll(/import \{[^}]*\} from "((?:\.\.?\/|@features\/)[^"]+)"/g)].map((m) => m[1] ?? "");
   return imports.some((spec) => {
     const file = resolveImport(screenFile, spec);
     return file !== null && /AppBackButton|useBackNavigation/.test(fs.readFileSync(file, "utf8"));

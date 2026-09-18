@@ -8,6 +8,7 @@ import { PrimaryButton } from "@components/ui/PrimaryButton";
 import { SectionHeader } from "@components/ui/SectionHeader";
 import { ROUTES } from "@constants/routes";
 import { useAuth } from "@features/authentication";
+import { PLAN_ROUTES } from "@features/studyPlan/routes";
 import { colors } from "@theme/colors";
 import { contentWidth } from "@theme/layout";
 import { stackAtFontScale } from "@theme/sizes";
@@ -86,6 +87,10 @@ export function AnalyticsOverviewScreen() {
   const openSubjects = useCallback(() => router.push(ANALYTICS_ROUTES.subjects as never), []);
   const openKinds = useCallback(() => router.push(ANALYTICS_ROUTES.questionTypes as never), []);
   const openAtlas = useCallback(() => router.push(ROUTES.studentLearningAtlas as never), []);
+  const openGaps = useCallback(() => router.push(PLAN_ROUTES.gaps as never), []);
+  const openStrengths = useCallback(() => router.push(PLAN_ROUTES.strengths as never), []);
+  const openProgress = useCallback(() => router.push(PLAN_ROUTES.progress as never), []);
+  const openCommunity = useCallback(() => router.push(PLAN_ROUTES.community as never), []);
   const startStudying = useCallback(() => router.navigate(ROUTES.studentStudy as never), []);
 
   return (
@@ -173,6 +178,43 @@ export function AnalyticsOverviewScreen() {
                   description="Konuların, zorlanmaların ve tekrar zamanların tek görünümde"
                   onPress={openAtlas}
                   accessibilityHint="Öğrenme Atlasını açar"
+                />
+              </View>
+
+              {/* Phase 108 — the maps. Each reads the same archive and the
+                  same Phase 70 verdicts this screen already holds; none
+                  invents a score. The community row is the only surface in
+                  the app that looks beyond the student, and it shows an
+                  anonymous aggregate band, never another student. */}
+              <View style={styles.block}>
+                <SectionHeader title="Haritalar" />
+                <AnalyticsNavRow
+                  icon="map-outline"
+                  title="Eksik Haritam"
+                  description="Tekrar bekleyen soruların ders ve konu dağılımı"
+                  onPress={openGaps}
+                  accessibilityHint="Eksik haritasını açar"
+                />
+                <AnalyticsNavRow
+                  icon="ribbon-outline"
+                  title="Güçlü Alanlarım"
+                  description="İstikrarlı başarı gösterdiğin konular"
+                  onPress={openStrengths}
+                  accessibilityHint="Güçlü alanlarını açar"
+                />
+                <AnalyticsNavRow
+                  icon="trending-up-outline"
+                  title="İlerleme Haritam"
+                  description="Konuların bugün nerede durduğu ve kayıtlı adımların"
+                  onPress={openProgress}
+                  accessibilityHint="İlerleme haritasını açar"
+                />
+                <AnalyticsNavRow
+                  icon="people-outline"
+                  title="Toplulukta Zorlayıcı Sorular"
+                  description="Birçok öğrenciyi zorlayan sorular, kimlik olmadan"
+                  onPress={openCommunity}
+                  accessibilityHint="Toplulukta zorlayıcı soruları açar"
                 />
               </View>
             </>

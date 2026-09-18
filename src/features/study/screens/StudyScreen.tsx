@@ -24,6 +24,8 @@ import { DailyGoalEditor } from "../components/DailyGoalEditor";
 import { DailyPracticePlanSection } from "../components/DailyPracticePlanSection";
 import { LearningStoryEntryCard } from "@features/learningStory/components/LearningStoryEntryCard";
 import { useLearningTrail } from "@features/learningStory/hooks/useLearningTrail";
+import { AnalyticsNavRow } from "@features/studentAnalytics/components/AnalyticsNavRow";
+import { PLAN_ROUTES } from "@features/studyPlan/routes";
 
 import { chronologyExplanationText } from "../services/chronologyExplanation";
 import { buildConceptMasteryMap } from "../services/conceptMasteryMap";
@@ -377,6 +379,18 @@ export function StudyScreen() {
                 <Text style={styles.chronologyReason}>{chronologyReason}</Text>
               ) : null}
             </View>
+            {/* Phase 108 — the one way into "Çalışma Planım". A quiet row
+                directly under the next action: the action says what to do
+                now; the plan lays the day's three to five steps out. It must
+                not compete with the blue card above it, so it is the same
+                outlined row the Analiz tab uses for its secondary routes. */}
+            <AnalyticsNavRow
+              icon="calendar-outline"
+              title="Çalışma Planım"
+              description="Bugünün adımları, öğrenme geçmişine göre"
+              onPress={() => router.push(PLAN_ROUTES.home as never)}
+              accessibilityHint="Günlük çalışma planını açar"
+            />
             {/* Phase 106 — the two insight tiles sit side by side; at the
                 accessibility text sizes they stack so neither wraps a
                 Turkish word mid-way. */}

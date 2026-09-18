@@ -3,6 +3,7 @@ import { getFirestore } from "firebase-admin/firestore";
 import type { DocumentReference, Firestore, Transaction } from "firebase-admin/firestore";
 
 import { canReadQuestion } from "../social/questionAccess";
+import { questionStatsRef, writeCommunityStats } from "./communityDifficulty";
 import { advanceStreak, resolveTimeZone, toDayKey } from "./dayKey";
 import { buildLearningEventId, buildLearningEventRecord } from "./learningEvent";
 import { appendOperationId, hasProcessedOperation, isValidOperationId } from "./operationId";
@@ -159,10 +160,14 @@ export const recordStudyOutcome = onCall<RecordStudyOutcomeRequest>(
         throw new HttpsError("permission-denied", "Bu soruya erişim izniniz yok.");
       }
 
-      const [itemSnap, summarySnap, daySnap] = await Promise.all([
+      // Phase 108 — the anonymous per-question cohort counters, read in the
+      // same transaction so the distinct-student transitions below are exact.
+      const statsRef = questionStatsRef(db, questionId);
+      const [itemSnap, summarySnap, daySnap, statsSnap] = await Promise.all([
         tx.get(itemRef),
         tx.get(summaryRef),
         tx.get(dayRef),
+        tx.get(statsRef),
       ]);
 
       // ================= COMPUTE (pure, no I/O) =================
@@ -365,6 +370,18 @@ export const recordStudyOutcome = onCall<RecordStudyOutcomeRequest>(
           // is still exactly one written document, under one operationId.
           semanticOpportunities,
         }),
+      );
+
+      // Phase 108 — the community aggregate, from THIS student's own previous
+      // item: their first outcome ever counts them once, their first struggle
+      // ever counts them once, and nothing else changes it. Replay-safe by
+      // the same early return that protects every other write above.
+      writeCommunityStats(
+        tx,
+        statsRef,
+        statsSnap.exists ? (statsSnap.data() ?? null) : null,
+        { previousItem: existing, outcome },
+        now,
       );
 
       tx.set(

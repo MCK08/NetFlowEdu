@@ -10,6 +10,7 @@ import { LoadingSkeleton } from "@components/ui/LoadingSkeleton";
 import { ImageViewer } from "@components/ImageViewer";
 import { AnswerList, useQuestionAnswers } from "@features/answers";
 import { useAuth } from "@features/authentication";
+import { CommunitySignalPanel, useCommunitySignal } from "@features/communityDifficulty";
 import { CommentComposer, CommentList, useQuestionComments } from "@features/social/comments";
 import { useNavigationGuard } from "@hooks/useNavigationGuard";
 import { colors } from "@theme/colors";
@@ -33,6 +34,9 @@ interface QuestionDetailScreenProps {
 export function QuestionDetailScreen({ questionId }: QuestionDetailScreenProps) {
   const { firebaseUser, role } = useAuth();
   const isStudent = role === "student";
+  // Phase 108 — the anonymous community signal, students only: one document
+  // read, gated by the same rules as the question itself.
+  const communitySignal = useCommunitySignal(isStudent ? questionId : undefined);
   const { question, isLoading, errorMessage, failure, reload } = useQuestionDetail(questionId);
   const { answers, isLoading: answersLoading, error: answersError } = useQuestionAnswers(
     question ? questionId : undefined,
@@ -140,6 +144,11 @@ export function QuestionDetailScreen({ questionId }: QuestionDetailScreenProps) 
               onPress={handleAnswer}
               accessibilityHint="Bu soruya cevap verme ekranını açar"
             />
+
+            {/* Phase 108 — after the actions, before the answers: a quiet
+                aside, never the thing the screen is about. Renders nothing
+                until the signal has loaded. */}
+            {isStudent ? <CommunitySignalPanel signal={communitySignal} /> : null}
 
             <Divider />
 
