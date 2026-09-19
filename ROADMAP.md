@@ -69,8 +69,10 @@ Friend graph: ✅ — `functions/src/friends/` (`sendFriendRequest`, `respondToF
 
 Friends solving each other's questions and uploading solutions: ❌ — no solutions feature exists in the tree.
 
-## Phase 9 — Leaderboards ❌ Not started
-`src/features/leaderboards/` contains only `.gitkeep` files. `totalPoints`/`weeklyPoints` are initialized to `0` by `onUserCreate` and mirrored by `syncPublicProfile`, but **nothing anywhere awards points**. No leaderboard query, screen, or Cloud Function exists.
+## Phase 9 — Leaderboards ❌ Declined (Phase 110, enforced in Phase 112)
+Never built, and now deliberately not going to be: Phase 110 ruled out class leaderboards, popularity ranking and peer performance comparison, because resurfacing a student's own failures is the product thesis and social comparison works against it. Phase 112 removed what was left of the idea — the empty `src/features/leaderboards/` scaffolding, the unused `leaderboards/*` rule and index, and the `totalPoints`/`weeklyPoints` copy in the peer-readable public profile.
+
+`totalPoints`/`weeklyPoints` still exist on the private `users/{uid}` document, initialized to `0` by `onUserCreate`, and **nothing anywhere awards them**.
 
 (See the numbering caveat above: the "Phase 9.1" referenced by `cc71856` is class-question posting, not this.)
 
@@ -166,7 +168,7 @@ Mapping these to individual phase numbers would be a guess, so no numbers are as
 
 # Not implemented
 
-- **Leaderboards and any points award path** (original Phase 9).
+- **Leaderboards and any points award path** (original Phase 9) — declined, not pending; see above.
 - **Push notifications / FCM** (original Phase 10's actual delivery mechanism).
 - **Solutions**: student explanations with teacher verification (part of original Phase 8).
 - **PDF question upload** (deferred since Phase 3; images only).

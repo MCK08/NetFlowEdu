@@ -32,7 +32,6 @@ src/
     review/
     classes/
     friends/
-    leaderboards/
     notifications/
   components/ui/               Shared, feature-agnostic UI primitives (Button, Card, etc.)
   hooks/                       Shared, cross-feature hooks
@@ -45,7 +44,6 @@ functions/
   src/
     questions/                Callable/HTTPS functions for question operations
     review/                   Spaced-repetition scheduling logic
-    leaderboards/             Points aggregation (server-trusted only)
     classes/                  Class roster management
     friends/                  Friend graph operations
     triggers/                 Firestore/Auth triggers
@@ -111,7 +109,7 @@ This is simpler and more robust than merging two cursors by date while still mat
 
 ### Public profile split
 
-`users/{uid}` contains `email`/`accountStatus` and stays strictly owner-only readable (unchanged from Phase 2). A new `publicProfiles/{uid}` document — `uid`, `username`, `displayName`, `photoURL`, `role`, `organizationId`, `totalPoints`, `weeklyPoints`, `createdAt` only, **never** email/accountStatus/moderation data — is readable by any authenticated user. It's synced by `functions/src/profiles/syncPublicProfile.ts`, an `onDocumentWritten("users/{uid}")` trigger: idempotent by construction (re-running with the same source data always produces the same public copy), and deletes the public profile outright if `accountStatus` becomes `"suspended"` rather than maintaining a second "is this visible" branch through every reader.
+`users/{uid}` contains `email`/`accountStatus` and stays strictly owner-only readable (unchanged from Phase 2). A `publicProfiles/{uid}` document — `uid`, `username`, `displayName`, `photoURL`, `role` only, **never** email/accountStatus/moderation data, and since Phase 112 never any academic measurement either — is readable by any authenticated user. The exact projection lives in `functions/src/profiles/publicProfileProjection.ts`: it is a whitelist, so a field added to `users/{uid}` later cannot become public by default. `totalPoints`/`weeklyPoints` were published here until Phase 112, which is what made a per-user score visible to every peer; `organizationId`/`createdAt` went with them, having no reader at all. It's synced by `functions/src/profiles/syncPublicProfile.ts`, an `onDocumentWritten("users/{uid}")` trigger: idempotent by construction (re-running with the same source data always produces the same public copy), and deletes the public profile outright if `accountStatus` becomes `"suspended"` rather than maintaining a second "is this visible" branch through every reader.
 
 `src/features/profiles/services/profileCacheService.ts` (the uid → display-handle cache used by feed cards, answer cards, comments) now reads from `publicProfiles` instead of `users` — this is what makes cross-user username/avatar display actually work; previously every non-self lookup silently failed closed (owner-only rule) and fell back to "Kullanıcı".
 

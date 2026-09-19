@@ -83,8 +83,8 @@ export const joinClassByCode = onCall<JoinClassByCodeRequest>(
       // gates every class resource on MEMBERSHIP, not organization:
       //   * questions:      visibility == 'class' && isClassMember(classId)
       //   * classes/{id}:   teacherId == uid() || isClassMember(classId)
-      // `sameOrg()` is used only for solutions/leaderboards, which are
-      // unrelated to classes. The join code itself is the capability: it is
+      // `sameOrg()` is used only for solutions, which are unrelated to
+      // classes. The join code itself is the capability: it is
       // random, Cloud-Function-generated, and only the teacher can hand it
       // out. Membership remains the single source of truth, which is also
       // what allows one student to belong to several teachers' classes —

@@ -1,8 +1,11 @@
+import { readFileSync } from "fs";
+import { join } from "path";
+
+import * as profileStatsModule from "@features/profile/services/profileStats";
 import {
   formatCount,
   formatStatValue,
   ownProfileStats,
-  publicProfileStats,
   statValue,
   UNAVAILABLE_STAT_TEXT,
 } from "@features/profile/services/profileStats";
@@ -117,36 +120,29 @@ describe("ownProfileStats", () => {
   });
 });
 
-describe("publicProfileStats", () => {
-  const base = { totalPoints: 90, weeklyPoints: 12, isLoading: false };
+// Phase 112 — publicProfileStats is GONE, not emptied. Someone else's
+// profile no longer carries a points row at all (see
+// src/features/profile/services/profileStats.ts).
+describe("no peer-visible statistics exist", () => {
+  const source = readFileSync(join(__dirname, "../../src/features/profile/services/profileStats.ts"), "utf8");
 
-  it("exposes only statistics that are genuinely complete", () => {
-    expect(publicProfileStats(base).map((s) => s.key)).toEqual(["totalPoints", "weeklyPoints"]);
+  it("exports no public/peer profile stat builder", () => {
+    expect(source).not.toMatch(/export function publicProfileStats/);
+    expect(Object.keys(profileStatsModule)).not.toContain("publicProfileStats");
   });
 
-  // The concrete defect this replaces: the screen used to show
-  // `questions.length` under a "Soru" label while getUserPublicQuestions
-  // caps at limit(30), so a prolific user's total was silently wrong.
-  it("never claims to know a total question count", () => {
-    const keys = publicProfileStats(base).map((s) => s.key);
-    expect(keys).not.toContain("questions");
-    expect(publicProfileStats(base).map((s) => s.label)).not.toContain("Soru");
+  it("keeps the owner's own points, which are private self-progress", () => {
+    const stats = ownProfileStats({
+      friendCount: 3,
+      incomingRequestCount: 0,
+      totalPoints: 120,
+      socialMetaStatus: "ready",
+    });
+    expect(stats.map((s) => s.key)).toContain("points");
   });
 
-  it("marks points as loading rather than zero while the profile loads", () => {
-    const stats = publicProfileStats({ totalPoints: 0, weeklyPoints: 0, isLoading: true });
-    expect(stats[0]?.state).toEqual({ kind: "loading" });
-    expect(formatStatValue(stats[0]!.state)).not.toBe("0");
-  });
-
-  it("reports a genuine zero score as a value once loaded", () => {
-    const stats = publicProfileStats({ totalPoints: 0, weeklyPoints: 0, isLoading: false });
-    expect(stats[0]?.state).toEqual({ kind: "value", value: 0 });
-  });
-
-  it("marks a missing score unavailable", () => {
-    const stats = publicProfileStats({ totalPoints: null, weeklyPoints: null, isLoading: false });
-    expect(stats[0]?.state).toEqual({ kind: "unavailable" });
-    expect(stats[1]?.state).toEqual({ kind: "unavailable" });
+  it("labels no stat as a weekly score anywhere", () => {
+    const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+    expect(code).not.toMatch(/Haftalık/);
   });
 });

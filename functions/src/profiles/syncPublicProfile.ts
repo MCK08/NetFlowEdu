@@ -2,6 +2,8 @@ import { onDocumentWritten } from "firebase-functions/v2/firestore";
 import { logger } from "firebase-functions/v2";
 import { getFirestore } from "firebase-admin/firestore";
 
+import { buildPublicProfileProjection } from "./publicProfileProjection";
+
 // Keeps publicProfiles/{uid} (safe fields any authenticated user may read —
 // see firestore.rules) in sync with users/{uid} (owner-only, contains
 // email/accountStatus). Fires on every users/{uid} write, so it's
@@ -34,17 +36,12 @@ export const syncPublicProfile = onDocumentWritten("users/{uid}", async (event) 
     return;
   }
 
-  // Only ever these fields — never email, accountStatus, or any
-  // moderation-only data, no matter what gets added to users/{uid} later.
-  await publicRef.set({
-    uid,
-    username: data.username ?? null,
-    displayName: data.displayName ?? "",
-    photoURL: data.photoURL ?? null,
-    role: data.role ?? "student",
-    organizationId: data.organizationId ?? null,
-    totalPoints: data.totalPoints ?? 0,
-    weeklyPoints: data.weeklyPoints ?? 0,
-    createdAt: data.createdAt ?? null,
-  });
+  // Identity only — never email, accountStatus, moderation data, or any
+  // academic measurement, no matter what gets added to users/{uid} later.
+  // The projection itself lives in publicProfileProjection.ts (Phase 112).
+  //
+  // This is a `set` WITHOUT merge, so it replaces the document: a profile
+  // still carrying the fields an older projection wrote loses them the
+  // next time its user document is touched, with no extra cleanup step.
+  await publicRef.set(buildPublicProfileProjection(uid, data));
 });

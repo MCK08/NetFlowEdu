@@ -21,11 +21,7 @@ function makeProfile(overrides: Partial<PublicProfile> = {}): PublicProfile {
     displayName: "User One",
     username: "userone",
     role: "student",
-    organizationId: null,
     photoURL: null,
-    totalPoints: 0,
-    weeklyPoints: 0,
-    createdAt: 0,
     ...overrides,
   };
 }

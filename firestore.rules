@@ -178,12 +178,14 @@ service cloud.firestore {
 
     // ---- publicProfiles/{uid} -------------------------------------------
     //
-    // Safe-field mirror of users/{uid} — never email/accountStatus/
-    // moderation data (see functions/src/profiles/syncPublicProfile.ts,
-    // the only writer, triggered on every users/{uid} write). Readable by
-    // any authenticated user; this is what makes cross-user username/
-    // avatar/points display possible without exposing the owner-only
-    // users/{uid} document.
+    // Identity-only mirror of users/{uid} — never email/accountStatus/
+    // moderation data, and since Phase 112 never any academic measurement
+    // either (see functions/src/profiles/publicProfileProjection.ts for the
+    // exact contract, written only by syncPublicProfile on a users/{uid}
+    // write). Readable by any authenticated user, which is precisely why
+    // it carries a username, an avatar and a role and nothing else: this
+    // document is what makes cross-user display possible without exposing
+    // the owner-only users/{uid} document — or anyone's progress.
 
     match /publicProfiles/{uid} {
       allow read: if isSignedIn();
@@ -680,13 +682,14 @@ service cloud.firestore {
     }
 
     // ---- leaderboards/{leaderboardId} -------------------------------------
-    // Written exclusively by Cloud Functions using the Admin SDK, which
-    // bypasses these rules entirely — clients never get write access.
-
-    match /leaderboards/{leaderboardId} {
-      allow read: if sameOrg(resource.data.organizationId);
-      allow write: if false;
-    }
+    //
+    // REMOVED in Phase 112. Nothing wrote this collection and nothing read
+    // it — no Function, no screen, no service — but the rule still granted
+    // every member of an organization read access to a ranking by score,
+    // which is the one social surface this product has decided it will not
+    // have (Phase 110). With no match block, these documents are denied by
+    // default, so a legacy document left in a project cannot be read.
+    // Do not reintroduce: ranking is not a missing feature here.
 
     // ---- answers/{answerId} --------------------------------------------
     // An answer is readable by anyone who can read its parent question.

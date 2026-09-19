@@ -151,9 +151,9 @@ commits that never recorded a phase number: kapsamı belirsiz (scope not recorde
 
 | Feature | Where | Phase | Status |
 |---|---|---|---|
-| `totalPoints` / `weeklyPoints` fields on the user + public profile | `functions/src/triggers/onUserCreate.ts`, `syncPublicProfile.ts` | 2 | Fields exist, initialized to 0 |
+| `totalPoints` / `weeklyPoints` on the **private** user document | `functions/src/triggers/onUserCreate.ts` | 2 | Fields exist, initialized to 0; removed from the public profile in Phase 112 |
 | Any Cloud Function that awards points | — | 9 | **Not started** — nothing anywhere writes these fields after init |
-| Leaderboards (weekly / monthly / class / school / org) | `src/features/leaderboards/` | 9 | **Not started** — `.gitkeep` placeholders only |
+| Leaderboards (weekly / monthly / class / school / org) | — | 9 | **Declined** — no ranking surface; scaffolding, rule and index removed in Phase 112 |
 
 ## Platform & shared UI
 

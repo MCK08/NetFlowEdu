@@ -69,20 +69,10 @@ export function ownProfileStats(params: {
   ];
 }
 
-// Public profile: points come straight off the publicProfiles document.
-// A question total is deliberately ABSENT — the only question data this
-// screen loads is a capped, non-paginated page, which cannot honestly be
-// labelled as a total.
-export function publicProfileStats(params: {
-  totalPoints: number | null | undefined;
-  weeklyPoints: number | null | undefined;
-  isLoading: boolean;
-}): ProfileStat[] {
-  const point = (value: number | null | undefined): ProfileStatState =>
-    params.isLoading ? { kind: "loading" } : statValue(value);
-
-  return [
-    { key: "totalPoints", label: "Puan", state: point(params.totalPoints) },
-    { key: "weeklyPoints", label: "Haftalık", state: point(params.weeklyPoints) },
-  ];
-}
+// Phase 112 — there is deliberately no publicProfileStats counterpart.
+//
+// Someone else's profile used to show "Puan" and "Haftalık" off the
+// publicProfiles document, which is a peer-visible score: exactly what
+// Phase 110 ruled out for class surfaces, and no more acceptable on a
+// profile. A peer sees identity and public questions; any number that
+// invites comparison belongs only to the person it describes.

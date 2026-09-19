@@ -1,17 +1,18 @@
 import { UserRole } from "./user";
 
-// Deliberately excludes email/accountStatus/moderation fields — see
-// functions/src/profiles/syncPublicProfile.ts (the only writer) and
-// firestore.rules `publicProfiles/{uid}` (readable by any authenticated
-// user, unlike users/{uid} which stays owner-only).
+// The client mirror of the projection in
+// functions/src/profiles/publicProfileProjection.ts (the only writer) —
+// publicProfiles/{uid} is readable by any authenticated user, unlike
+// users/{uid} which stays owner-only.
+//
+// Identity only, by design (Phase 112): no points, no rank, no study
+// statistics, nothing anyone could read as a score for someone else. A
+// user's own progress comes from their private UserProfile instead, never
+// from here.
 export interface PublicProfile {
   uid: string;
   username: string | null;
   displayName: string;
   photoURL: string | null;
   role: UserRole;
-  organizationId: string | null;
-  totalPoints: number;
-  weeklyPoints: number;
-  createdAt: number;
 }

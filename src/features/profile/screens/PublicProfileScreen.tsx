@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useState } from "react";
 import { FlatList, ListRenderItemInfo, Text, useWindowDimensions, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -25,10 +25,8 @@ import { Question } from "@/types/question";
 
 import { ProfileHero } from "../components/ProfileHero";
 import { ProfileLoadingSkeleton } from "../components/ProfileLoadingSkeleton";
-import { ProfileStatsRow } from "../components/ProfileStatsRow";
 import { usePublicProfile } from "../hooks/usePublicProfile";
 import { usePublicUserQuestions } from "../hooks/usePublicUserQuestions";
-import { publicProfileStats } from "../services/profileStats";
 
 const GRID_COLUMNS = 3;
 const GRID_GAP = 2;
@@ -49,16 +47,6 @@ export function PublicProfileScreen({ userId }: PublicProfileScreenProps) {
   // Derived from the real viewport rather than a percentage, so three
   // columns line up exactly on every screen width.
   const itemSize = (width - GRID_GAP * (GRID_COLUMNS - 1)) / GRID_COLUMNS;
-
-  const stats = useMemo(
-    () =>
-      publicProfileStats({
-        totalPoints: profile?.totalPoints,
-        weeklyPoints: profile?.weeklyPoints,
-        isLoading,
-      }),
-    [profile?.totalPoints, profile?.weeklyPoints, isLoading],
-  );
 
   const keyExtractor = useCallback((item: Question) => item.id, []);
 
@@ -135,7 +123,9 @@ export function PublicProfileScreen({ userId }: PublicProfileScreenProps) {
               usernameHandle={identity.usernameHandle}
               role={profile.role}
             >
-              <ProfileStatsRow stats={stats} />
+              {/* Phase 112 — no stats row here. A peer's profile shows who
+                  they are and what they shared publicly; it never shows a
+                  number that could be read as their score. */}
               {!isOwnProfile ? (
                 <FriendshipButton
                   ownUid={firebaseUser?.uid}

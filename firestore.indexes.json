@@ -60,15 +60,6 @@
       ]
     },
     {
-      "collectionGroup": "leaderboards",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "organizationId", "order": "ASCENDING" },
-        { "fieldPath": "period", "order": "ASCENDING" },
-        { "fieldPath": "score", "order": "DESCENDING" }
-      ]
-    },
-    {
       "collectionGroup": "classes",
       "queryScope": "COLLECTION",
       "fields": [

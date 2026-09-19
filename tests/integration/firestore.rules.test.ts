@@ -719,10 +719,8 @@ function publicProfileDoc(overrides: Partial<Record<string, unknown>> = {}) {
     displayName: "Student One",
     photoURL: null,
     role: "student",
-    organizationId: null,
-    totalPoints: 0,
-    weeklyPoints: 0,
-    createdAt: 1,
+    // Phase 112 — identity only. No points, no organizationId, no
+    // createdAt: see functions/src/profiles/publicProfileProjection.ts.
     ...overrides,
   };
 }
@@ -980,6 +978,23 @@ describe("firestore.rules — publicProfiles/{uid}", () => {
   it("denies any client write to publicProfiles — server-only via syncPublicProfile", async () => {
     const student = testEnv.authenticatedContext("student-1", { role: "student", organizationId: null });
     await assertFails(setDoc(doc(student.firestore(), "publicProfiles", "student-1"), publicProfileDoc()));
+  });
+
+  // Phase 112 — the leaderboards rule is gone, so a ranking document left
+  // over in a real project is denied by default rather than readable by
+  // everyone in its organization. Seeded with rules disabled precisely
+  // because nothing can write it any more.
+  it("denies reading a legacy leaderboards document, even to a same-org member", async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "leaderboards", "weekly-org-1"), {
+        organizationId: "org-1",
+        period: "weekly",
+        entries: [{ uid: "student-1", score: 4200 }],
+      });
+    });
+    const member = testEnv.authenticatedContext("student-2", { role: "student", organizationId: "org-1" });
+
+    await assertFails(getDoc(doc(member.firestore(), "leaderboards", "weekly-org-1")));
   });
 });
 

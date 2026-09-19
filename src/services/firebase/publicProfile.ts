@@ -1,15 +1,15 @@
-import { doc, DocumentData, getDoc, Timestamp } from "firebase/firestore";
+import { doc, DocumentData, getDoc } from "firebase/firestore";
 
 import { PublicProfile } from "@/types/publicProfile";
 import { db } from "./config";
 
-function toMillis(value: Timestamp | number | null | undefined): number {
-  if (value instanceof Timestamp) return value.toMillis();
-  return typeof value === "number" ? value : 0;
-}
-
 // Exported so userSearch.ts can map a batch query's docs with the exact
 // same logic as this file's own single-doc get — never duplicated.
+//
+// Reads only the identity fields the projection writes (Phase 112). A
+// document written before that phase may still physically contain
+// totalPoints/weeklyPoints until it is rewritten or cleaned up; ignoring
+// them here means no screen can render them in the meantime.
 export function toPublicProfile(uid: string, data: DocumentData): PublicProfile {
   return {
     uid,
@@ -17,10 +17,6 @@ export function toPublicProfile(uid: string, data: DocumentData): PublicProfile 
     displayName: data.displayName ?? "",
     photoURL: data.photoURL ?? null,
     role: data.role ?? "student",
-    organizationId: data.organizationId ?? null,
-    totalPoints: data.totalPoints ?? 0,
-    weeklyPoints: data.weeklyPoints ?? 0,
-    createdAt: toMillis(data.createdAt),
   };
 }
 
