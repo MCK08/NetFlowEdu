@@ -19,6 +19,10 @@ export const NOTIFICATION_TYPES = [
   "answer_review_rejected",
   "comment_review_approved",
   "comment_review_rejected",
+  // Phase 110 — a classmate's "Tebrik Et" on a question this student shared in
+  // their class. Server-verified same-class membership; one per sender per
+  // question; readable only by the recipient.
+  "class_kudos_received",
 ] as const;
 
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];

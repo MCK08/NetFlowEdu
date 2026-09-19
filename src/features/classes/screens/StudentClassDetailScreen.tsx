@@ -22,6 +22,7 @@ import { Question } from "@/types/question";
 
 import { ClassQuestionTile } from "../components/ClassQuestionTile";
 import { ImageSourcePicker } from "../components/ImageSourcePicker";
+import { ClassSocialSections } from "../components/ClassSocialSections";
 import { useClassQuestions } from "../hooks/useClassQuestions";
 import { useLeaveClass } from "../hooks/useLeaveClass";
 import { useStudentClassInfo } from "../hooks/useStudentClassInfo";
@@ -193,6 +194,12 @@ export function StudentClassDetailScreen({ classId }: StudentClassDetailScreenPr
                 <Text style={styles.shareButtonText}>Soru Paylaş</Text>
               </AnimatedPressable>
             </View>
+
+            {/* Phase 110 — the class, together: who is in it, what the class
+                did this week as a class, and what just happened in it. Between
+                the actions and the questions, so the room reads before its
+                content. No ranking, no counts beside anyone. */}
+            <ClassSocialSections classId={classId} questions={questions} />
 
             {questions.length > 0 ? (
               <AnimatedPressable

@@ -24,6 +24,12 @@ export const NOTIFICATION_TYPES = [
   "answer_review_rejected",
   "comment_review_approved",
   "comment_review_rejected",
+  // Phase 110 — a classmate's "Tebrik Et" on a question this student shared
+  // in their class. Produced only by sendClassKudos (functions/src/classes/),
+  // which verifies both people are CURRENT student members of that class.
+  // One per (recipient, sender, question) by the dedupe key, and readable
+  // only by the recipient — so it can never become a public count.
+  "class_kudos_received",
 ] as const;
 
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];

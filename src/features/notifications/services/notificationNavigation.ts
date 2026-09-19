@@ -78,6 +78,9 @@ export function resolveNotificationDestination(
       }
       return { kind: "unavailable", message: GENERIC_UNAVAILABLE };
     }
+    // Phase 110 — opens the question the student was congratulated for.
+    case "class_kudos_received":
+      return questionDestination(notification, role, notification.entityId || null);
     default: {
       const exhaustive: never = notification.type;
       throw new Error(`Unhandled notification type: ${String(exhaustive)}`);

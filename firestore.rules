@@ -408,12 +408,44 @@ service cloud.firestore {
     // Membership is exclusively Cloud-Function-managed (joinClassByCode /
     // leaveClass / removeClassMember) so a student can never add themselves
     // (or anyone else) directly, and memberCount on the parent class can
-    // never desync from the actual member docs. Read is limited to the
-    // member's own row or the owning teacher (member list) — students don't
-    // get a roster of their classmates in this phase, matching the spec's
-    // "view class members" being a teacher-only capability.
+    // never desync from the actual member docs.
+    //
+    // Phase 110 — "Sınıf Arkadaşların". A CURRENT member of a class may read
+    // the member rows of THAT class. What a row holds is fixed by its only
+    // writers (joinClassByCode / createClass): uid, role, joinedAt, and the
+    // displayName/username/photoURL snapshot taken at join time — the same
+    // public identity class chat, comments and questions already show. It
+    // holds no email, no study data and no progress, so opening it to
+    // classmates exposes nothing that membership did not already reveal.
+    //
+    // Scope stays one class: isClassMember is keyed on the {classId} in the
+    // path, so a member of class A gets nothing from class B, a removed member
+    // loses the roster the moment their own row is deleted, and the
+    // collection-group rule below still lets a caller list only their OWN
+    // membership rows across classes. isClassMember is evaluated before
+    // classData so a missing class never reaches a failed get().
     match /classes/{classId}/members/{memberUid} {
-      allow read: if isSignedIn() && (isOwner(memberUid) || classData(classId).teacherId == uid());
+      allow read: if isSignedIn()
+                  && (isOwner(memberUid)
+                      || isClassMember(classId)
+                      || classData(classId).teacherId == uid());
+      allow write: if false;
+    }
+
+    // ---- classes/{classId}/pulse/{weekKey} -------------------------------
+    // Phase 110 — "Bu Haftanın Sınıf İlerlemesi". A server-maintained weekly
+    // AGGREGATE of the class's own study activity (functions/src/classes/
+    // classPulse.ts, the only writer): counts only — no uid, no name, no
+    // per-student figure, and therefore nothing that can order students.
+    // Readable by the class's members and teacher; written by nobody else.
+    //
+    // Its bookkeeping (pulse/{weekKey}/participants/{uid} and
+    // pulse/{weekKey}/events/{eventId}, which make counting exactly-once and
+    // distinct) is matched by no rule here and so falls to the default deny
+    // at the bottom of this file: a client can never read who took part.
+    match /classes/{classId}/pulse/{weekKey} {
+      allow read: if isSignedIn()
+                  && (isClassMember(classId) || classData(classId).teacherId == uid());
       allow write: if false;
     }
 
@@ -923,6 +955,21 @@ service cloud.firestore {
     // mutation). Same owner-only-read / never-client-writable boundary as
     // users/{uid}/socialMeta/{docId} above.
     match /users/{uid}/notificationMeta/{docId} {
+      allow read: if isOwner(uid);
+      allow write: if false;
+    }
+
+    // ---- users/{uid}/sentKudos/{kudosId} ---------------------------------
+    // Phase 110 — the SENDER's own record of a "Tebrik Et", written only by
+    // the sendClassKudos callable (functions/src/classes/sendClassKudos.ts)
+    // in the same transaction as the recipient's notification. It exists so
+    // the sender's button can say "Tebrik edildi" after a reload.
+    //
+    // Owner-only on both sides: the sender reads their sent records here, the
+    // recipient reads their received ones as notifications. No one else can
+    // read either, so no public count of congratulations exists anywhere —
+    // there is nothing to rank or to be popular by.
+    match /users/{uid}/sentKudos/{kudosId} {
       allow read: if isOwner(uid);
       allow write: if false;
     }

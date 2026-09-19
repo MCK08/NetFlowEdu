@@ -82,8 +82,9 @@ export async function getStudentClasses(uid: string): Promise<ClassRoom[]> {
   return rooms.sort((a, b) => b.createdAt - a.createdAt);
 }
 
-// Teacher-only (see firestore.rules' classes/{classId}/members/{memberUid}
-// read rule) — the member list shown on the class detail screen.
+// The class's member rows (public identity snapshot only). Readable by the
+// owning teacher and — since Phase 110's "Sınıf Arkadaşların" — by the class's
+// own current members; see firestore.rules classes/{classId}/members.
 export async function getClassMembers(classId: string): Promise<ClassMember[]> {
   const snapshot = await getDocs(collection(db, "classes", classId, "members"));
   return snapshot.docs.map((d) => toClassMember(d.data())).sort((a, b) => a.joinedAt - b.joinedAt);

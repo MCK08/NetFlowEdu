@@ -29,6 +29,10 @@ export {
   leaveClass,
   removeClassMember,
   regenerateClassJoinCode,
+  // Phase 110 — "Tebrik Et" between classmates (server-verified membership,
+  // idempotent per sender and question) and the class's weekly aggregate.
+  sendClassKudos,
+  onStudyEventCreateUpdateClassPulse,
   // Phase 102 — the class teacher removes a student's message from the class
   // chat; firestore.rules keep every client update/delete denied.
   removeClassMessage,

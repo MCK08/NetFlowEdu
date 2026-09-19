@@ -100,6 +100,15 @@ export function presentNotification(notification: NotificationRecord): Notificat
         title: "Yorumun yayınlanmadı",
         secondaryText: "Yeni bir yorum gönderebilirsin.",
       };
+    // Phase 110 — a classmate's "Tebrik Et". Named, because both people are
+    // current members of the same class (verified by sendClassKudos) and
+    // classmates already see each other's names there. Never a count.
+    case "class_kudos_received":
+      return {
+        icon: "sparkles-outline",
+        title: `${actor} seni tebrik etti`,
+        secondaryText: "Sınıfta paylaştığın soru için",
+      };
     default: {
       const exhaustive: never = notification.type;
       throw new Error(`Unhandled notification type: ${String(exhaustive)}`);
