@@ -15,9 +15,9 @@ interface ActionTileProps {
   label: string;
   onPress: () => void;
   // Optional layout override, applied AFTER the base style so a caller can
-  // relax `minWidth` when the tile sits in an equal-width flex row (see
-  // TeacherQuickActions, where four tiles must fit the narrowest supported
-  // phone without overflowing). Omitting it renders exactly as before —
+  // relax `minWidth` when the tile sits in an equal-width flex row, where
+  // several tiles must fit the narrowest supported phone without
+  // overflowing (Profile's quick actions). Omitting it renders exactly as before —
   // this prop is additive and changes no existing caller's appearance.
   style?: StyleProp<ViewStyle>;
 }

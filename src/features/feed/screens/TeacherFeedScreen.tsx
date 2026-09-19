@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { AppBackButton } from "@components/ui/AppBackButton";
 import { BrandLockup } from "@components/ui/BrandMark";
 import { EmptyState as SharedEmptyState } from "@components/ui/EmptyState";
 import { LoadingSkeleton } from "@components/ui/LoadingSkeleton";
@@ -263,10 +264,15 @@ export function TeacherFeedScreen() {
   const header = (
     <View style={styles.header}>
       <View style={styles.headerRow}>
-        {/* Phase 52 — compact on purpose: the feed is content-first,
-            so the brand identifies the surface without competing
+        {/* Phase 111 — the feed is no longer a tab: Bugün opens it, so it
+            carries the shared way back (to Bugün when there is no history).
+            Phase 52 — the brand stays compact on purpose: the feed is
+            content-first, so it identifies the surface without competing
             with the first card. */}
-        <BrandLockup size="compact" />
+        <View style={styles.brandGroup}>
+          <AppBackButton fallbackHref="/(teacher)/(tabs)" />
+          <BrandLockup size="compact" />
+        </View>
         {/* The signals channel is not a question list, so a question filter
             would do nothing there — hidden rather than shown-and-inert. */}
         {!isSignalsChannel ? (
@@ -447,6 +453,13 @@ const styles = themedStyles(() => ({
   header: {
     gap: spacing.xxs,
     paddingTop: spacing.xs,
+  },
+  brandGroup: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xxs,
+    marginLeft: -spacing.sm,
+    flexShrink: 1,
   },
   headerRow: {
     flexDirection: "row",

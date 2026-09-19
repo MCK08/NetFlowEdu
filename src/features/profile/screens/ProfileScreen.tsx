@@ -86,10 +86,10 @@ export function ProfileScreen() {
   const guardedNavigate = useNavigationGuard();
 
   const isTeacher = profile?.role === "teacher";
-  // Friends is a full tab for teachers ((teacher)/(tabs)/friends) but a
-  // plain stack screen for students; Find Friends and Edit Profile are
-  // stack screens for both, one per role group.
-  const friendsHref = isTeacher ? "/(teacher)/(tabs)/friends" : "/(student)/friends";
+  // Friends, Find Friends and Edit Profile are plain stack screens for both
+  // roles, one per role group. (Phase 111 moved the teacher's Friends out of
+  // the tab bar — Bugün / Sınıflar / Aksiyonlar / Profil — to reach it here.)
+  const friendsHref = isTeacher ? "/(teacher)/friends" : "/(student)/friends";
   const findFriendsHref = isTeacher ? "/(teacher)/find-friends" : "/(student)/find-friends";
   const editProfileHref = isTeacher ? "/(teacher)/edit-profile" : ROUTES.editProfile;
 

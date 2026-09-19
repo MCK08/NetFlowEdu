@@ -59,10 +59,13 @@ describe("student tabs", () => {
 });
 
 describe("what did not change", () => {
-  it("teacher tabs and teacher routing are untouched", () => {
-    expect(tabTitles("app/(teacher)/(tabs)/_layout.tsx")).toEqual(["Akış", "Sınıflarım", "Arkadaşlar", "Profil"]);
+  it("teacher routing is untouched; the teacher tabs are Phase 111's four", () => {
+    // Phase 111 deliberately recomposed the teacher tabs around intent
+    // (pinned in full by teacherSimplification.test.ts). The landing ROUTE is
+    // unchanged — only what the index tab renders changed.
+    expect(tabTitles("app/(teacher)/(tabs)/_layout.tsx")).toEqual(["Bugün", "Sınıflar", "Aksiyonlar", "Profil"]);
     expect(resolveRouteForState({ isAuthenticated: true, isEmailVerified: true, role: "teacher" })).toBe(ROUTES.teacher);
-    expect(read("app/(teacher)/(tabs)/index.tsx")).toContain("TeacherFeedScreen");
+    expect(read("app/(teacher)/(tabs)/index.tsx")).toContain("TeacherTodayScreen");
   });
 
   it("signed-out and unverified users are still guarded", () => {

@@ -54,10 +54,9 @@ describe("action label text scaling", () => {
   });
 
   it("keeps the equal-width tile rows that make shrinking necessary", () => {
-    for (const file of [
-      "src/features/profile/screens/ProfileScreen.tsx",
-      "src/features/teacher/components/TeacherQuickActions.tsx",
-    ]) {
+    // Phase 111 removed the teacher dashboard's four-tile row along with the
+    // dashboard itself (Bugün replaced it); Profile's row is the one left.
+    for (const file of ["src/features/profile/screens/ProfileScreen.tsx"]) {
       const source = read(file);
       expect(source).toContain("<ActionTile");
       expect(source).toMatch(/flex: 1,\s*minWidth: 0,/);

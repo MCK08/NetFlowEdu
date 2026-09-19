@@ -1,29 +1,17 @@
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { FlatList, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { EmptyState } from "@components/ui/EmptyState";
 import { LoadingSkeleton } from "@components/ui/LoadingSkeleton";
 import { PrimaryButton } from "@components/ui/PrimaryButton";
-import { SectionHeader } from "@components/ui/SectionHeader";
 import { useAuth } from "@features/authentication";
-import { useSignOut } from "@features/authentication/hooks/useSignOut";
-import {
-  deriveTeacherDashboardStats,
-  resolveGreeting,
-  TeacherDashboardHeader,
-  TeacherQuickActions,
-  TeacherStatsCard,
-} from "@features/teacher";
-import { useNavigationGuard } from "@hooks/useNavigationGuard";
 import { colors } from "@theme/colors";
 import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
 import { themedStyles } from "@theme/themeRuntime";
-import { resolvePublicIdentity } from "@utils/publicIdentity";
 
 import { ClassCard } from "../components/ClassCard";
 import { CreateClassModal } from "../components/CreateClassModal";
@@ -52,24 +40,21 @@ function Separator() {
   return <View style={styles.separator} />;
 }
 
+// Phase 111 — "Sınıflar": every class, and a way to add one.
+//
+// This screen used to be the teacher's home, so it carried the greeting, a
+// three-number stats card and four shortcut tiles. Bugün is the home now: the
+// greeting moved there, the stats were counts of the list right below them,
+// and the tiles pointed at places that are now a tab (Profil) or live inside it
+// (Arkadaşlar, Arkadaş Bul). What remains is the list itself — each class with
+// its name, members and status (ClassCard) — and one action, "Yeni Sınıf".
+// No per-class metric is added: one would need a read per class.
 export function TeacherClassesScreen() {
-  const { firebaseUser, profile } = useAuth();
-  const { signOut, isSigningOut } = useSignOut();
+  const { firebaseUser } = useAuth();
   const { classes, isLoading, isCreating, errorMessage, createClass, refresh } = useTeacherClasses(
     firebaseUser?.uid,
   );
   const [isModalOpen, setIsModalOpen] = useState(false);
-  // expo-router's push() does not deduplicate, so an unguarded double-tap
-  // on a quick action stacks the same screen twice — same primitive the
-  // student feed and class screens already use.
-  const guardedNavigate = useNavigationGuard();
-
-  // Recomputed only when the class list identity actually changes, not on
-  // every render (e.g. while the create-class modal's own state updates).
-  const stats = useMemo(() => deriveTeacherDashboardStats(classes), [classes]);
-  const greeting = useMemo(() => resolveGreeting(new Date()), []);
-
-  const identity = resolvePublicIdentity(profile);
 
   // The hook reuses one `errorMessage` for both "the class list failed to
   // load" and "createClass failed". The modal already renders the latter
@@ -93,34 +78,13 @@ export function TeacherClassesScreen() {
         ItemSeparatorComponent={Separator}
         showsVerticalScrollIndicator={false}
         ListHeaderComponent={
-          <View>
-            <TeacherDashboardHeader
-              greeting={greeting}
-              displayName={identity.primaryName}
-              photoURL={profile?.photoURL ?? null}
-              onSignOut={signOut}
-              isSigningOut={isSigningOut}
-              notificationUid={firebaseUser?.uid}
-            />
-
-            <TeacherStatsCard stats={stats} isLoading={isLoading} />
-
-            <View style={styles.quickActions}>
-              <TeacherQuickActions
-                onCreateClass={() => setIsModalOpen(true)}
-                onOpenFriends={() =>
-                  guardedNavigate("friends", () => router.push("/(teacher)/(tabs)/friends"))
-                }
-                onFindFriends={() =>
-                  guardedNavigate("find-friends", () => router.push("/(teacher)/find-friends"))
-                }
-                onOpenProfile={() =>
-                  guardedNavigate("profile", () => router.push("/(teacher)/(tabs)/profile"))
-                }
-              />
-            </View>
-
-            <SectionHeader title="Sınıflarım" />
+          <View style={styles.header}>
+            <Text style={styles.title} accessibilityRole="header">
+              Sınıflar
+            </Text>
+            {classes.length > 0 ? (
+              <PrimaryButton label="Yeni Sınıf" onPress={() => setIsModalOpen(true)} variant="secondary" />
+            ) : null}
           </View>
         }
         ListEmptyComponent={
@@ -165,9 +129,14 @@ const styles = themedStyles(() => ({
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.xl,
   },
-  quickActions: {
-    marginTop: spacing.md,
-    marginBottom: spacing.xs,
+  header: {
+    gap: spacing.md,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.lg,
+  },
+  title: {
+    ...typography.screenTitle,
+    color: colors.textPrimary,
   },
   separator: {
     height: spacing.sm,

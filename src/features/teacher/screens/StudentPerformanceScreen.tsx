@@ -224,13 +224,11 @@ export function StudentPerformanceScreen({ classId, studentId, studentName }: St
               topics, and the record. Tight inside a group, a step wider between
               groups; no card added, removed, renamed or reordered. */}
           <View style={styles.group}>
-            <Card style={styles.summaryCard}>
-              <Text style={styles.sectionLabel}>Genel başarı</Text>
-              <Text style={styles.bigValue}>
-                {snapshot.successRatePercent === null ? "—" : `%${snapshot.successRatePercent}`}
-              </Text>
-            </Card>
-
+            {/* Phase 111 — WHY this student is here comes first. A teacher
+                arrives from an attention row asking "what is going on"; the
+                evidence-based note answers that, and the overall rate is
+                context for it rather than the headline above it. Same two
+                cards, same group, same styles — only their order changed. */}
             {attention ? (
               <Card style={styles.attentionCard}>
                 <Text style={styles.sectionLabel}>Öğretmen notu</Text>
@@ -241,6 +239,13 @@ export function StudentPerformanceScreen({ classId, studentId, studentName }: St
                 ))}
               </Card>
             ) : null}
+
+            <Card style={styles.summaryCard}>
+              <Text style={styles.sectionLabel}>Genel başarı</Text>
+              <Text style={styles.bigValue}>
+                {snapshot.successRatePercent === null ? "—" : `%${snapshot.successRatePercent}`}
+              </Text>
+            </Card>
           </View>
 
           <View style={styles.group}>

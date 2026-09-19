@@ -37,9 +37,13 @@ const ROOT_ROUTES = new Set([
   // every other analytics/* screen and is audited with them below.
   "app/(student)/(tabs)/classes.tsx",
   "app/(student)/(tabs)/profile.tsx",
+  // Phase 111 — the teacher's four tabs: Bugün (index), Sınıflar, Aksiyonlar,
+  // Profil. Friends left the bar for a pushed route (app/(teacher)/friends.tsx)
+  // and the discovery feed became one (app/(teacher)/feed.tsx); both reach
+  // AppBackButton and are audited as nested screens below.
   "app/(teacher)/(tabs)/index.tsx",
   "app/(teacher)/(tabs)/classes.tsx",
-  "app/(teacher)/(tabs)/friends.tsx",
+  "app/(teacher)/(tabs)/actions.tsx",
   "app/(teacher)/(tabs)/profile.tsx",
 ]);
 

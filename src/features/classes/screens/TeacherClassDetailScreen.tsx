@@ -8,6 +8,8 @@ import { AppBackButton } from "@components/ui/AppBackButton";
 import { EmptyState } from "@components/ui/EmptyState";
 import { useAuth } from "@features/authentication";
 import { QuestionGridItem } from "@features/profile/components/QuestionGridItem";
+import { ClassAttentionPanel } from "@features/teacher/components/ClassAttentionPanel";
+import { useClassAttention } from "@features/teacher/hooks/useClassAttention";
 import { useNavigationGuard } from "@hooks/useNavigationGuard";
 import { colors } from "@theme/colors";
 import { spacing } from "@theme/spacing";
@@ -32,6 +34,11 @@ export function TeacherClassDetailScreen({ classId }: TeacherClassDetailScreenPr
   const { classRoom, members, isLoading, isMutating, errorMessage, removeMember, regenerateCode } =
     useClassDetail(classId);
   const { questions, isLoadingMore, hasMore, loadMore, prepend } = useClassQuestions(classId);
+  // Phase 111 — this class's attention list, on the class page itself, so a
+  // teacher sees who needs them without first choosing a lens. The SAME
+  // composition the Action Center route runs (useClassAttention), for THIS
+  // class only.
+  const attention = useClassAttention(classId);
   const { isUploading, capture } = useClassUpload({
     uid: firebaseUser?.uid,
     organizationId: classRoom?.organizationId ?? null,
@@ -168,6 +175,12 @@ export function TeacherClassDetailScreen({ classId }: TeacherClassDetailScreenPr
               <Ionicons name="chatbubble-outline" size={18} color={colors.textInverse} accessibilityElementsHidden />
               <Text style={styles.chatButtonText}>Sınıf Sohbeti</Text>
             </AnimatedPressable>
+
+            {/* Phase 111 — who needs attention in this class, before any lens.
+                The Action Center's own first five, rows and wording — "Tümünü
+                Gör" opens the complete list, the same route the button below
+                opens. Nothing counted is added to the class page itself. */}
+            <ClassAttentionPanel classId={classId} attention={attention} mode="summary" onViewAll={openActionCenter} />
 
             {/* Three ways of looking at the same class: what needs attention
                 today, the numbers, and the story over them. */}
