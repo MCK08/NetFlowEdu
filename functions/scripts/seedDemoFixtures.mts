@@ -238,7 +238,7 @@ async function seedQuestions(): Promise<void> {
 // 3 — AUTH USERS + users/{uid} PROFILES + CUSTOM CLAIMS.
 //
 // Fields normally written by functions/src/triggers/onUserCreate.ts
-// (role/organizationId/totalPoints/weeklyPoints/accountStatus/createdAt)
+// (role/organizationId/accountStatus/createdAt)
 // and functions/src/onboarding/completeOnboarding.ts (onboardingStatus)
 // are reproduced here directly, since the Functions emulator's triggers
 // are not assumed to be running when this script is used standalone.
@@ -265,8 +265,6 @@ async function seedIdentities(): Promise<void> {
     role: "teacher",
     organizationId: ORG_ID,
     photoURL: null,
-    totalPoints: 0,
-    weeklyPoints: 0,
     accountStatus: "active",
     emailVerified: true,
     onboardingStatus: "complete",
@@ -286,8 +284,6 @@ async function seedIdentities(): Promise<void> {
       role: "student",
       organizationId: ORG_ID,
       photoURL: null,
-      totalPoints: 0,
-      weeklyPoints: 0,
       accountStatus: "active",
       emailVerified: true,
       onboardingStatus: "complete",

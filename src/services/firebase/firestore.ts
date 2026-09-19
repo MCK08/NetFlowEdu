@@ -27,8 +27,6 @@ function toUserProfile(uid: string, data: DocumentData): UserProfile {
     role: data.role ?? "student",
     organizationId: data.organizationId ?? null,
     photoURL: data.photoURL ?? null,
-    totalPoints: data.totalPoints ?? 0,
-    weeklyPoints: data.weeklyPoints ?? 0,
     accountStatus: data.accountStatus ?? "active",
     emailVerified: data.emailVerified ?? false,
     onboardingStatus: resolveOnboardingStatus(data.onboardingStatus),

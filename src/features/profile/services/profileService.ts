@@ -8,7 +8,7 @@ export interface EditProfileInput {
 }
 
 // Only displayName/photoURL are ever touched here — matches firestore.rules
-// exactly (role/points/organization/email/status stay server-managed).
+// exactly (role/organization/email/status stay server-managed).
 export async function saveProfileEdits(input: EditProfileInput): Promise<void> {
   const photoURL = input.newPhotoLocalUri
     ? await uploadAvatarImage(input.uid, input.newPhotoLocalUri)

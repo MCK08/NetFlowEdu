@@ -28,9 +28,9 @@ export function formatStatValue(state: ProfileStatState): string {
   return UNAVAILABLE_STAT_TEXT;
 }
 
-// Compact thousands so a four-digit score cannot break a three-across stat
-// row on a small phone. Mirrors the feed's own count abbreviation ("B" is
-// Turkish "bin").
+// Compact thousands so a four-digit count cannot break the stat row on a
+// small phone. Mirrors the feed's own count abbreviation ("B" is Turkish
+// "bin").
 export function formatCount(value: number): string {
   if (!Number.isFinite(value) || value < 0) return UNAVAILABLE_STAT_TEXT;
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
@@ -38,12 +38,15 @@ export function formatCount(value: number): string {
   return String(value);
 }
 
-export function statValue(value: number | null | undefined): ProfileStatState {
-  return typeof value === "number" ? { kind: "value", value } : { kind: "unavailable" };
-}
-
-// Own profile: friendCount and the two request counters all come from the
-// same live socialMeta document, so they share one status.
+// Own profile: both counters come from the same live socialMeta document,
+// so they share one status.
+//
+// Phase 113 — a "Puan" stat used to sit beside them, off the user document's
+// totalPoints. Nothing in the product ever awarded a point, so it read 0 for
+// every user forever: a number that looked like progress and measured
+// nothing. It is gone rather than replaced — real progress is the study
+// outcomes, the review schedule, the unresolved archive and the personal
+// analytics this screen already links to, not a score on a profile header.
 //
 // Phase 103 — a status rather than a boolean: "loading" until the listener
 // answers, the real value once it has (a user with no summary document has
@@ -52,7 +55,6 @@ export function statValue(value: number | null | undefined): ProfileStatState {
 export function ownProfileStats(params: {
   friendCount: number;
   incomingRequestCount: number;
-  totalPoints: number | null | undefined;
   socialMetaStatus: "loading" | "ready" | "error";
 }): ProfileStat[] {
   const social = (value: number): ProfileStatState =>
@@ -65,7 +67,6 @@ export function ownProfileStats(params: {
   return [
     { key: "friends", label: "Arkadaş", state: social(params.friendCount) },
     { key: "requests", label: "Gelen İstek", state: social(params.incomingRequestCount) },
-    { key: "points", label: "Puan", state: statValue(params.totalPoints) },
   ];
 }
 

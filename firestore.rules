@@ -112,8 +112,8 @@ service cloud.firestore {
 
     // ---- users/{userId} -----------------------------------------------
     //
-    // Server-managed fields — role, organizationId, totalPoints,
-    // weeklyPoints, accountStatus, createdAt, uid, email — are set only by
+    // Server-managed fields — role, organizationId, accountStatus,
+    // createdAt, uid, email — are set only by
     // Cloud Functions (Admin SDK bypasses these rules entirely). The owner
     // may read their whole profile (nothing here needs to be hidden from
     // them) but may only ever write displayName / photoURL / updatedAt.
@@ -139,8 +139,29 @@ service cloud.firestore {
                     && request.resource.data.email == resource.data.email
                     && request.resource.data.role == resource.data.role
                     && request.resource.data.organizationId == resource.data.organizationId
-                    && request.resource.data.totalPoints == resource.data.totalPoints
-                    && request.resource.data.weeklyPoints == resource.data.weeklyPoints
+                    // PHASE 113 — totalPoints/weeklyPoints are a removed
+                    // system, not a live one: nothing ever awarded them,
+                    // onUserCreate no longer writes them, and
+                    // functions/scripts/cleanupVestigialPoints.mts deletes
+                    // them from the documents that still carry them.
+                    //
+                    // These stay, in `.get(key, default)` form, for exactly
+                    // the reason onboardingStatus below does: a plain `==`
+                    // on a map key the document does NOT have throws
+                    // ("Property totalPoints is undefined"), which denies
+                    // the whole update — verified against the emulator, on
+                    // a profile created without the fields. Written the
+                    // naive way, this line alone would stop every new
+                    // account from editing its own displayName.
+                    //
+                    // So they hold either way: present-and-equal on a
+                    // legacy document (a client still cannot change a
+                    // leftover value), absent-and-still-absent afterwards
+                    // (a client cannot reintroduce one either).
+                    && request.resource.data.get('totalPoints', null)
+                       == resource.data.get('totalPoints', null)
+                    && request.resource.data.get('weeklyPoints', null)
+                       == resource.data.get('weeklyPoints', null)
                     && request.resource.data.accountStatus == resource.data.accountStatus
                     && request.resource.data.createdAt == resource.data.createdAt
                     // onboardingStatus/requestedRole are exclusively

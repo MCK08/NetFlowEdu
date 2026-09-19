@@ -6,7 +6,6 @@ import {
   formatCount,
   formatStatValue,
   ownProfileStats,
-  statValue,
   UNAVAILABLE_STAT_TEXT,
 } from "@features/profile/services/profileStats";
 
@@ -45,28 +44,18 @@ describe("formatStatValue — loading is never rendered as zero", () => {
   });
 });
 
-describe("statValue", () => {
-  it("treats a real number, including zero, as a value", () => {
-    expect(statValue(0)).toEqual({ kind: "value", value: 0 });
-    expect(statValue(42)).toEqual({ kind: "value", value: 42 });
-  });
-
-  it("treats null and undefined as unavailable rather than zero", () => {
-    expect(statValue(null)).toEqual({ kind: "unavailable" });
-    expect(statValue(undefined)).toEqual({ kind: "unavailable" });
-  });
-});
-
 describe("ownProfileStats", () => {
   const base = {
     friendCount: 3,
     incomingRequestCount: 2,
-    totalPoints: 120,
     socialMetaStatus: "ready" as const,
   };
 
-  it("exposes friends, incoming requests and points", () => {
-    expect(ownProfileStats(base).map((s) => s.key)).toEqual(["friends", "requests", "points"]);
+  // Phase 113 — "points" used to be third. It is gone, not replaced: no
+  // score, no XP, no level took its place.
+  it("exposes friends and incoming requests, and nothing resembling a score", () => {
+    expect(ownProfileStats(base).map((s) => s.key)).toEqual(["friends", "requests"]);
+    expect(ownProfileStats(base).map((s) => s.label)).toEqual(["Arkadaş", "Gelen İstek"]);
   });
 
   it("reports real values once socialMeta has loaded", () => {
@@ -104,13 +93,9 @@ describe("ownProfileStats", () => {
     expect(stats[0]?.state).toEqual({ kind: "unavailable" });
     expect(stats[1]?.state).toEqual({ kind: "unavailable" });
     expect(formatStatValue(stats[0]!.state)).toBe(UNAVAILABLE_STAT_TEXT);
-    // Points do not come from socialMeta and are unaffected.
-    expect(stats[2]?.state).toEqual({ kind: "value", value: 120 });
-  });
-
-  it("marks points unavailable when the profile has no points field", () => {
-    const stats = ownProfileStats({ ...base, totalPoints: undefined });
-    expect(stats[2]?.state).toEqual({ kind: "unavailable" });
+    // Every stat on this row shares the socialMeta status now, so there is
+    // no third one left to be unaffected.
+    expect(stats).toHaveLength(2);
   });
 
   it("gives every stat a non-empty Turkish label", () => {
@@ -131,14 +116,10 @@ describe("no peer-visible statistics exist", () => {
     expect(Object.keys(profileStatsModule)).not.toContain("publicProfileStats");
   });
 
-  it("keeps the owner's own points, which are private self-progress", () => {
-    const stats = ownProfileStats({
-      friendCount: 3,
-      incomingRequestCount: 0,
-      totalPoints: 120,
-      socialMetaStatus: "ready",
-    });
-    expect(stats.map((s) => s.key)).toContain("points");
+  it("has no points stat left on the owner's profile either (Phase 113)", () => {
+    const stats = ownProfileStats({ friendCount: 3, incomingRequestCount: 0, socialMetaStatus: "ready" });
+    expect(stats.map((s) => s.key)).not.toContain("points");
+    expect(stats.map((s) => s.label)).not.toContain("Puan");
   });
 
   it("labels no stat as a weekly score anywhere", () => {

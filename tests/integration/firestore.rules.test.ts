@@ -9,6 +9,7 @@ import {
   addDoc,
   collection,
   deleteDoc,
+  deleteField,
   doc,
   getDoc,
   getDocs,
@@ -33,14 +34,19 @@ function activeUserDoc(overrides: Partial<Record<string, unknown>> = {}) {
     role: "student",
     organizationId: null,
     photoURL: null,
-    totalPoints: 0,
-    weeklyPoints: 0,
     accountStatus: "active",
     emailVerified: true,
     createdAt: 1,
     updatedAt: 1,
     ...overrides,
   };
+}
+
+/** A users/{uid} exactly as it existed before Phase 113 removed the points
+ *  system — what every production document still looks like until the
+ *  cleanup migration runs. */
+function legacyPointsUserDoc(overrides: Partial<Record<string, unknown>> = {}) {
+  return activeUserDoc({ totalPoints: 0, weeklyPoints: 0, ...overrides });
 }
 
 describe("firestore.rules — users/{uid}", () => {
@@ -137,8 +143,21 @@ describe("firestore.rules — users/{uid}", () => {
     );
   });
 
-  // 7. Student cannot update totalPoints.
-  it("denies a student updating their own totalPoints", async () => {
+  // 7. A client cannot grant itself points — on a legacy document that
+  // still has the field, or on a Phase 113 one that does not (where the
+  // update would be *introducing* it).
+  it("denies a student updating totalPoints on a legacy document", async () => {
+    await seedUser("student-1", legacyPointsUserDoc());
+    const student = testEnv.authenticatedContext("student-1", {
+      role: "student",
+      organizationId: null,
+    });
+    await assertFails(
+      updateDoc(doc(student.firestore(), "users", "student-1"), { totalPoints: 999 }),
+    );
+  });
+
+  it("denies a student reintroducing totalPoints on a cleaned document", async () => {
     await seedUser("student-1", activeUserDoc());
     const student = testEnv.authenticatedContext("student-1", {
       role: "student",
@@ -149,15 +168,74 @@ describe("firestore.rules — users/{uid}", () => {
     );
   });
 
-  // 8. Student cannot update weeklyPoints.
-  it("denies a student updating their own weeklyPoints", async () => {
-    await seedUser("student-1", activeUserDoc());
+  // 8. Same for weeklyPoints.
+  it("denies a student updating weeklyPoints on a legacy document", async () => {
+    await seedUser("student-1", legacyPointsUserDoc());
     const student = testEnv.authenticatedContext("student-1", {
       role: "student",
       organizationId: null,
     });
     await assertFails(
       updateDoc(doc(student.firestore(), "users", "student-1"), { weeklyPoints: 999 }),
+    );
+  });
+
+  // Also the half-migrated shape: totalPoints present, weeklyPoints already gone.
+  it("denies a student reintroducing weeklyPoints on a cleaned document", async () => {
+    await seedUser("student-1", activeUserDoc({ totalPoints: 0 }));
+    const student = testEnv.authenticatedContext("student-1", {
+      role: "student",
+      organizationId: null,
+    });
+    await assertFails(
+      updateDoc(doc(student.firestore(), "users", "student-1"), { weeklyPoints: 999 }),
+    );
+  });
+
+  // PHASE 113 — the regression this phase could most easily have shipped.
+  //
+  // The old rule compared `request.resource.data.totalPoints ==
+  // resource.data.totalPoints`. On a document WITHOUT the key that
+  // comparison throws ("Property totalPoints is undefined"), denying the
+  // whole update — so once onUserCreate stopped writing the field, every
+  // new account would silently lose the ability to edit its own name.
+  // Verified against the emulator before the rule was rewritten.
+  it("lets the owner edit displayName on a document with no points fields at all", async () => {
+    await seedUser("student-1", activeUserDoc());
+    const student = testEnv.authenticatedContext("student-1", {
+      role: "student",
+      organizationId: null,
+    });
+    await assertSucceeds(
+      updateDoc(doc(student.firestore(), "users", "student-1"), {
+        displayName: "Yeni Ad",
+        updatedAt: 2,
+      }),
+    );
+  });
+
+  it("still lets the owner edit displayName on a legacy document that has them", async () => {
+    await seedUser("student-1", legacyPointsUserDoc());
+    const student = testEnv.authenticatedContext("student-1", {
+      role: "student",
+      organizationId: null,
+    });
+    await assertSucceeds(
+      updateDoc(doc(student.firestore(), "users", "student-1"), {
+        displayName: "Yeni Ad",
+        updatedAt: 2,
+      }),
+    );
+  });
+
+  it("denies an owner DELETING a legacy points field by hand", async () => {
+    await seedUser("student-1", legacyPointsUserDoc());
+    const student = testEnv.authenticatedContext("student-1", {
+      role: "student",
+      organizationId: null,
+    });
+    await assertFails(
+      updateDoc(doc(student.firestore(), "users", "student-1"), { totalPoints: deleteField() }),
     );
   });
 
@@ -286,7 +364,7 @@ describe("firestore.rules — users/{uid}", () => {
     await assertFails(
       setDoc(
         doc(student.firestore(), "users", "student-1"),
-        activeUserDoc({ totalPoints: 500 }),
+        legacyPointsUserDoc({ totalPoints: 500 }),
       ),
     );
   });

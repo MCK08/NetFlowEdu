@@ -69,10 +69,10 @@ Friend graph: ✅ — `functions/src/friends/` (`sendFriendRequest`, `respondToF
 
 Friends solving each other's questions and uploading solutions: ❌ — no solutions feature exists in the tree.
 
-## Phase 9 — Leaderboards ❌ Declined (Phase 110, enforced in Phase 112)
-Never built, and now deliberately not going to be: Phase 110 ruled out class leaderboards, popularity ranking and peer performance comparison, because resurfacing a student's own failures is the product thesis and social comparison works against it. Phase 112 removed what was left of the idea — the empty `src/features/leaderboards/` scaffolding, the unused `leaderboards/*` rule and index, and the `totalPoints`/`weeklyPoints` copy in the peer-readable public profile.
+## Phase 9 — Leaderboards ❌ Declined (Phase 110, enforced in Phases 112–113)
+Never built, and now deliberately not going to be: Phase 110 ruled out class leaderboards, popularity ranking and peer performance comparison, because resurfacing a student's own failures is the product thesis and social comparison works against it. Phase 112 removed what was left of the idea — the empty `src/features/leaderboards/` scaffolding, the unused `leaderboards/*` rule and index, and the `totalPoints`/`weeklyPoints` copy in the peer-readable public profile. Phase 113 removed the points system itself: the fields, their initialization, and the "Puan" stat on a user's own profile. **Nothing ever awarded a point**, so the number read `0` for every account for the product's whole life.
 
-`totalPoints`/`weeklyPoints` still exist on the private `users/{uid}` document, initialized to `0` by `onUserCreate`, and **nothing anywhere awards them**.
+Progress is real educational evidence instead — study outcomes, the review schedule, learning state, the unresolved archive, the daily plan, the concept map and personal analytics. There is deliberately no single synthetic progress score, and no XP/level/badge/streak replacement.
 
 (See the numbering caveat above: the "Phase 9.1" referenced by `cc71856` is class-question posting, not this.)
 

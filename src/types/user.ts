@@ -4,8 +4,8 @@ export type UserRole = "student" | "teacher" | "organization_admin" | "platform_
 
 export type AccountStatus = "active" | "suspended";
 
-// Server-managed fields (role, organizationId, totalPoints, weeklyPoints,
-// accountStatus, createdAt, username) are written only by Cloud Functions —
+// Server-managed fields (role, organizationId, accountStatus, createdAt,
+// username) are written only by Cloud Functions —
 // see firestore.rules, functions/src/triggers/onUserCreate.ts, and
 // functions/src/users/setUsername.ts. The client may only ever write
 // displayName / photoURL / updatedAt on its own document. `username` is
@@ -19,8 +19,6 @@ export interface UserProfile {
   role: UserRole;
   organizationId: string | null;
   photoURL: string | null;
-  totalPoints: number;
-  weeklyPoints: number;
   accountStatus: AccountStatus;
   emailVerified: boolean;
   // Stage-2 onboarding state (functions/src/onboarding/completeOnboarding.ts).

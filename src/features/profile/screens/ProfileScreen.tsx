@@ -100,13 +100,12 @@ export function ProfileScreen() {
       ownProfileStats({
         friendCount: socialMeta.friendCount,
         incomingRequestCount: socialMeta.incomingRequestCount,
-        totalPoints: profile?.totalPoints,
         // Phase 103 — skeletons only until the listener answers. updatedAt
         // was used as that signal, but it is also 0 for every user with no
         // friendship activity, so their counters never left the skeleton.
         socialMetaStatus: socialMeta.status,
       }),
-    [socialMeta, profile?.totalPoints],
+    [socialMeta],
   );
 
   const keyExtractor = useCallback((item: Question) => item.id, []);

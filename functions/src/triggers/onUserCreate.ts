@@ -15,7 +15,7 @@ import { logger } from "firebase-functions/v2";
 // Idempotency: Cloud Functions may retry a trigger invocation on failure.
 // We only ever create the profile if it doesn't already exist, so a retry
 // (or, in principle, a second invocation for the same uid) can never
-// overwrite a role/points an admin has since promoted.
+// overwrite a role an admin has since promoted.
 export const onUserCreate = functionsV1.auth.user().onCreate(async (user) => {
   const db = getFirestore();
   const userRef = db.collection("users").doc(user.uid);
@@ -37,8 +37,6 @@ export const onUserCreate = functionsV1.auth.user().onCreate(async (user) => {
     role: "student",
     organizationId: null,
     photoURL: user.photoURL ?? null,
-    totalPoints: 0,
-    weeklyPoints: 0,
     accountStatus: "active",
     emailVerified: user.emailVerified,
     // Explicit server-created onboarding state — see

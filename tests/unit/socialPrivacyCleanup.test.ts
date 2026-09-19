@@ -135,11 +135,12 @@ describe("§3 the client reads the same contract", () => {
 });
 
 describe("§8 peer-visible surfaces show no measurement", () => {
-  // profileStats.ts is deliberately absent: it still builds the OWNER's own
-  // "Puan", which is private self-progress. The test below pins that its
-  // peer-facing counterpart no longer exists at all.
+  // profileStats.ts joined this list in Phase 113: it used to be excluded
+  // because it still built the OWNER's own "Puan" from private data, and
+  // that stat is now gone entirely (nothing ever awarded a point).
   for (const file of [
     "src/features/profile/screens/PublicProfileScreen.tsx",
+    "src/features/profile/services/profileStats.ts",
     "src/features/friends/components/FriendRow.tsx",
     "src/features/friends/screens/FindFriendsScreen.tsx",
     "src/features/friends/screens/FriendsScreen.tsx",
@@ -178,11 +179,15 @@ describe("§7 the leaderboard surface is gone", () => {
 });
 
 describe("§9/§10/§11 nothing else moved", () => {
-  it("leaves the owner's private profile fields in place", () => {
-    // Removing these from users/{uid} would delete real progress data; this
-    // phase changes what is PUBLISHED, not what is stored.
-    expect(read("src/types/user.ts")).toMatch(/totalPoints/);
-    expect(read("firestore.rules")).toMatch(/request\.resource\.data\.totalPoints == resource\.data\.totalPoints/);
+  // Phase 112 pinned totalPoints/weeklyPoints as private-but-present: this
+  // phase only changed what was PUBLISHED. Phase 113 then removed the
+  // system outright (nothing ever awarded a point), so what survives here
+  // is the guarantee that a client cannot write the fields — see
+  // tests/unit/vestigialPointsRemoval.test.ts for the removal itself.
+  it("still refuses to let a client write the removed points fields", () => {
+    const rules = read("firestore.rules");
+    expect(rules).toMatch(/request\.resource\.data\.get\('totalPoints', null\)/);
+    expect(rules).toMatch(/hasOnly\(\['displayName', 'photoURL', 'updatedAt'\]\)/);
   });
 
   it("keeps publicProfiles server-written and readable only to signed-in users", () => {

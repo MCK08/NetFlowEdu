@@ -20,7 +20,7 @@ Firestore/Storage rules check `request.auth.token.role` and `request.auth.token.
 - Students cannot create their own profile document at all (`allow create: if false`) — only the `onUserCreate` Cloud Function, via the Admin SDK, creates it. A client `setDoc`/`create` on `users/{uid}` is always denied, even with otherwise-valid data.
 - Students cannot read private questions belonging to another user.
 - Users cannot read data belonging to a different organization.
-- Points/scores are written **only** by Cloud Functions: Firestore rules reject any `users/{uid}` update that changes `totalPoints` or `weeklyPoints`. Those fields are private to their owner — Phase 112 removed them from the peer-readable `publicProfiles/{uid}` projection, so no user can read another user's score at all.
+- There is no points or score system at all. Phase 112 removed `totalPoints`/`weeklyPoints` from the peer-readable `publicProfiles/{uid}` projection; Phase 113 removed the fields themselves, since nothing ever awarded one. The `users/{uid}` write whitelist still rejects a client that tries to (re)introduce either field, using `.get(key, null)` comparisons that hold whether or not a legacy document still carries them.
 - There is no `leaderboards/*` rule: the collection has no writer or reader anywhere in the product, so it is denied by default. Public ranking is a declined feature, not a pending one — see [ROADMAP.md](ROADMAP.md).
 - The Firebase Admin SDK is never bundled into the mobile app — it runs only in Cloud Functions.
 - No secrets (API keys beyond the public Firebase web config, service account credentials, etc.) are committed to the repository. Service account keys, if ever needed locally, stay in `.gitignore`d files.
