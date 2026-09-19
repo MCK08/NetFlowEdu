@@ -6,6 +6,9 @@ export const ROUTES = {
   googleOnboarding: "/(auth)/google-onboarding",
   student: "/(student)/(tabs)",
   studentStudy: "/(student)/(tabs)/study",
+  // Phase 109 — the Profil tab, the parent of the nested Kişisel Analiz
+  // readings now that Analiz is no longer a tab of its own.
+  studentProfile: "/(student)/(tabs)/profile",
   studentReviewSession: "/(student)/study/review",
   // Phase 28 — the free/adaptive round StudySessionScreen's completion
   // state transitions into after the mandatory round ("Çalışmaya Devam

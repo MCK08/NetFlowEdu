@@ -32,9 +32,9 @@ const ROOT_ROUTES = new Set([
   "app/(admin)/index.tsx",
   "app/(student)/(tabs)/index.tsx",
   "app/(student)/(tabs)/study.tsx",
-  // Phase 107 — the Analiz tab. A root, so it carries no back button; its
-  // pushed readings (analytics/*) are nested and each reaches AppBackButton.
-  "app/(student)/(tabs)/analytics.tsx",
+  // Phase 107's Analiz tab became a nested reading in Phase 109
+  // (app/(student)/analytics/index.tsx): it now reaches AppBackButton like
+  // every other analytics/* screen and is audited with them below.
   "app/(student)/(tabs)/classes.tsx",
   "app/(student)/(tabs)/profile.tsx",
   "app/(teacher)/(tabs)/index.tsx",

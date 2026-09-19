@@ -507,18 +507,18 @@ const stripComments = (text: string) =>
   text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
 
 describe("K — routes", () => {
-  it("registers Analiz as a student tab beside Çalış", () => {
+  it("is a nested reading under Profil, not a tab (Phase 109)", () => {
     const tabs = read("app/(student)/(tabs)/_layout.tsx");
-    const study = tabs.indexOf('name="study"');
-    const analytics = tabs.indexOf('name="analytics"');
-    const classes = tabs.indexOf('name="classes"');
-    expect(analytics).toBeGreaterThan(study);
-    expect(analytics).toBeLessThan(classes);
-    expect(tabs).toContain('title: "Analiz"');
+    expect(tabs).not.toContain('name="analytics"');
+    expect(tabs).not.toContain('title: "Analiz"');
+    expect(read("src/features/studentAnalytics/routes.ts")).toContain('overview: "/(student)/analytics"');
+    expect(read("src/features/studentAnalytics/screens/AnalyticsOverviewScreen.tsx")).toContain(
+      "backFallbackHref={ROUTES.studentProfile}",
+    );
   });
 
   it.each([
-    ["app/(student)/(tabs)/analytics.tsx", "AnalyticsOverviewScreen"],
+    ["app/(student)/analytics/index.tsx", "AnalyticsOverviewScreen"],
     ["app/(student)/analytics/subjects.tsx", "SubjectAnalysisScreen"],
     ["app/(student)/analytics/topic.tsx", "TopicDetailScreen"],
     ["app/(student)/analytics/question-types.tsx", "QuestionTypeAnalysisScreen"],

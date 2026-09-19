@@ -9,23 +9,43 @@ import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
 import { themedStyles } from "@theme/themeRuntime";
 
-import { EMPTY_FEED_FILTER, FeedFilter } from "../services/feedFilters";
+import { FeedChannel, FeedChannelDescriptor } from "../services/feedChannels";
+import { EMPTY_FEED_FILTER, FeedFilter, FeedQuestionKind } from "../services/feedFilters";
 
 interface FeedFilterSheetProps {
   visible: boolean;
   filter: FeedFilter;
   onChange: (filter: FeedFilter) => void;
   onClose: () => void;
+  /** Phase 109 — the feed's sources (Phase 50's channels) live behind the
+   *  same control as the other filters, so the feed shows one row of subject
+   *  pills and nothing else above the question. */
+  channels?: readonly FeedChannelDescriptor[];
+  activeChannel?: FeedChannel | null;
+  onSelectChannel?: (channel: FeedChannel) => void;
 }
+
+export const QUESTION_KIND_LABEL: Readonly<Record<FeedQuestionKind, string>> = {
+  multiple_choice: "Çoktan seçmeli",
+  open: "Açık uçlu",
+};
 
 // Ana Akış'ın filtre bottom sheet'i (Phase 21) — reuses the app's one
 // existing sheet shell (BottomActionSheet) and the one existing selectable
 // tag primitive (Chip), same as QuestionMetadataModal reuses Checkbox for
 // the multiple-choice toggle. Each row includes a "Tümü" chip to clear just
-// that field; "Filtreleri Temizle" clears all three at once. Konu options
+// that field; "Filtreleri Temizle" clears every field at once. Konu options
 // depend on the selected Ders, matching the composer's own subject→topic
-// dependency.
-export function FeedFilterSheet({ visible, filter, onChange, onClose }: FeedFilterSheetProps) {
+// dependency. No exam row: a question carries no exam field.
+export function FeedFilterSheet({
+  visible,
+  filter,
+  onChange,
+  onClose,
+  channels = [],
+  activeChannel = null,
+  onSelectChannel,
+}: FeedFilterSheetProps) {
   const topicOptions = filter.subject ? getTopicsForSubject(filter.subject) : [];
 
   function setSubject(next: string | null) {
@@ -42,8 +62,28 @@ export function FeedFilterSheet({ visible, filter, onChange, onClose }: FeedFilt
     onChange({ ...filter, topic: next });
   }
 
+  function setKind(next: FeedQuestionKind | null) {
+    onChange({ ...filter, kind: next });
+  }
+
   return (
     <BottomActionSheet visible={visible} onClose={onClose} title="Filtreler">
+      {channels.length > 0 && onSelectChannel ? (
+        <>
+          <Text style={styles.label}>Kaynak</Text>
+          <View style={styles.chipRow}>
+            {channels.map((channel) => (
+              <Chip
+                key={channel.id}
+                label={channel.label}
+                selected={channel.id === activeChannel}
+                onPress={() => onSelectChannel(channel.id)}
+              />
+            ))}
+          </View>
+        </>
+      ) : null}
+
       <Text style={styles.label}>Ders</Text>
       <View style={styles.chipRow}>
         <Chip label="Tümü" selected={filter.subject === null} onPress={() => setSubject(null)} />
@@ -53,19 +93,6 @@ export function FeedFilterSheet({ visible, filter, onChange, onClose }: FeedFilt
             label={subject}
             selected={filter.subject === subject}
             onPress={() => setSubject(subject)}
-          />
-        ))}
-      </View>
-
-      <Text style={styles.label}>Sınıf</Text>
-      <View style={styles.chipRow}>
-        <Chip label="Tümü" selected={filter.gradeLevel === null} onPress={() => setGradeLevel(null)} />
-        {GRADE_LEVELS.map((grade) => (
-          <Chip
-            key={grade}
-            label={grade}
-            selected={filter.gradeLevel === grade}
-            onPress={() => setGradeLevel(grade)}
           />
         ))}
       </View>
@@ -83,6 +110,27 @@ export function FeedFilterSheet({ visible, filter, onChange, onClose }: FeedFilt
       ) : (
         <Text style={styles.hint}>Konu filtresi için önce bir ders seçin.</Text>
       )}
+
+      <Text style={styles.label}>Soru türü</Text>
+      <View style={styles.chipRow}>
+        <Chip label="Tümü" selected={filter.kind === null} onPress={() => setKind(null)} />
+        {(Object.keys(QUESTION_KIND_LABEL) as FeedQuestionKind[]).map((kind) => (
+          <Chip key={kind} label={QUESTION_KIND_LABEL[kind]} selected={filter.kind === kind} onPress={() => setKind(kind)} />
+        ))}
+      </View>
+
+      <Text style={styles.label}>Sınıf</Text>
+      <View style={styles.chipRow}>
+        <Chip label="Tümü" selected={filter.gradeLevel === null} onPress={() => setGradeLevel(null)} />
+        {GRADE_LEVELS.map((grade) => (
+          <Chip
+            key={grade}
+            label={grade}
+            selected={filter.gradeLevel === grade}
+            onPress={() => setGradeLevel(grade)}
+          />
+        ))}
+      </View>
 
       <PrimaryButton label="Filtreleri Temizle" variant="secondary" onPress={() => onChange(EMPTY_FEED_FILTER)} />
       <PrimaryButton label="Uygula" onPress={onClose} />

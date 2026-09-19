@@ -1,3 +1,4 @@
+import { hasMultipleChoice } from "@features/questions/services/multipleChoice";
 import { Question } from "@/types/question";
 
 // Phase 21 — Ana Akış filtering.
@@ -21,20 +22,31 @@ import { Question } from "@/types/question";
 // it hands to useInterleavedStudyFeed, which already knows how to
 // reconcile an arbitrary change to its `questions` input (Phase 20).
 
+// Phase 109 — the question's answering shape, read from the document's own
+// `choices` (the same rule QuestionDetailScreen uses to decide whether to
+// render MultipleChoiceAnswer). No exam/curriculum field exists on a
+// question, so no exam filter exists here either.
+export type FeedQuestionKind = "multiple_choice" | "open";
+
 export interface FeedFilter {
   subject: string | null;
   gradeLevel: string | null;
   topic: string | null;
+  kind: FeedQuestionKind | null;
 }
 
-export const EMPTY_FEED_FILTER: FeedFilter = { subject: null, gradeLevel: null, topic: null };
+export const EMPTY_FEED_FILTER: FeedFilter = { subject: null, gradeLevel: null, topic: null, kind: null };
 
 export function isFeedFilterActive(filter: FeedFilter): boolean {
-  return filter.subject !== null || filter.gradeLevel !== null || filter.topic !== null;
+  return filter.subject !== null || filter.gradeLevel !== null || filter.topic !== null || filter.kind !== null;
 }
 
 export function activeFeedFilterCount(filter: FeedFilter): number {
-  return [filter.subject, filter.gradeLevel, filter.topic].filter((value) => value !== null).length;
+  return [filter.subject, filter.gradeLevel, filter.topic, filter.kind].filter((value) => value !== null).length;
+}
+
+export function questionKindOf(question: Pick<Question, "choices">): FeedQuestionKind {
+  return hasMultipleChoice(question.choices) ? "multiple_choice" : "open";
 }
 
 // A stable string identity for a filter's CONTENT — two filters that pick
@@ -42,7 +54,7 @@ export function activeFeedFilterCount(filter: FeedFilter): number {
 // to detect "the filter actually changed" (as opposed to "the filter
 // object was merely recreated"), e.g. to reset a feed session.
 export function feedFilterKey(filter: FeedFilter): string {
-  return `${filter.subject ?? ""}|${filter.gradeLevel ?? ""}|${filter.topic ?? ""}`;
+  return `${filter.subject ?? ""}|${filter.gradeLevel ?? ""}|${filter.topic ?? ""}|${filter.kind ?? ""}`;
 }
 
 // AND-combines every active filter field; a null field never excludes
@@ -52,6 +64,7 @@ export function matchesFeedFilter(question: Question, filter: FeedFilter): boole
   if (filter.subject !== null && question.subject !== filter.subject) return false;
   if (filter.gradeLevel !== null && question.gradeLevel !== filter.gradeLevel) return false;
   if (filter.topic !== null && question.topic !== filter.topic) return false;
+  if (filter.kind !== null && questionKindOf(question) !== filter.kind) return false;
   return true;
 }
 

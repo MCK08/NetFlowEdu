@@ -14,6 +14,7 @@ import {
   shouldReportMcOutcome,
 } from "@features/study/services/multipleChoiceStudyBridge";
 import { recordStudyOutcome } from "@features/study/services/studyService";
+import type { StudyOutcome } from "@features/study/domain/studyTypes";
 
 import { CHOICE_LABELS, evaluateChoice } from "../services/multipleChoice";
 import { resolveChoiceFeedback } from "../services/choiceFeedback";
@@ -36,6 +37,11 @@ interface MultipleChoiceAnswerProps {
   // before that phase), which keeps this component's behaviour byte-identical
   // to before for them.
   choiceFeedback?: QuestionChoiceFeedback | null;
+  // Phase 109 — optional, additive. Fires with the SAME outcome the bridge
+  // above just reported (and only when it reported one), so a host such as
+  // the Akış pager can react — splice a second-chance page — without a
+  // second evaluation or a second write. Never fires for a non-student.
+  onOutcomeRecorded?: (outcome: StudyOutcome) => void;
 }
 
 // Phase 21 — QuestionDetailScreen's optional multiple-choice answer UI.
@@ -59,6 +65,7 @@ export function MultipleChoiceAnswer({
   questionId,
   isStudent,
   choiceFeedback,
+  onOutcomeRecorded,
 }: MultipleChoiceAnswerProps) {
   const [selected, setSelected] = useState<ChoiceLabel | null>(null);
   // Guards against the exact same UI interaction recording an outcome
@@ -105,6 +112,7 @@ export function MultipleChoiceAnswer({
     recordStudyOutcome(questionId, outcome, undefined, label).catch((err) => {
       if (__DEV__) console.log("[MC_STUDY_BRIDGE] recordStudyOutcome failed", err);
     });
+    onOutcomeRecorded?.(outcome);
   }
 
   return (

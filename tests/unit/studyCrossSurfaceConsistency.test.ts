@@ -211,6 +211,9 @@ describe("every surface uses the one shared control", () => {
     expect(consumers.sort()).toEqual(
       [
         "src/features/classes/components/ClassFeedCard.tsx",
+        // Phase 109 — the Akış page hosts the same guarded push for an
+        // open-ended question, so answering starts from the feed itself.
+        "src/features/feed/components/QuestionFeedPage.tsx",
         "src/features/questions/screens/QuestionDetailScreen.tsx",
         "src/features/study/components/StudyAnswerButton.tsx",
       ].sort(),

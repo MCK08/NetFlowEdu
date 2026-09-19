@@ -8,6 +8,7 @@ import { Card } from "@components/ui/Card";
 import { EmptyState } from "@components/ui/EmptyState";
 import { PrimaryButton } from "@components/ui/PrimaryButton";
 import { StatusLabel } from "@components/ui/StatusLabel";
+import { ROUTES } from "@constants/routes";
 import { useAuth } from "@features/authentication";
 import { AnalyticsErrorBanner, AnalyticsLoading } from "@features/studentAnalytics/components/AnalyticsFeedback";
 import { AnalyticsHeader } from "@features/studentAnalytics/components/AnalyticsHeader";
@@ -22,7 +23,7 @@ import { typography } from "@theme/typography";
 
 import { usePlanStepNavigation } from "../hooks/usePlanStepNavigation";
 import { useStudyPlan } from "../hooks/useStudyPlan";
-import { PLAN_ROUTES, planStepRoute } from "../routes";
+import { planStepRoute } from "../routes";
 import { pendingRevisitCount, planCompletionSentence, stepCompletionFacts } from "../services/dailyPlan";
 import {
   STEP_KIND_ICON,
@@ -64,7 +65,9 @@ export function PlanStepScreen() {
   );
   const pendingRevisit = step ? pendingRevisitCount(step, items) : 0;
 
-  const goToPlan = useCallback(() => router.navigate(PLAN_ROUTES.home as never), []);
+  // Phase 109 — "the plan" the student returns to is Çalış itself, where
+  // today's steps are inline; PlanHome remains only as a deep-link target.
+  const goToPlan = useCallback(() => router.navigate(ROUTES.studentStudy as never), []);
   const goToNext = useCallback(() => {
     if (nextStep) router.replace(planStepRoute(nextStep.id) as never);
     else goToPlan();
@@ -77,7 +80,7 @@ export function PlanStepScreen() {
           <AnalyticsHeader
             title={step && step.state === "completed" ? "Adım tamamlandı" : "Bugünün Adımı"}
             eyebrow={step ? `Adım ${index + 1} / ${plan.steps.length}` : null}
-            backFallbackHref={PLAN_ROUTES.home}
+            backFallbackHref={ROUTES.studentStudy}
           />
 
           {error ? <AnalyticsErrorBanner title="Adım şu an yüklenemedi" message={error} /> : null}

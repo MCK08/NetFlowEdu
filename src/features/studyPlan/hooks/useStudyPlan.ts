@@ -159,6 +159,7 @@ export function useStudyPlan(uid: string | undefined) {
   return {
     plan,
     items: analytics.items,
+    assignmentCards: assignments.cards,
     summary,
     preferences: store.preferences,
     completedDays: store.completedDays,

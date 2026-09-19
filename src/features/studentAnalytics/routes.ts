@@ -10,7 +10,7 @@
 // from app/ by the dev server into a gitignored cache, so a newly added
 // route is unknown to the type checker until that cache next regenerates.
 export const ANALYTICS_ROUTES = {
-  overview: "/(student)/(tabs)/analytics",
+  overview: "/(student)/analytics",
   subjects: "/(student)/analytics/subjects",
   topic: "/(student)/analytics/topic",
   questionTypes: "/(student)/analytics/question-types",

@@ -1,470 +1,386 @@
+import { Ionicons } from "@expo/vector-icons";
 import { router, useFocusEffect } from "expo-router";
-import { useCallback, useMemo, useState } from "react";
-import { FlatList, RefreshControl, Text, useWindowDimensions, View } from "react-native";
+import { useCallback, useMemo } from "react";
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { EmptyState } from "@components/ui/EmptyState";
 import { LoadingSkeleton } from "@components/ui/LoadingSkeleton";
+import { PrimaryButton } from "@components/ui/PrimaryButton";
+import { SectionHeader } from "@components/ui/SectionHeader";
 import { ROUTES } from "@constants/routes";
 import { useAuth } from "@features/authentication";
+import { useFeedLaunch } from "@features/feed/hooks/useFeedLaunch";
+import { useLearningTrail } from "@features/learningStory/hooks/useLearningTrail";
+import { ArchiveEntryRow } from "@features/studentAnalytics/components/ArchiveEntryRow";
+import { ANALYTICS_ROUTES, archivedQuestionRoute } from "@features/studentAnalytics/routes";
+import { PlanStepRow } from "@features/studyPlan/components/PlanStepRow";
+import { usePlanStepNavigation } from "@features/studyPlan/hooks/usePlanStepNavigation";
+import { useStudyPlan } from "@features/studyPlan/hooks/useStudyPlan";
+import { PLAN_ROUTES, planStepRoute } from "@features/studyPlan/routes";
+import { gapCountLabel } from "@features/studyPlan/services/learningMaps";
+import { shortDateLabel, stepStartLabel, stepTitle, stepWhy } from "@features/studyPlan/services/planPresentation";
+import { buildStudyWorkspace } from "@features/studyPlan/services/studyWorkspace";
 import { useNavigationGuard } from "@hooks/useNavigationGuard";
 import { colors } from "@theme/colors";
 import { contentWidth } from "@theme/layout";
 import { radius } from "@theme/radius";
-import { stackAtFontScale } from "@theme/sizes";
+import { iconSize, minTouchTarget } from "@theme/sizes";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
 import { themedStyles } from "@theme/themeRuntime";
+import { useThemeSubscription } from "@theme/ThemeProvider";
 
-import { useStudentAssignments } from "@features/assignments/hooks/useStudentAssignments";
-
-import { StudyOutcome } from "../domain/studyTypes";
 import { AssignedWorkSection } from "../components/AssignedWorkSection";
 import { DailyGoalEditor } from "../components/DailyGoalEditor";
-import { DailyPracticePlanSection } from "../components/DailyPracticePlanSection";
-import { LearningStoryEntryCard } from "@features/learningStory/components/LearningStoryEntryCard";
-import { useLearningTrail } from "@features/learningStory/hooks/useLearningTrail";
-import { AnalyticsNavRow } from "@features/studentAnalytics/components/AnalyticsNavRow";
-import { PLAN_ROUTES } from "@features/studyPlan/routes";
+import { PracticeLauncher } from "../components/PracticeLauncher";
 
-import { chronologyExplanationText } from "../services/chronologyExplanation";
-import { buildConceptMasteryMap } from "../services/conceptMasteryMap";
-import { buildReviewReadyTopics, ReviewReadyTopic } from "../services/reviewReadiness";
-import { buildChronologyProfiles } from "../services/chronologyTieBreak";
-import { LearningAtlasEntryCard } from "../components/LearningAtlasEntryCard";
-import { NextActionSection } from "../components/NextActionSection";
-import { ReviewReadySection } from "../components/ReviewReadySection";
-import { StudyProgressCard } from "../components/StudyProgressCard";
-import { StudyQueueCard } from "../components/StudyQueueCard";
-import { SubjectBreakdownSection } from "../components/SubjectBreakdownSection";
-import { WeakTopicsSection } from "../components/WeakTopicsSection";
-import { useLearningInsights } from "../hooks/useLearningInsights";
-import { useStudyQueue } from "../hooks/useStudyQueue";
-import { TopicInsight } from "../services/learningInsights";
-import { mapStudyErrorToMessage } from "../services/studyErrorMapper";
-import { queueEmptyCopy } from "../services/studyPresentation";
-import { recordStudyOutcome } from "../services/studyService";
-import { ResolvedQueueEntry } from "../services/studyService";
-import { resolveStudentNextAction } from "../services/studentNextAction";
-import { resolveStudyStartTarget } from "../services/studyDueCheck";
+// Phase 109 — Çalış is ONE scrolling workspace.
+//
+// Everything the student needs to decide and to act sits in this scroll, in
+// this order: what to do now (one action), today's plan, the questions they
+// could not solve, a practice launcher, the topics that are waiting, the
+// areas that stand, the progress that is on record, and the goal. Sections
+// sit on the background with headers and compact rows; a surface is used
+// only where a group needs one. Deep readings (the archive, the maps, the
+// plan step, Kişisel Analiz) stay one tap away as text links, never as a
+// wall of tiles.
+//
+// Every number here comes from the same sources the deep screens read
+// (useStudyPlan → Phase 108 plan, Phase 107 archive, Phase 70 concept map,
+// Phase 59 events) through buildStudyWorkspace; this screen does not derive
+// a state, a priority or a strength of its own.
 
-function keyExtractor(entry: ResolvedQueueEntry) {
-  return entry.item.questionId;
-}
+export const FOCUS_TITLE = "Şimdi Ne Yapmalısın?";
+export const TODAY_TITLE = "Bugünün Planı";
+export const UNRESOLVED_TITLE = "Çözemediğim Sorular";
+export const PRACTICE_SECTION_TITLE = "Soruları Filtrele";
+export const STRUGGLE_TITLE = "Zorlandığın Konular";
+export const STRENGTHS_TITLE = "Güçlü Olduğun Alanlar";
+export const PROGRESS_TITLE = "İlerlemen";
+export const GOAL_TITLE = "Hedef ve Ayarlar";
 
-function QueueSkeleton() {
-  return (
-    <View style={styles.skeletonList}>
-      {[0, 1, 2].map((key) => (
-        <LoadingSkeleton key={key} height={260} borderRadius={16} />
-      ))}
-    </View>
-  );
-}
-
-// The student's daily review session. Student-only by construction — it is
-// mounted exclusively from the (student) route group, and the backend
-// callable independently rejects any non-student caller.
 export function StudyScreen() {
+  useThemeSubscription();
   const { firebaseUser } = useAuth();
   const uid = firebaseUser?.uid;
-  const { entries, summary, isLoading, isRefreshing, error, refresh, dismiss } = useStudyQueue(uid);
-  // Phase 61 — reuses Phase 59's existing bounded query so the Hub's plan can
-  // use verified chronology as its final tie-break. One read per mount; the
-  // plan falls back to Phase 60 ordering if it returns nothing.
-  const { events: chronologyEvents } = useLearningTrail(uid);
-  const {
-    items,
-    insights,
-    plan,
-    moment,
-    chronologyExplanation,
-    refresh: refreshInsights,
-  } = useLearningInsights(
-    uid,
-    summary,
-    chronologyEvents,
-  );
-  const chronologyReason = chronologyExplanationText(chronologyExplanation);
-  const { cards: assignmentCards, refresh: refreshAssignments } = useStudentAssignments(uid);
+  const { plan, items, summary, completedDays, assignmentCards, now, isLoading, hasLoaded, error, refresh } =
+    useStudyPlan(uid);
+  const trail = useLearningTrail(uid);
+  const startStep = usePlanStepNavigation();
+  const launchFeed = useFeedLaunch();
   const guardedNavigate = useNavigationGuard();
-  const { fontScale } = useWindowDimensions();
-  const stackedLenses = fontScale >= stackAtFontScale;
 
-  // Per-card busy/error state, keyed by questionId — a failure on one card
-  // must never blank out the whole session.
-  const [pending, setPending] = useState<Record<string, StudyOutcome>>({});
-  const [cardErrors, setCardErrors] = useState<Record<string, string>>({});
+  const workspace = useMemo(
+    () => buildStudyWorkspace({ plan, items, now, completedDays, events: trail.events }),
+    [plan, items, now, completedDays, trail.events],
+  );
 
-  // Re-fetches the due queue whenever this tab regains focus — which is
-  // exactly what happens on returning from a review session, so the counts
-  // and the list reflect the work just done without a full reload. The
-  // summary (streak/goal/mastered) is already live via its own single
-  // listener, so no second listener is added here.
+  const refreshTrail = trail.refresh;
   useFocusEffect(
     useCallback(() => {
-      refresh();
-      refreshInsights();
-      refreshAssignments();
-    }, [refresh, refreshInsights, refreshAssignments]),
+      refreshTrail();
+    }, [refreshTrail]),
   );
-
-  const openAssignment = useCallback(
-    (assignmentId: string) => {
-      guardedNavigate(`assignment-${assignmentId}`, () =>
-        router.push(`/(student)/assignment/${assignmentId}` as never),
-      );
-    },
-    [guardedNavigate],
-  );
-
-  const startSession = useCallback(() => {
-    guardedNavigate("review-session", () =>
-      router.push(ROUTES.studentReviewSession as never),
-    );
-  }, [guardedNavigate]);
-
-  // "Çalışmaya Başla" when there is nothing mandatory due (dueCount === 0)
-  // but the daily plan still has recommendations (weak topics / goal fill).
-  // This must open the same vertical-swipe StudySessionScreen the due path
-  // uses — mode="adaptive" — not a single question's detail screen. Kept
-  // distinct from handleOpen, which stays reserved for "open exactly one
-  // named question" (a due-queue card, a weak-topic card): conflating the
-  // two here is exactly the bug this fixes.
-  const startAdaptiveSession = useCallback(() => {
-    guardedNavigate("adaptive-session", () =>
-      router.push(ROUTES.studentAdaptiveSession as never),
-    );
-  }, [guardedNavigate]);
-
-  // The Daily Practice Plan card's own dueCount is a memoized snapshot
-  // (useLearningInsights recomputes it only when `items`/summary change,
-  // never on the clock alone) — it can under- or over-report due-ness by
-  // however long this screen has sat idle. Re-checking against `items`
-  // (the same data, zero new reads) with a genuinely fresh `now` at the
-  // moment of the tap is what makes the routing decision trustworthy;
-  // plan.dueCount itself is only ever used for what's DISPLAYED, never for
-  // which screen opens.
-  const handleStartPlan = useCallback(() => {
-    const target = resolveStudyStartTarget({
-      items,
-      now: Date.now(),
-      hasPlanItems: plan.planItems.length > 0,
-    });
-    // The stale display disagreed with the live check — self-correct it via
-    // the same refresh the Hub already triggers elsewhere (focus, outcome
-    // recorded), rather than leaving it wrong until the next natural
-    // trigger. No new fetch: refreshInsights() already exists.
-    if (target === "mandatory" && plan.dueCount === 0) {
-      refreshInsights();
-    }
-    if (target === "mandatory") {
-      startSession();
-    } else if (target === "adaptive") {
-      startAdaptiveSession();
-    }
-  }, [items, plan.planItems.length, plan.dueCount, refreshInsights, startSession, startAdaptiveSession]);
-
-  const handleOpen = useCallback(
-    (questionId: string) => {
-      guardedNavigate(questionId, () =>
-        router.push(`/(student)/question/${questionId}` as never),
-      );
-    },
-    [guardedNavigate],
-  );
-
-  // Phase 39 — "Şimdi Ne Yapmalısın?". Derived from the data this screen
-  // ALREADY holds (items, plan, weakTopics, assignmentCards) — zero
-  // additional Firestore reads, and it refreshes on exactly the triggers
-  // those already refresh on. Memoized like `plan`/`insights`, so its `now`
-  // is a snapshot: fine for what's DISPLAYED, never trusted for routing.
-  const nextAction = useMemo(
-    () =>
-      resolveStudentNextAction({
-        items,
-        plan,
-        weakTopics: insights.weakTopics,
-        assignmentCards,
-        now: Date.now(),
-      }),
-    [items, plan, insights.weakTopics, assignmentCards],
-  );
-
-  // Phase 62 — WHICH topics the review scheduler has released, from the same
-  // in-memory items the Hub already holds. `nextReviewAt` is the authority;
-  // nothing here recomputes an interval.
-  const reviewReadyTopics = useMemo(() => {
-    const topics = buildReviewReadyTopics({
-      items,
-      chronologyByQuestionId: buildChronologyProfiles(chronologyEvents),
-      now: Date.now(),
-    });
-    // Deduplicated against the headline recommendation: if the next action is
-    // already a due review, this section would restate it directly underneath.
-    if (nextAction.kind === "due_review") return [];
-    return topics;
-  }, [items, chronologyEvents, nextAction.kind]);
-
-  // Phase 70 — derived from the SAME in-memory items above, purely so the Hub
-  // entry can show a real reason to tap. Zero additional Firestore reads: the
-  // map itself is built again on its own screen from the same source.
-  const conceptMap = useMemo(
-    () => buildConceptMasteryMap({ items, now: Date.now() }),
-    [items],
-  );
-
-  const handleStartReview = useCallback(
-    (topic: ReviewReadyTopic) => handleOpen(topic.questionId),
-    [handleOpen],
-  );
-
-  // Same tap-time discipline handleStartPlan already uses, for the same
-  // reason: the rendered recommendation can be minutes old, and a deadline
-  // or a nextReviewAt can cross "now" purely from the clock ticking. The
-  // decision that actually opens a screen is re-derived here against a
-  // fresh clock from the same in-memory data — no new fetch, no second
-  // engine — and when it disagrees with what was on screen, the display
-  // self-corrects through the refreshes this Hub already has.
-  const handleStartNextAction = useCallback(() => {
-    const live = resolveStudentNextAction({
-      items,
-      plan,
-      weakTopics: insights.weakTopics,
-      assignmentCards,
-      now: Date.now(),
-    });
-
-    if (live.kind !== nextAction.kind) {
-      refreshInsights();
-      refreshAssignments();
-    }
-
-    switch (live.target.kind) {
-      case "assignment":
-        openAssignment(live.target.assignmentId);
-        break;
-      case "review_session":
-        startSession();
-        break;
-      case "adaptive_session":
-        startAdaptiveSession();
-        break;
-      case "question":
-        handleOpen(live.target.questionId);
-        break;
-      case "none":
-        // Nothing left to open — the card that was tapped is already stale.
-        // Re-derive it rather than silently doing nothing.
-        refreshInsights();
-        refreshAssignments();
-        break;
-    }
-  }, [
-    items,
-    plan,
-    insights.weakTopics,
-    assignmentCards,
-    nextAction.kind,
-    refreshInsights,
-    refreshAssignments,
-    openAssignment,
-    startSession,
-    startAdaptiveSession,
-    handleOpen,
-  ]);
-
-  // A weak/strong topic card opens the same, already-existing Question
-  // Detail route StudyQueueCard's own "open" action uses (handleOpen above)
-  // — reusing it here rather than wiring a topic-filtered Feed keeps this
-  // to the smallest safe navigation change: zero new routes, and zero risk
-  // to Phase 21's Feed filter state (which lives only in FeedScreen).
-  const handleSelectTopic = useCallback(
-    (topic: TopicInsight) => handleOpen(topic.sampleQuestionId),
-    [handleOpen],
-  );
-
   const handleRefresh = useCallback(() => {
     refresh();
-    refreshInsights();
-  }, [refresh, refreshInsights]);
+    refreshTrail();
+  }, [refresh, refreshTrail]);
 
-  const handleOutcome = useCallback(
-    async (questionId: string, outcome: StudyOutcome) => {
-      // Ref-free double-tap guard: a card already in flight is ignored.
-      if (pending[questionId]) return;
-      setPending((prev) => ({ ...prev, [questionId]: outcome }));
-      setCardErrors((prev) => {
-        if (!prev[questionId]) return prev;
-        const next = { ...prev };
-        delete next[questionId];
-        return next;
-      });
-
-      try {
-        await recordStudyOutcome(questionId, outcome);
-        // Server has rescheduled it; drop it from this session's working set.
-        dismiss(questionId);
-        // The outcome just recorded can change which topics are "weak"
-        // (a struggled outcome) or "strong" (a fresh mastery) — re-derive
-        // the Hub's insights from a fresh read rather than leaving them
-        // stale until the next focus event.
-        refreshInsights();
-      } catch (err) {
-        setCardErrors((prev) => ({ ...prev, [questionId]: mapStudyErrorToMessage(err) }));
-      } finally {
-        setPending((prev) => {
-          const next = { ...prev };
-          delete next[questionId];
-          return next;
-        });
-      }
-    },
-    [pending, dismiss, refreshInsights],
+  const openStep = useCallback((stepId: string) => router.push(planStepRoute(stepId) as never), []);
+  const openArchived = useCallback((questionId: string) => router.push(archivedQuestionRoute(questionId) as never), []);
+  const openAssignment = useCallback(
+    (assignmentId: string) =>
+      guardedNavigate(`assignment-${assignmentId}`, () => router.push(`/(student)/assignment/${assignmentId}` as never)),
+    [guardedNavigate],
   );
+  const goTo = useCallback((href: string) => router.push(href as never), []);
 
-  const renderItem = useCallback(
-    ({ item }: { item: ResolvedQueueEntry }) => (
-      <StudyQueueCard
-        entry={item}
-        onOpen={handleOpen}
-        onSelectOutcome={(outcome) => handleOutcome(item.item.questionId, outcome)}
-        pendingOutcome={pending[item.item.questionId] ?? null}
-        error={cardErrors[item.item.questionId] ?? null}
-      />
-    ),
-    [handleOpen, handleOutcome, pending, cardErrors],
-  );
-
-  const emptyCopy = queueEmptyCopy(summary.totalUniqueQuestions > 0);
+  const focus = workspace.focus;
+  const openAssignments = useMemo(() => assignmentCards.filter((card) => card.status !== "completed"), [assignmentCards]);
+  const goalCaption = summary.dailyGoal > 0 ? `Bugün ${summary.reviewedToday} / ${summary.dailyGoal} soru` : null;
 
   return (
-    <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
-      <FlatList
-        data={entries}
-        keyExtractor={keyExtractor}
-        renderItem={renderItem}
+    <SafeAreaView style={styles.flex} edges={["top"]}>
+      <ScrollView
         style={styles.scroller}
-        contentContainerStyle={styles.list}
-        ItemSeparatorComponent={Separator}
+        contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} tintColor={colors.primary} />
-        }
-        ListHeaderComponent={
-          <View style={styles.header}>
-            {/* Phase 104 (B2) — the Hub's blocks used to sit one uniform gap
-                apart, so the title and its one-line reading, the next action
-                and its reason, the two lenses, and the progress card and the
-                goal that feeds it all looked equally unrelated. They are now
-                grouped: tight inside a pair, a step wider between blocks.
-                Nothing is added, removed or reordered. */}
-            <View style={styles.identity}>
-              <Text style={styles.title}>Öğrenme Merkezi</Text>
-              {/* Phase 25 §10 — one deterministic sentence, real trend data,
-                  no invented text. See learningMoment.ts. */}
-              {moment ? <Text style={styles.moment}>{moment}</Text> : null}
-            </View>
-            <View style={styles.pair}>
-              {/* Phase 39 §4 — the Hub's single headline answer, above the
-                  per-category sections it summarizes. Those sections stay as
-                  the breakdown; this one names the one next step. */}
-              <NextActionSection action={nextAction} onStart={handleStartNextAction} />
-              {/* Phase 61 — one line, and only when verified chronology actually
-                  changed which question leads the plan (proved counterfactually
-                  in chronologyExplanation.ts). If Phase 41's cumulative evidence
-                  picked the question on its own, nothing is said rather than
-                  crediting the timeline for a decision it did not make. */}
-              {chronologyReason ? (
-                <Text style={styles.chronologyReason}>{chronologyReason}</Text>
-              ) : null}
-            </View>
-            {/* Phase 108 — the one way into "Çalışma Planım". A quiet row
-                directly under the next action: the action says what to do
-                now; the plan lays the day's three to five steps out. It must
-                not compete with the blue card above it, so it is the same
-                outlined row the Analiz tab uses for its secondary routes. */}
-            <AnalyticsNavRow
-              icon="calendar-outline"
-              title="Çalışma Planım"
-              description="Bugünün adımları, öğrenme geçmişine göre"
-              onPress={() => router.push(PLAN_ROUTES.home as never)}
-              accessibilityHint="Günlük çalışma planını açar"
-            />
-            {/* Phase 106 — the two insight tiles sit side by side; at the
-                accessibility text sizes they stack so neither wraps a
-                Turkish word mid-way. */}
-            <View style={stackedLenses ? styles.lensesStacked : styles.lenses}>
-              {/* Phase 56 — sits directly under the next action: that card says
-                  what to do now, this one explains how learning is changing.
-                  One restrained row, not an inline copy of the story. */}
-              <LearningStoryEntryCard
-                title="İlerleme Hikâyem"
-                description="Hangi konularda ilerlediğini gör"
-                onPress={() => router.push("/(student)/learning-story" as never)}
-              />
-              {/* Phase 76 — the Hub's single exploration entry, in the slot the
-                  Phase 70 concept-map row used to hold.
+        refreshControl={<RefreshControl refreshing={false} onRefresh={handleRefresh} tintColor={colors.primary} />}
+      >
+        {/* HEADER */}
+        <View style={styles.identity}>
+          <Text style={styles.title}>Çalış</Text>
+          {goalCaption ? <Text style={styles.moment}>{goalCaption}</Text> : null}
+        </View>
 
-                  The Atlas composes that map rather than competing with it: the
-                  same nodes, verdicts and wording, placed alongside the current
-                  focus, the evidence lenses and the ordered motion. Two rows a
-                  thumb apart, one of them a strictly larger version of the
-                  other, would have made the student choose between a screen and
-                  its own superset. Öğrenme Haritam keeps its route and is one
-                  tap away from inside the Atlas.
+        {error ? (
+          <View style={styles.errorBanner} accessibilityRole="alert">
+            <Text style={styles.errorText}>{error}</Text>
+          </View>
+        ) : null}
 
-                  Still beside İlerleme Hikâyem, and still below the next-action
-                  card: the story says how learning has changed, the Atlas says
-                  how the signals stand right now, and neither may outshout the
-                  one card that tells the student what to do. */}
-              <LearningAtlasEntryCard
-                conceptCount={conceptMap.totalConcepts}
-                attentionCount={conceptMap.conceptsNeedingAttention}
-                dueCount={conceptMap.conceptsDueForReview}
-                onPress={() => router.push(ROUTES.studentLearningAtlas as never)}
-              />
+        {isLoading && !hasLoaded ? (
+          <View style={styles.skeleton}>
+            <LoadingSkeleton height={140} borderRadius={radius.xxl} />
+            <LoadingSkeleton height={72} borderRadius={radius.lg} />
+            <LoadingSkeleton height={72} borderRadius={radius.lg} />
+          </View>
+        ) : null}
+
+        {hasLoaded ? (
+          <>
+            {/* FOCUS — the one dominant action on the screen. */}
+            <View style={styles.section}>
+              <SectionHeader title={FOCUS_TITLE} />
+              <View style={styles.focus}>
+                {focus.kind === "step" ? (
+                  <>
+                    <Text style={styles.focusEyebrow}>
+                      Bugünkü adım · {focus.index + 1} / {focus.total}
+                    </Text>
+                    <Text style={styles.focusTitle}>{stepTitle(focus.step)}</Text>
+                    <Text style={styles.focusDetail}>{focus.step.reason}</Text>
+                    <Text style={styles.focusWhy}>{stepWhy(focus.step)}</Text>
+                    <PrimaryButton
+                      label={stepStartLabel(focus.step)}
+                      onPress={() => startStep(focus.step)}
+                      accessibilityHint="Bu adımın çalışmasını açar"
+                    />
+                  </>
+                ) : focus.kind === "complete" ? (
+                  <>
+                    <Text style={styles.focusEyebrow}>Bugünkü plan tamamlandı</Text>
+                    <Text style={styles.focusTitle}>İyi iş.</Text>
+                    <Text style={styles.focusDetail}>{focus.sentence}</Text>
+                    <PrimaryButton
+                      label="Soru Çözmeye Devam Et"
+                      onPress={() => launchFeed({})}
+                      accessibilityHint="Soru akışını açar"
+                    />
+                  </>
+                ) : (
+                  <>
+                    <Text style={styles.focusEyebrow}>Başlangıç</Text>
+                    <Text style={styles.focusTitle}>Soru çözmeye başla</Text>
+                    <Text style={styles.focusDetail}>
+                      Çözdükçe zorlandığın konular, tekrar zamanı gelen sorular ve atanan çalışmalar burada bir plana dönüşür.
+                    </Text>
+                    <PrimaryButton label="Soruları Aç" onPress={() => launchFeed({})} accessibilityHint="Soru akışını açar" />
+                  </>
+                )}
+              </View>
             </View>
-            <AssignedWorkSection cards={assignmentCards} onOpen={openAssignment} />
-            <DailyPracticePlanSection plan={plan} onStart={handleStartPlan} />
-            {/* Phase 62 — names the topics the scheduler has released. Sits
-                BELOW the next action and the plan on purpose: those decide
-                what to do now, this only says what has become worth
-                revisiting. Renders nothing when nothing is due. */}
-            <ReviewReadySection topics={reviewReadyTopics} onStart={handleStartReview} />
-            {/* Phase 106 — one goal surface: the progress, the streak and the
-                stats, with "Hedefi değiştir" as its last row. The editor
-                changes the very number the card shows, so it lives inside it. */}
-            <StudyProgressCard summary={summary} dueCount={insights.dueCount}>
-              <DailyGoalEditor currentGoal={summary.dailyGoal} onSaved={handleRefresh} />
-            </StudyProgressCard>
-            {error ? (
-              <View style={styles.errorBanner} accessibilityRole="alert">
-                <Text style={styles.errorText}>{error}</Text>
+
+            {/* TODAY — the plan, inline. */}
+            {plan.steps.length > 0 ? (
+              <View style={styles.section}>
+                <SectionHeader title={TODAY_TITLE} action={{ label: "Haftaya bak", onPress: () => goTo(PLAN_ROUTES.week) }} />
+                <View style={styles.rows}>
+                  {plan.steps.map((step, index) => (
+                    <PlanStepRow
+                      key={step.id}
+                      step={step}
+                      index={index}
+                      total={plan.steps.length}
+                      onPress={openStep}
+                      divided={index > 0}
+                    />
+                  ))}
+                </View>
               </View>
             ) : null}
-            <WeakTopicsSection topics={insights.weakTopics} onSelectTopic={handleSelectTopic} />
-            <SubjectBreakdownSection subjects={insights.subjectSummaries} />
-          </View>
-        }
-        ListEmptyComponent={
-          isLoading ? (
-            <QueueSkeleton />
-          ) : error ? null : (
-            <EmptyState
-              icon="school-outline"
-              title={emptyCopy.title}
-              description={emptyCopy.description}
-            />
-          )
-        }
-      />
+
+            {openAssignments.length > 0 ? <AssignedWorkSection cards={openAssignments} onOpen={openAssignment} /> : null}
+
+            {/* UNRESOLVED — Phase 107's archive, inline. */}
+            <View style={styles.section}>
+              <SectionHeader
+                title={UNRESOLVED_TITLE}
+                action={
+                  workspace.archivePendingCount > ARCHIVE_ROWS_SHOWN || workspace.archiveSolvedLaterCount > 0
+                    ? { label: "Tümünü Gör", onPress: () => goTo(ANALYTICS_ROUTES.archive) }
+                    : undefined
+                }
+              />
+              {workspace.archivePendingCount === 0 ? (
+                <Text style={styles.quiet}>
+                  {workspace.archiveSolvedLaterCount > 0
+                    ? `Şu anda tekrar bekleyen sorun yok; ${workspace.archiveSolvedLaterCount} soruyu sonradan çözdün.`
+                    : "Çözemediğin bir soru olduğunda burada yerini alır."}
+                </Text>
+              ) : (
+                <>
+                  <Text style={styles.count}>{workspace.archivePendingCount} soru tekrar bekliyor</Text>
+                  <View style={styles.archiveList}>
+                    {workspace.archivePreview.map((entry) => (
+                      <ArchiveEntryRow key={entry.questionId} entry={entry} now={now} onPress={openArchived} />
+                    ))}
+                  </View>
+                  <TextAction
+                    label="Bu sorularla çalış"
+                    icon="play-circle-outline"
+                    onPress={() => launchFeed({ channel: "struggles" })}
+                    hint="Zorlandığın sorularla soru akışını açar"
+                  />
+                </>
+              )}
+            </View>
+
+            {/* PRACTICE — filtered questions, launched into the one feed. */}
+            <View style={styles.section}>
+              <SectionHeader title={PRACTICE_SECTION_TITLE} />
+              <PracticeLauncher />
+            </View>
+
+            {/* STRUGGLE — the topics that are waiting. */}
+            {workspace.struggleTopics.length > 0 ? (
+              <View style={styles.section}>
+                <SectionHeader title={STRUGGLE_TITLE} action={{ label: "Tümünü Gör", onPress: () => goTo(PLAN_ROUTES.gaps) }} />
+                <View style={styles.rows}>
+                  {workspace.struggleTopics.map((topic, index) => (
+                    <Pressable
+                      key={`${topic.subject}|${topic.topic}`}
+                      onPress={() =>
+                        goTo(
+                          `${ANALYTICS_ROUTES.archive}?subject=${encodeURIComponent(topic.subject)}&topic=${encodeURIComponent(topic.topic)}`,
+                        )
+                      }
+                      style={[styles.row, index > 0 ? styles.divided : null]}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${topic.subject}, ${topic.topic}. ${gapCountLabel(topic)}. ${topic.stateLabel}.`}
+                      accessibilityHint="Bu konudaki çözemediğin soruları açar"
+                    >
+                      <View style={styles.rowText}>
+                        <Text style={styles.rowTitle}>{topic.topic}</Text>
+                        <Text style={styles.rowDetail}>
+                          {topic.subject} · {gapCountLabel(topic)}
+                        </Text>
+                      </View>
+                      <Ionicons name="chevron-forward" size={iconSize.sm} color={colors.textTertiary} accessibilityElementsHidden />
+                    </Pressable>
+                  ))}
+                </View>
+              </View>
+            ) : null}
+
+            {/* STRENGTHS — Phase 70's "steady" topics. */}
+            {workspace.strongAreas.length > 0 ? (
+              <View style={styles.section}>
+                <SectionHeader title={STRENGTHS_TITLE} action={{ label: "Tümünü Gör", onPress: () => goTo(PLAN_ROUTES.strengths) }} />
+                <View style={styles.rows}>
+                  {workspace.strongAreas.map((area, index) => (
+                    <View
+                      key={`${area.subject}|${area.topic}`}
+                      style={[styles.row, index > 0 ? styles.divided : null]}
+                      accessible
+                      accessibilityLabel={`${area.subject}, ${area.topic}. İstikrarlı. ${area.fact}.`}
+                    >
+                      <Ionicons name="checkmark-circle" size={iconSize.sm} color={colors.success} accessibilityElementsHidden />
+                      <View style={styles.rowText}>
+                        <Text style={styles.rowTitle}>
+                          {area.topic} · İstikrarlı
+                        </Text>
+                        <Text style={styles.rowDetail}>
+                          {area.subject} · {area.fact}
+                        </Text>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            ) : null}
+
+            {/* PROGRESS — facts on record, no curve. */}
+            {workspace.progressFacts.length > 0 || workspace.progressEvents.length > 0 ? (
+              <View style={styles.section}>
+                <SectionHeader title={PROGRESS_TITLE} action={{ label: "Detay", onPress: () => goTo(PLAN_ROUTES.progress) }} />
+                {workspace.progressFacts.length > 0 ? (
+                  <View style={styles.facts}>
+                    {workspace.progressFacts.map((fact) => (
+                      <View key={fact.id} style={styles.fact} accessible accessibilityLabel={`${fact.value} ${fact.label}`}>
+                        <Text style={styles.factValue}>{fact.value}</Text>
+                        <Text style={styles.factLabel}>{fact.label}</Text>
+                      </View>
+                    ))}
+                  </View>
+                ) : null}
+                {workspace.progressEvents.length > 0 ? (
+                  <View style={styles.rows}>
+                    {workspace.progressEvents.map((event, index) => (
+                      <View
+                        key={event.id}
+                        style={[styles.row, index > 0 ? styles.divided : null]}
+                        accessible
+                        accessibilityLabel={`${shortDateLabel(event.occurredAt)}. ${event.sentence}${event.subject ? `. ${event.subject} ${event.topic}` : ""}.`}
+                      >
+                        <Text style={styles.eventDate}>{shortDateLabel(event.occurredAt)}</Text>
+                        <View style={styles.rowText}>
+                          <Text style={styles.rowTitle}>{event.sentence}</Text>
+                          {event.subject ? (
+                            <Text style={styles.rowDetail}>
+                              {event.subject} · {event.topic}
+                            </Text>
+                          ) : null}
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
+
+            {!workspace.hasAnyEvidence && plan.steps.length === 0 ? (
+              <EmptyState
+                icon="school-outline"
+                title="Henüz kayıtlı bir çalışman yok"
+                description="İlk soruyu çözdüğünde planın, zorlandığın konular ve ilerlemen burada görünmeye başlar."
+              />
+            ) : null}
+
+            {/* GOAL / SETTINGS — compact, at the bottom. */}
+            <View style={styles.section}>
+              <SectionHeader title={GOAL_TITLE} />
+              <View style={styles.rows}>
+                <DailyGoalEditor currentGoal={summary.dailyGoal} onSaved={refresh} />
+                <TextAction label="Plan tercihleri" icon="options-outline" onPress={() => goTo(PLAN_ROUTES.settings)} divided />
+                <TextAction label="Kişisel Analiz" icon="analytics-outline" onPress={() => goTo(ANALYTICS_ROUTES.overview)} divided />
+                <TextAction label="Öğrenme Atlasım" icon="git-network-outline" onPress={() => goTo(ROUTES.studentLearningAtlas)} divided />
+                <TextAction label="İlerleme Hikâyem" icon="book-outline" onPress={() => goTo("/(student)/learning-story")} divided />
+              </View>
+            </View>
+          </>
+        ) : null}
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
-function Separator() {
-  return <View style={styles.separator} />;
+const ARCHIVE_ROWS_SHOWN = 3;
+
+interface TextActionProps {
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  onPress: () => void;
+  hint?: string;
+  divided?: boolean;
+}
+
+/** A quiet navigation row: words, a glyph, a chevron. Not a button, not a card. */
+function TextAction({ label, icon, onPress, hint, divided }: TextActionProps) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={[styles.row, divided ? styles.divided : null]}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityHint={hint}
+    >
+      <Ionicons name={icon} size={iconSize.sm} color={colors.primary} accessibilityElementsHidden />
+      <Text style={styles.link}>{label}</Text>
+      <Ionicons name="chevron-forward" size={iconSize.sm} color={colors.textTertiary} accessibilityElementsHidden />
+    </Pressable>
+  );
 }
 
 const styles = themedStyles(() => ({
@@ -473,44 +389,22 @@ const styles = themedStyles(() => ({
     backgroundColor: colors.background,
   },
   // Phase 74 — the reading measure the rest of the product already uses.
-  // Without it the Hub ran edge to edge on a desktop window while the Concept
-  // Map and Learning Story it opens stayed capped, so the column width changed
-  // on every navigation out of the student's own home. On the element rather
-  // than the content container, so the scrollbar sits at the column's edge.
   scroller: {
     flex: 1,
     width: "100%",
     maxWidth: contentWidth.readable,
     alignSelf: "center",
   },
-  list: {
+  content: {
     paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.xxl,
-  },
-  header: {
-    // Phase 104 (B2) — the gap BETWEEN blocks; the pairs below step down.
-    gap: spacing.lg,
     paddingTop: spacing.sm,
-    paddingBottom: spacing.lg,
+    paddingBottom: spacing.xxl,
+    gap: spacing.xl,
   },
   identity: {
-    gap: spacing.xs,
-  },
-  pair: {
-    gap: spacing.xs,
-  },
-  lenses: {
-    flexDirection: "row",
-    alignItems: "stretch",
-    gap: spacing.sm,
-  },
-  lensesStacked: {
-    gap: spacing.sm,
+    gap: spacing.xxs,
   },
   title: {
-    // Phase 74 — was displayLg overridden to 26. The Hub is the student's
-    // home, and it was rendering its own title one step smaller than the
-    // Concept Map and Learning Story it opens.
     ...typography.screenTitle,
     color: colors.textPrimary,
   },
@@ -518,15 +412,105 @@ const styles = themedStyles(() => ({
     ...typography.body,
     color: colors.textSecondary,
   },
-  chronologyReason: {
+  skeleton: {
+    gap: spacing.md,
+  },
+  section: {
+    gap: spacing.sm,
+  },
+  // The one tinted surface on the screen: the focus.
+  focus: {
+    backgroundColor: colors.primaryMuted,
+    borderRadius: radius.xxl,
+    padding: spacing.md,
+    gap: spacing.xs,
+  },
+  focusEyebrow: {
+    ...typography.caption,
+    fontWeight: "600",
+    color: colors.primary,
+  },
+  focusTitle: {
+    ...typography.title,
+    color: colors.textPrimary,
+  },
+  focusDetail: {
+    ...typography.body,
+    color: colors.textPrimary,
+  },
+  focusWhy: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginBottom: spacing.xs,
+  },
+  rows: {
+    gap: 0,
+  },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    minHeight: minTouchTarget,
+    paddingVertical: spacing.sm,
+  },
+  divided: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.divider,
+  },
+  rowText: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  rowTitle: {
+    ...typography.bodyStrong,
+    color: colors.textPrimary,
+  },
+  rowDetail: {
+    ...typography.caption,
+    color: colors.textSecondary,
+  },
+  link: {
+    ...typography.body,
+    color: colors.textPrimary,
+    flex: 1,
+    minWidth: 0,
+  },
+  quiet: {
+    ...typography.body,
+    color: colors.textSecondary,
+  },
+  count: {
+    ...typography.caption,
+    color: colors.textSecondary,
+  },
+  archiveList: {
+    gap: spacing.xs,
+  },
+  facts: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+  },
+  fact: {
+    flexGrow: 1,
+    flexBasis: 120,
+    minWidth: 0,
+    gap: 2,
+    paddingVertical: spacing.xs,
+  },
+  factValue: {
+    ...typography.title,
+    color: colors.textPrimary,
+  },
+  factLabel: {
+    ...typography.caption,
+    color: colors.textSecondary,
+  },
+  eventDate: {
     ...typography.caption,
     color: colors.textTertiary,
-  },
-  separator: {
-    height: spacing.md,
-  },
-  skeletonList: {
-    gap: spacing.md,
+    width: 48,
   },
   errorBanner: {
     backgroundColor: colors.dangerMuted,

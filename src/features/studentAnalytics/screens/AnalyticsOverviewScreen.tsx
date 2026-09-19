@@ -97,7 +97,8 @@ export function AnalyticsOverviewScreen() {
     <SafeAreaView style={styles.flex} edges={["top"]}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.column}>
-          <AnalyticsHeader title="Kişisel Analiz" subtitle={INTRO} />
+          {/* Phase 109 — nested under Profil, so it carries the shared back. */}
+          <AnalyticsHeader title="Kişisel Analiz" subtitle={INTRO} backFallbackHref={ROUTES.studentProfile} />
 
           {error ? <AnalyticsErrorBanner title="Analizin şu an yüklenemedi" message={error} /> : null}
           {isLoading && !hasLoaded ? <AnalyticsLoading /> : null}

@@ -37,6 +37,10 @@ export interface QuestionSignal {
   // The question's TOPIC's recency signal (recencySignal.ts) — same
   // null-when-unbucketed rule as masteryBand.
   recency: RecencySignal | null;
+  // Phase 109 — whether the question belongs to one of the caller's OPEN
+  // assignments (useStudentAssignments, status not completed). Optional and
+  // false by default, so every pre-Phase-109 signal ranks exactly as before.
+  isAssigned?: boolean;
 }
 
 export interface BuildQuestionFeedRankingParams {
@@ -64,19 +68,21 @@ const NO_SIGNAL: QuestionSignal = {
 // structural fact about the signal, not a tunable score:
 //   0 due            — a real, scheduled obligation
 //   1 struggled      — the caller got this specific question wrong recently
-//   2 weak topic     — the question's topic is shaky/learning overall
-//   3 discovery      — never studied at all (exploration, §7's "yeni
+//   2 assigned       — Phase 109: part of an open assignment the teacher set
+//   3 weak topic     — the question's topic is shaky/learning overall
+//   4 discovery      — never studied at all (exploration, §7's "yeni
 //                      konular da keşfetmeli" — kept ABOVE developed
 //                      topics, not buried at the bottom, so exploration
 //                      and reinforcement stay balanced rather than the
 //                      feed locking onto weak topics exclusively)
-//   4 developed      — everything with real, non-weak progress
-function tierOf(signal: QuestionSignal): number {
+//   5 developed      — everything with real, non-weak progress
+export function tierOf(signal: QuestionSignal): number {
   if (signal.isDue) return 0;
   if (signal.lastOutcome === "struggled") return 1;
-  if (signal.masteryBand === "shaky" || signal.masteryBand === "learning") return 2;
-  if (signal.masteryBand === null) return 3;
-  return 4;
+  if (signal.isAssigned) return 2;
+  if (signal.masteryBand === "shaky" || signal.masteryBand === "learning") return 3;
+  if (signal.masteryBand === null) return 4;
+  return 5;
 }
 
 // Only meaningful as a WITHIN-tier tiebreaker — recency has no bearing on

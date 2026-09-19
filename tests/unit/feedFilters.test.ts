@@ -42,19 +42,19 @@ describe("matchesFeedFilter / filterQuestions", () => {
 
   it("filters by subject alone", () => {
     const questions = [q("a", { subject: "Matematik" }), q("b", { subject: "Fizik" })];
-    const filter: FeedFilter = { subject: "Matematik", gradeLevel: null, topic: null };
+    const filter: FeedFilter = { subject: "Matematik", gradeLevel: null, topic: null, kind: null };
     expect(filterQuestions(questions, filter).map((x) => x.id)).toEqual(["a"]);
   });
 
   it("filters by gradeLevel alone", () => {
     const questions = [q("a", { gradeLevel: "9" }), q("b", { gradeLevel: "10" })];
-    const filter: FeedFilter = { subject: null, gradeLevel: "10", topic: null };
+    const filter: FeedFilter = { subject: null, gradeLevel: "10", topic: null, kind: null };
     expect(filterQuestions(questions, filter).map((x) => x.id)).toEqual(["b"]);
   });
 
   it("filters by topic alone", () => {
     const questions = [q("a", { topic: "Denklemler" }), q("b", { topic: "Geometri" })];
-    const filter: FeedFilter = { subject: null, gradeLevel: null, topic: "Geometri" };
+    const filter: FeedFilter = { subject: null, gradeLevel: null, topic: "Geometri", kind: null };
     expect(filterQuestions(questions, filter).map((x) => x.id)).toEqual(["b"]);
   });
 
@@ -65,13 +65,13 @@ describe("matchesFeedFilter / filterQuestions", () => {
       q("c", { subject: "Matematik", gradeLevel: "10", topic: "Denklemler" }),
       q("d", { subject: "Fizik", gradeLevel: "9", topic: "Denklemler" }),
     ];
-    const filter: FeedFilter = { subject: "Matematik", gradeLevel: "9", topic: "Denklemler" };
+    const filter: FeedFilter = { subject: "Matematik", gradeLevel: "9", topic: "Denklemler", kind: null };
     expect(filterQuestions(questions, filter).map((x) => x.id)).toEqual(["a"]);
   });
 
   it("matchesFeedFilter agrees with filterQuestions on a single question", () => {
     const question = q("a", { subject: "Fizik" });
-    const filter: FeedFilter = { subject: "Matematik", gradeLevel: null, topic: null };
+    const filter: FeedFilter = { subject: "Matematik", gradeLevel: null, topic: null, kind: null };
     expect(matchesFeedFilter(question, filter)).toBe(false);
   });
 });
@@ -83,13 +83,13 @@ describe("isFeedFilterActive / activeFeedFilterCount / clear", () => {
   });
 
   it("counts exactly how many fields are set", () => {
-    expect(activeFeedFilterCount({ subject: "Matematik", gradeLevel: null, topic: null })).toBe(1);
-    expect(activeFeedFilterCount({ subject: "Matematik", gradeLevel: "9", topic: null })).toBe(2);
-    expect(activeFeedFilterCount({ subject: "Matematik", gradeLevel: "9", topic: "Denklemler" })).toBe(3);
+    expect(activeFeedFilterCount({ subject: "Matematik", gradeLevel: null, topic: null, kind: null })).toBe(1);
+    expect(activeFeedFilterCount({ subject: "Matematik", gradeLevel: "9", topic: null, kind: null })).toBe(2);
+    expect(activeFeedFilterCount({ subject: "Matematik", gradeLevel: "9", topic: "Denklemler", kind: null })).toBe(3);
   });
 
   it("clearing returns to the exact empty-filter shape", () => {
-    const cleared: FeedFilter = { subject: null, gradeLevel: null, topic: null };
+    const cleared: FeedFilter = { subject: null, gradeLevel: null, topic: null, kind: null };
     expect(cleared).toEqual(EMPTY_FEED_FILTER);
     expect(isFeedFilterActive(cleared)).toBe(false);
   });
@@ -97,14 +97,14 @@ describe("isFeedFilterActive / activeFeedFilterCount / clear", () => {
 
 describe("feedFilterKey — identity used to reset a feed session on filter change", () => {
   it("gives the same key for two filters with the same content", () => {
-    const a: FeedFilter = { subject: "Matematik", gradeLevel: "9", topic: null };
-    const b: FeedFilter = { subject: "Matematik", gradeLevel: "9", topic: null };
+    const a: FeedFilter = { subject: "Matematik", gradeLevel: "9", topic: null, kind: null };
+    const b: FeedFilter = { subject: "Matematik", gradeLevel: "9", topic: null, kind: null };
     expect(feedFilterKey(a)).toBe(feedFilterKey(b));
   });
 
   it("gives a different key when any field differs", () => {
-    const a: FeedFilter = { subject: "Matematik", gradeLevel: "9", topic: null };
-    const b: FeedFilter = { subject: "Fizik", gradeLevel: "9", topic: null };
+    const a: FeedFilter = { subject: "Matematik", gradeLevel: "9", topic: null, kind: null };
+    const b: FeedFilter = { subject: "Fizik", gradeLevel: "9", topic: null, kind: null };
     expect(feedFilterKey(a)).not.toBe(feedFilterKey(b));
   });
 });
@@ -119,7 +119,7 @@ describe("filtering composed with reconcileFeedItems (the real FeedScreen data p
   const math9 = q("a", { subject: "Matematik", gradeLevel: "9" });
   const math10 = q("b", { subject: "Matematik", gradeLevel: "10" });
   const physics9 = q("c", { subject: "Fizik", gradeLevel: "9" });
-  const filter: FeedFilter = { subject: "Matematik", gradeLevel: null, topic: null };
+  const filter: FeedFilter = { subject: "Matematik", gradeLevel: null, topic: null, kind: null };
 
   function assertNoDuplicateKeys(items: ReturnType<typeof buildFeedItems>) {
     const keys = items.map((item) => item.key);
@@ -198,7 +198,7 @@ describe("filtering composed with reconcileFeedItems (the real FeedScreen data p
 
     // Filter changes to "only grade 10" — math9 (and its reshow pair) are
     // no longer part of the filtered question set at all.
-    const narrowerFilter: FeedFilter = { subject: null, gradeLevel: "10", topic: null };
+    const narrowerFilter: FeedFilter = { subject: null, gradeLevel: "10", topic: null, kind: null };
     const filteredQuestions = filterQuestions([math9, math10], narrowerFilter);
 
     // The FRESH-session reconciliation FeedScreen actually performs on a

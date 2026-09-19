@@ -75,17 +75,17 @@ describe("EmptyState tone contract", () => {
     }
   });
 
-  it("opts every immersive-surface feed panel into the immersive tone", () => {
+  it("keeps every feed panel on the theme's foreground now that the feed is a themed surface", () => {
+    // Phase 109 — the student feed follows the theme (its page holds themed
+    // controls, not a photograph with text over it), so no panel on it may
+    // pin the immersive foreground any more.
     const source = read(FEED_SCREEN);
-    const panels = source.match(/<SharedEmptyState\b[\s\S]*?\/>/g) ?? [];
-    const immersivePanels = panels.filter(
-      (panel) => panel.includes("IMMERSIVE_SURFACE") || panel.includes("cloud-offline-outline"),
-    );
-
-    expect(immersivePanels.length).toBeGreaterThanOrEqual(3);
-    for (const panel of immersivePanels) {
-      expect(panel).toContain('tone="immersive"');
+    const panels = source.match(/<EmptyState\b[\s\S]*?\/>/g) ?? [];
+    expect(panels.length).toBeGreaterThanOrEqual(3);
+    for (const panel of panels) {
+      expect(panel).not.toContain('tone="immersive"');
     }
+    expect(source).not.toContain("IMMERSIVE_SURFACE");
   });
 
   it("leaves the themed feed panel on the theme's foreground", () => {

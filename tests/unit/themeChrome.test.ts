@@ -71,22 +71,18 @@ describe("the immersive feed surface carries its own chrome", () => {
     expect(immersiveTabBarStyle()).toEqual({ backgroundColor: IMMERSIVE_SURFACE, borderTopColor: darkColors.divider });
   });
 
-  it("the student feed tab's bar and channel strip use the immersive chrome", () => {
+  it("the student feed and its tab bar follow the theme (Phase 109), while the class feed keeps the immersive chrome", () => {
     const tabs = code(read("app/(student)/(tabs)/_layout.tsx"));
-    expect(tabs).toContain("tabBarStyle: immersiveTabBarStyle()");
+    expect(tabs).not.toContain("immersiveTabBarStyle");
     const feed = code(read("src/features/feed/screens/FeedScreen.tsx"));
-    expect(feed).toContain('surface="immersive"');
-    expect(feed).toContain("immersiveChrome.surface");
+    expect(feed).not.toContain("immersive");
+    expect(feed).not.toMatch(/#fff|#ffffff|"white"/i);
+    expect(feed).toContain("backgroundColor: colors.background");
+    const classFeed = code(read("src/features/classes/screens/ClassFeedScreen.tsx"));
+    expect(classFeed).toContain("IMMERSIVE_SURFACE");
     const bar = code(read("src/features/feed/components/FeedChannelBar.tsx"));
     expect(bar).toContain("immersiveChrome.surface");
     expect(bar).not.toMatch(/#fff|#ffffff|"white"/i);
-  });
-
-  it("the feed forces a light status bar only while focused", () => {
-    const feed = code(read("src/features/feed/screens/FeedScreen.tsx"));
-    // Phase 103 — and only while the first-run guided tour is not covering it;
-    // see tests/unit/guidedTourStatusBar.test.ts.
-    expect(feed).toContain('{isFocused && !isGuidedTourVisible ? <StatusBar style="light" /> : null}');
   });
 
   it("the teacher feed stays a themed surface", () => {

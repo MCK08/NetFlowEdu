@@ -73,22 +73,27 @@ describe("design language — tokens, no emoji, no invented colour", () => {
 });
 
 describe("Çalış — action before data", () => {
-  it("keeps the Hub's order: title, next action, the two insight tiles, then the breakdown", () => {
+  it("keeps the workspace's order: one action, today's plan, unresolved questions, practice, gaps, strengths, progress, goal", () => {
+    // Phase 109 — Çalış is one scroll. The action still comes before the
+    // data; the data is now inline (plan rows, archive rows, topic rows)
+    // rather than tiles that open other screens.
     const source = read(STUDY);
-    const header = source.slice(source.indexOf("ListHeaderComponent="), source.indexOf("ListEmptyComponent="));
+    const body = source.slice(source.indexOf("return ("));
     const order = [
-      "Öğrenme Merkezi",
-      "<NextActionSection",
-      "<LearningStoryEntryCard",
-      "<LearningAtlasEntryCard",
-      "<AssignedWorkSection",
-      "<DailyPracticePlanSection",
-      "<ReviewReadySection",
-      "<StudyProgressCard",
+      "FOCUS_TITLE}",
+      "<PrimaryButton",
+      "TODAY_TITLE}",
+      "<PlanStepRow",
+      "UNRESOLVED_TITLE}",
+      "<ArchiveEntryRow",
+      "PRACTICE_SECTION_TITLE}",
+      "<PracticeLauncher",
+      "STRUGGLE_TITLE}",
+      "STRENGTHS_TITLE}",
+      "PROGRESS_TITLE}",
+      "GOAL_TITLE}",
       "<DailyGoalEditor",
-      "<WeakTopicsSection",
-      "<SubjectBreakdownSection",
-    ].map((marker) => header.indexOf(marker));
+    ].map((marker) => body.indexOf(marker));
     expect(order.every((index) => index > -1)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
   });
@@ -103,20 +108,19 @@ describe("Çalış — action before data", () => {
     expect(source).toMatch(/<Ionicons name=\{icon\}[^>]*accessibilityElementsHidden/);
   });
 
-  it("the two insight tiles sit side by side and stack at the accessibility text sizes", () => {
+  it("the story and atlas entries survive as quiet text rows at the foot of the workspace", () => {
+    // Phase 109 — the two insight tiles left the top of Çalış (the question
+    // is the product's hero now); their destinations did not.
     const study = read(STUDY);
-    expect(study).toContain("const stackedLenses = fontScale >= stackAtFontScale;");
-    expect(study).toContain("<View style={stackedLenses ? styles.lensesStacked : styles.lenses}>");
-    expect(styleBlock(study, "lenses")).toContain('flexDirection: "row"');
+    expect(study).toContain('goTo("/(student)/learning-story")');
+    expect(study).toContain("goTo(ROUTES.studentLearningAtlas)");
+    expect(study).not.toContain("<LearningStoryEntryCard");
+    expect(study).not.toContain("<LearningAtlasEntryCard");
     for (const tile of [STORY_TILE, ATLAS_TILE]) {
       const source = code(tile);
       expect(source).toContain('<Card variant="outlined"');
-      expect(styleBlock(source, "pressable")).toContain("flex: 1");
       expect(source).toContain('accessibilityRole="button"');
     }
-    // Same destinations as before.
-    expect(study).toContain('router.push("/(student)/learning-story" as never)');
-    expect(study).toContain("router.push(ROUTES.studentLearningAtlas as never)");
   });
 
   it("assigned work is one grouped list whose rows speak status in words", () => {
@@ -144,14 +148,17 @@ describe("Çalış — action before data", () => {
     for (const row of ["Önce Tekrar Et", "Güçlendir", "Devam Et"]) expect(source).toContain(row);
   });
 
-  it("the goal surface is one component with the editor as its last row", () => {
+  it("the goal editor is the workspace's last group, still a navigation row rather than a button", () => {
     const goal = code(GOAL);
     expect(goal).toContain("children?: ReactNode;");
     expect(goal).toContain("{children ? <View style={styles.footer}>{children}</View> : null}");
     const study = read(STUDY);
-    expect(study).toMatch(/<StudyProgressCard summary=\{summary\} dueCount=\{insights\.dueCount\}>\s*<DailyGoalEditor/);
+    // Phase 109 — the goal sits in the compact bottom group, not in a card
+    // above the breakdown; the editor itself is unchanged.
+    expect(study).toContain("<DailyGoalEditor currentGoal={summary.dailyGoal} onSaved={refresh} />");
+    expect(study).not.toContain("<StudyProgressCard");
     const editor = code(GOAL_EDITOR);
-    // A navigation row, not a button competing with "Çalışmaya Başla".
+    // A navigation row, not a button competing with the one action.
     expect(editor).toContain("<Text style={styles.triggerText}>Hedefi değiştir</Text>");
     expect(editor).toContain('name="chevron-forward"');
     expect(editor).not.toMatch(/<PrimaryButton[^>]*label="Hedefi değiştir"/);

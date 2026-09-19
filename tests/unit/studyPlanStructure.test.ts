@@ -68,12 +68,15 @@ describe("routes", () => {
     }
   });
 
-  it("is reachable from Çalış (one quiet row under the next action) and from Analiz (the maps)", () => {
+  it("shows the plan inline on Çalış and keeps the maps reachable from Kişisel Analiz", () => {
+    // Phase 109 — Çalış renders today's steps itself (the same useStudyPlan
+    // and PlanStepRow the plan screens use) instead of a row that opens
+    // Çalışma Planım; the maps stay one tap away behind the overview.
     const study = read("src/features/study/screens/StudyScreen.tsx");
-    const header = study.slice(study.indexOf("ListHeaderComponent="), study.indexOf("ListEmptyComponent="));
-    expect(header.indexOf("<NextActionSection")).toBeLessThan(header.indexOf('title="Çalışma Planım"'));
-    expect(header.indexOf('title="Çalışma Planım"')).toBeLessThan(header.indexOf("<LearningStoryEntryCard"));
-    expect(study).toContain("router.push(PLAN_ROUTES.home as never)");
+    expect(study).toContain("useStudyPlan(uid)");
+    expect(study).toContain("<PlanStepRow");
+    expect(study).toContain("planStepRoute(stepId)");
+    expect(study).not.toContain('title="Çalışma Planım"');
 
     const overview = read("src/features/studentAnalytics/screens/AnalyticsOverviewScreen.tsx");
     for (const title of ["Eksik Haritam", "Güçlü Alanlarım", "İlerleme Haritam", "Toplulukta Zorlayıcı Sorular"]) {

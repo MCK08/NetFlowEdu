@@ -1,12 +1,10 @@
-import { useGuidedTour } from "@features/onboarding";
 import { Ionicons } from "@expo/vector-icons";
-import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
-import { router, useFocusEffect } from "expo-router";
-import { StatusBar } from "expo-status-bar";
+import { useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
+  LayoutChangeEvent,
   NativeScrollEvent,
   NativeSyntheticEvent,
   Pressable,
@@ -14,10 +12,10 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { SafeAreaView } from "react-native-safe-area-context";
 
-import { BrandLockup } from "@components/ui/BrandMark";
-import { EmptyState as SharedEmptyState } from "@components/ui/EmptyState";
+import { ImageViewer } from "@components/ImageViewer";
+import { EmptyState } from "@components/ui/EmptyState";
 import { LoadingSkeleton } from "@components/ui/LoadingSkeleton";
 import { PrimaryButton } from "@components/ui/PrimaryButton";
 import { useStudentAssignments } from "@features/assignments/hooks/useStudentAssignments";
@@ -25,26 +23,26 @@ import { useAuth } from "@features/authentication";
 import { useStudentClasses } from "@features/classes/hooks/useStudentClasses";
 import { calculateActiveIndex } from "@features/classes/services/classFeedPagination";
 import { FeedItem } from "@features/classes/services/feedItems";
-import { DailyFlowSheet } from "@features/dailyFlow/components/DailyFlowSheet";
-import { buildStudentDailyFlow } from "@features/dailyFlow/services/buildStudentDailyFlow";
-import { DailyFlowItem } from "@features/dailyFlow/services/dailyFlowTypes";
 import { QuestionMetadataModal } from "@features/questions/components/QuestionMetadataModal";
+import { QUESTION_SUBJECTS } from "@features/questions/data/questionTaxonomy";
+import { hasMultipleChoice } from "@features/questions/services/multipleChoice";
 import { RatingCard } from "@features/study/components/RatingCard";
+import { StudyOutcome } from "@features/study/domain/studyTypes";
 import { useInterleavedStudyFeed } from "@features/study/hooks/useInterleavedStudyFeed";
-import { CameraButton } from "@features/upload/components/CameraButton";
+import { EMPTY_SUMMARY, StudySummary, subscribeToStudySummary } from "@features/study/services/studyService";
 import { VisibilityPicker } from "@features/upload/components/VisibilityPicker";
 import { useUpload } from "@features/upload/hooks/useUpload";
 import { colors } from "@theme/colors";
-import { IMMERSIVE_FOREGROUND, immersiveChrome } from "@theme/immersive";
 import { radius } from "@theme/radius";
+import { iconSize, minTouchTarget } from "@theme/sizes";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
 import { themedStyles } from "@theme/themeRuntime";
+import { useThemeSubscription } from "@theme/ThemeProvider";
 
-import { EmptyState } from "../components/EmptyState";
-import { FeedCard } from "../components/FeedCard";
-import { FeedChannelBar } from "../components/FeedChannelBar";
 import { FeedFilterSheet } from "../components/FeedFilterSheet";
+import { QuestionFeedPage } from "../components/QuestionFeedPage";
+import { SubjectPillBar } from "../components/SubjectPillBar";
 import { useClassScopedQuestions } from "../hooks/useClassScopedQuestions";
 import { useFeedPersonalizationSignals } from "../hooks/useFeedPersonalizationSignals";
 import { useSocialFeed } from "../hooks/useSocialFeed";
@@ -56,6 +54,7 @@ import {
   feedSessionKey,
   resolveChannelForRole,
 } from "../services/feedChannels";
+import { assignedQuestionIds, composeFeedOrder, withAssignmentSignals } from "../services/feedComposition";
 import {
   activeFeedFilterCount,
   EMPTY_FEED_FILTER,
@@ -64,51 +63,39 @@ import {
   filterQuestions,
   isFeedFilterActive,
 } from "../services/feedFilters";
+import { parseFeedLaunch } from "../services/feedLaunch";
 import { buildQuestionFeedRanking } from "../services/feedRanking";
 import { Question } from "../types";
 
-// Phase 54 — the student's immersive learning feed, restored.
+// Phase 109 — "TikTok ama soru": the student's home is one question at a
+// time, answered where it stands.
 //
-// WHY THIS REVERSES PHASE 50 (FOR THIS SCREEN ONLY)
+// WHAT IS KEPT FROM PHASE 54
 //
-// Phase 50 replaced the one-page-per-viewport feed with a conventional
-// vertically scrolling list of cards. That made the student home read as an
-// ordinary social feed — several question cards stacked in one viewport —
-// which is not the intended product. This restores the proven pre-Phase-50
-// interaction:
+// The pager itself: a FlatList of full-height pages with paging, snapping,
+// a three-page render window and getItemLayout; the [Question, Rating]
+// interleave (useInterleavedStudyFeed + feedItems.ts) with its
+// second-chance reshow; Phase 50's channels and Phase 21's filters as the
+// pool/narrowing layer; Phase 26's ranking. None of those is rebuilt.
 //
-//     [QUESTION A] → swipe → [RATING A] → swipe → [QUESTION B] → ...
+// WHAT CHANGES
 //
-// RECOVERED, NOT REINVENTED
-//
-// Every mechanism below already existed and still exists at HEAD; Phase 50
-// only stopped calling it. The interleave engine (useInterleavedStudyFeed +
-// feedItems.ts), the rating interstitial (RatingCard, which owns its own
-// exactly-once write via useStudyQuestionState), the immersive card
-// (FeedCard) and the offset→index helper (calculateActiveIndex) are all
-// untouched by this phase and are used exactly as ClassFeedScreen — the
-// sibling immersive surface that kept this model through Phases 50–53 —
-// still uses them today.
-//
-// WHAT PHASE 51/52/53 KEPT
-//
-//  · Phase 51's camera-button clearance and its native-iOS hardening
-//  · Phase 52's BrandLockup header
-//  · Phase 53's Daily Flow intelligence and the outcomeHistory fix — Daily
-//    Flow moved from an inline section to a header pill + sheet, because any
-//    block above the pager would re-break the full-viewport page (see
-//    DailyFlowSheet's own doc comment)
-//  · Phase 50's channels and filters, as compact overlay chrome
-//
-// LAYOUT MODEL
-//
-// The list fills the whole area above the tab bar and the header/channel bar
-// float over it as absolutely-positioned chrome. That is what keeps the page
-// height exactly `windowHeight - tabBarHeight` — a single, deterministic
-// number that getItemLayout, snapToInterval and calculateActiveIndex all
-// agree on. Laying the header out in normal flow instead would make the page
-// height depend on the header's measured height, which is the class of
-// "magic height that only works on one iPhone" this phase rules out.
+//  · The page is QuestionFeedPage: image, words, choices, hint, actions —
+//    the same MultipleChoiceAnswer / QuestionHintLadder / AnswerScreen
+//    QuestionDetailScreen uses, so answering happens in the feed through
+//    the one existing engine. A multiple-choice question therefore gets no
+//    rating page after it (its own bridge already recorded the outcome);
+//    an open-ended question keeps its rating page.
+//  · The surface follows the theme (near-black navy in dark, the calm
+//    canvas in light) instead of the pinned immersive scrim, because the
+//    page now holds themed controls, not a photograph with text over it.
+//  · The chrome is in normal flow: a minimal header, one row of subject
+//    pills, then the question. The page height is the pager's own measured
+//    height (onLayout), one number the layout, snapping and index math all
+//    share — never a guessed constant.
+//  · Sources (channels), topic, type and grade live behind ONE filter
+//    control. Çalış launches this screen with a filter context through the
+//    tab's route params (feedLaunch.ts); there is no second practice feed.
 
 function keyExtractor(item: FeedItem) {
   return item.key;
@@ -124,39 +111,18 @@ const THIN_RESULT_THRESHOLD = 5;
 // wide monitor an educational image stretched across 2000px is not.
 const MAX_CONTENT_WIDTH = 680;
 
-// Phase 55 — chrome that sits ON the dark scrim must be a CONSTANT light
-// colour, not a theme token.
-//
-// `chromePill` already pins its own background to a literal dark scrim
-// because the immersive page is dark in both themes. Its contents were still
-// using `colors.textInverse`, which inverts WITH the theme: in dark mode that
-// resolves to #04070E, so the filter control rendered as a completely empty
-// pill and the Daily Flow icon vanished behind its own badge. Reproduced on
-// the iPhone 17 Pro simulator in dark mode before this fix.
-const CHROME_FOREGROUND = IMMERSIVE_FOREGROUND;
+export const FEED_TITLE = "Soru Akışı";
+export const FEED_FILTER_EMPTY_TITLE = "Bu filtreyle eşleşen soru bulunamadı.";
 
-// The immersive pager's own ground, constant in both themes.
-//
-// The content pages (FeedCard) are already full-bleed dark in light AND dark
-// mode, the same way ClassFeedScreen and ImageViewer are. The container,
-// loading and empty states were still painting colors.background, so in the
-// light theme the surface flipped white the moment a channel had nothing to
-// show — and the chrome above, which is pinned light for the dark pages,
-// became white-on-white. Caught on the iPhone SE with an empty "Sana Özel".
-// Pinning the surface keeps the pager one continuous colour in every state.
-// Phase 102 — the value itself is unchanged; it now lives in theme/immersive.ts
-// so the channel strip and the tab bar can agree with it (see that file).
-const IMMERSIVE_SURFACE = immersiveChrome.surface;
+/** Only an open-ended question is followed by a rating page: a
+ *  multiple-choice answer is already the recorded outcome. */
+function ratingPolicy(question: Question): boolean {
+  return !hasMultipleChoice(question.choices);
+}
 
 export function FeedScreen() {
-  const { height: windowHeight, width } = useWindowDimensions();
-  const insets = useSafeAreaInsets();
-  // Each page is exactly the space above the tab bar, never the full window:
-  // otherwise the bar overlays the bottom of every page, hiding the card's
-  // own action rail behind it.
-  const tabBarHeight = useBottomTabBarHeight();
-  const pageHeight = windowHeight - tabBarHeight;
-
+  useThemeSubscription();
+  const { width } = useWindowDimensions();
   const { firebaseUser, profile, role } = useAuth();
   const uid = firebaseUser?.uid;
   const organizationId = profile?.organizationId ?? null;
@@ -168,7 +134,18 @@ export function FeedScreen() {
 
   const [filter, setFilter] = useState<FeedFilter>(EMPTY_FEED_FILTER);
   const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
-  const [isDailyFlowOpen, setIsDailyFlowOpen] = useState(false);
+  const [previewUri, setPreviewUri] = useState<string | null>(null);
+
+  // A launch from Çalış: applied once per nonce, never on a plain revisit.
+  const params = useLocalSearchParams<Record<string, string | string[]>>();
+  const launch = parseFeedLaunch(params, role);
+  const appliedLaunchRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!launch || appliedLaunchRef.current === launch.nonce) return;
+    appliedLaunchRef.current = launch.nonce;
+    setFilter(launch.context.filter);
+    setChannel(launch.context.channel);
+  }, [launch]);
 
   const {
     questions,
@@ -193,20 +170,19 @@ export function FeedScreen() {
     submitMetadata,
   } = useUpload({ uid, organizationId, onUploaded: prepend });
 
-  const { signalsByQuestionId, snapshot, refresh: refreshSignals } =
-    useFeedPersonalizationSignals(uid);
+  const { signalsByQuestionId, refresh: refreshSignals } = useFeedPersonalizationSignals(uid);
   const { cards: assignmentCards, refresh: refreshAssignments } = useStudentAssignments(uid);
 
-  const dailyFlowItems = useMemo(
-    () =>
-      buildStudentDailyFlow({
-        assignmentCards,
-        weakTopics: snapshot.weakTopics,
-        dueCount: snapshot.dueCount,
-        hasStudyHistory: snapshot.hasStudyHistory,
-      }),
-    [assignmentCards, snapshot],
-  );
+  // The daily goal's real numbers, from the summary listener the Hub already
+  // holds — the only "progress" this screen shows, and only when a goal exists.
+  const [summary, setSummary] = useState<StudySummary>(EMPTY_SUMMARY);
+  useEffect(() => {
+    if (!uid || !isStudent) {
+      setSummary(EMPTY_SUMMARY);
+      return;
+    }
+    return subscribeToStudySummary(uid, setSummary);
+  }, [uid, isStudent]);
 
   const needsClassQuestions = activeChannel === "my_classes" || activeChannel === "struggles";
   const { classes } = useStudentClasses(uid);
@@ -223,29 +199,8 @@ export function FeedScreen() {
     }, [refreshSignals, refreshAssignments]),
   );
 
-  // Phase 102 — the pager is dark in both themes, so while THIS tab is the
-  // one on screen the status bar must be light-content regardless of the
-  // theme's own choice (the root layout sets it from the resolved theme). The
-  // override is mounted only while focused: tabs keep their screens mounted,
-  // and a permanent override would bleed onto Çalış/Sınıflarım/Profil.
-  const [isFocused, setIsFocused] = useState(false);
-  // Phase 103 — the first-run guided tour is an opaque theme surface drawn over
-  // this screen. While it is up, this screen must not claim the status bar: its
-  // light (white-icon) bar is right for the dark immersive feed but left the
-  // clock and battery white-on-white over a Light tour. Yielding here lets the
-  // root layout's theme-matched bar apply regardless of mount order — found on
-  // the simulator, where the tour mounts before this screen finishes routing.
-  const guidedTour = useGuidedTour();
-  const isGuidedTourVisible = guidedTour?.presentation.kind === "visible";
-  useFocusEffect(
-    useCallback(() => {
-      setIsFocused(true);
-      return () => setIsFocused(false);
-    }, []),
-  );
-
-  // Phase 50's channel pools, unchanged — immersive paging is a presentation
-  // change and must not alter which questions a channel contains.
+  // Phase 50's channel pools, unchanged — the page is a presentation change
+  // and must not alter which questions a channel contains.
   const channelQuestions = useMemo(() => {
     if (activeChannel === "my_classes") return classQuestions;
     if (activeChannel === "struggles") {
@@ -266,16 +221,22 @@ export function FeedScreen() {
     [channelQuestions, filter],
   );
 
-  // Phase 45/26 ranking, unchanged and still "Sana Özel" only.
+  // Phase 26 ranking on "Sana Özel", with Phase 109's assignment signal and
+  // the spreading pass on top. Every other channel keeps its pool order.
   const recentlyShownIdsRef = useRef<Set<string>>(new Set());
+  const signals = useMemo(
+    () => withAssignmentSignals(signalsByQuestionId, assignedQuestionIds(assignmentCards)),
+    [signalsByQuestionId, assignmentCards],
+  );
   const rankedQuestions = useMemo(() => {
     if (activeChannel !== "for_you") return filteredQuestions;
-    return buildQuestionFeedRanking({
+    const ranked = buildQuestionFeedRanking({
       questions: filteredQuestions,
-      signalsByQuestionId,
+      signalsByQuestionId: signals,
       recentlyShownIds: recentlyShownIdsRef.current,
     });
-  }, [activeChannel, filteredQuestions, signalsByQuestionId]);
+    return composeFeedOrder(ranked, signals);
+  }, [activeChannel, filteredQuestions, signals]);
 
   useEffect(() => {
     if (!isFeedFilterActive(filter)) return;
@@ -283,6 +244,14 @@ export function FeedScreen() {
     if (filteredQuestions.length >= THIN_RESULT_THRESHOLD) return;
     loadMore();
   }, [filter, filteredQuestions.length, hasMore, isLoadingMore, loadMore]);
+
+  // The pager's page height is its own measured height: header and pills
+  // are in flow above it, the tab bar below it.
+  const [pageHeight, setPageHeight] = useState(0);
+  const handlePagerLayout = useCallback((event: LayoutChangeEvent) => {
+    const next = Math.round(event.nativeEvent.layout.height);
+    setPageHeight((prev) => (prev === next ? prev : next));
+  }, []);
 
   const listRef = useRef<FlatList<FeedItem>>(null);
   const scrollToIndex = useCallback(
@@ -292,15 +261,13 @@ export function FeedScreen() {
     [pageHeight],
   );
 
-  // THE RESTORED INTERLEAVE. `resetKey` combines the filter AND the channel:
-  // both change which questions exist, and a reshow pair built for the old
-  // pool must never leak into the new one.
   const sessionKey = feedSessionKey(activeChannel, feedFilterKey(filter));
-  const { items, handleOutcomeRecorded } = useInterleavedStudyFeed({
+  const { items, handleOutcomeRecorded, handleInlineOutcome } = useInterleavedStudyFeed({
     questions: rankedQuestions,
     isStudent,
     scrollToIndex,
     resetKey: sessionKey,
+    ratingPolicy,
   });
 
   // Changing channel or filter starts a new session, so the pager returns to
@@ -309,11 +276,9 @@ export function FeedScreen() {
     listRef.current?.scrollToOffset({ offset: 0, animated: false });
   }, [sessionKey]);
 
-  // Bookkeeping only — feeds the session-local "already seen" set that
-  // deprioritises (never hides) a question in later ranking passes. Never
-  // gates rendering, navigation or rating.
   const handleMomentumScrollEnd = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      if (pageHeight <= 0) return;
       const index = calculateActiveIndex(event.nativeEvent.contentOffset.y, pageHeight, items.length);
       const questionId = items[index]?.question.id;
       if (questionId) recentlyShownIdsRef.current.add(questionId);
@@ -335,9 +300,21 @@ export function FeedScreen() {
           />
         );
       }
-      return <FeedCard question={item.question} height={pageHeight} />;
+      return (
+        <QuestionFeedPage
+          question={item.question}
+          height={pageHeight}
+          isStudent={isStudent}
+          onOutcomeRecorded={(outcome: StudyOutcome, question: Question) =>
+            handleInlineOutcome(outcome, question, index, item.questionIndex)
+          }
+          onPressImage={setPreviewUri}
+          onNext={() => scrollToIndex(index + 1)}
+          hasNext={index + 1 < items.length}
+        />
+      );
     },
-    [pageHeight, isStudent, handleOutcomeRecorded],
+    [pageHeight, isStudent, handleOutcomeRecorded, handleInlineOutcome, scrollToIndex, items.length],
   );
 
   const getItemLayout = useCallback(
@@ -354,210 +331,78 @@ export function FeedScreen() {
     if (hasMore) loadMore();
   }, [activeChannel, hasMore, loadMore]);
 
-  const handleDailyFlowPress = useCallback((item: DailyFlowItem) => {
-    setIsDailyFlowOpen(false);
-    switch (item.target.kind) {
-      case "assignment":
-        router.push({
-          pathname: "/(student)/assignment/[assignmentId]",
-          params: { assignmentId: item.target.assignmentId },
-        });
-        return;
-      case "review_session":
-        router.push("/(student)/study/review");
-        return;
-      case "adaptive_session":
-        router.push("/(student)/study/adaptive");
-        return;
-      case "question":
-        router.push({
-          pathname: "/(student)/question/[questionId]",
-          params: { questionId: item.target.questionId },
-        });
-        return;
-      default:
-        return;
-    }
+  const selectSubject = useCallback((subject: string | null) => {
+    setFilter((prev) => ({ ...prev, subject, topic: null }));
+  }, []);
+  const clearFilters = useCallback(() => {
+    setFilter(EMPTY_FEED_FILTER);
+    setChannel(null);
   }, []);
 
-  const activeFilterCount = activeFeedFilterCount(filter);
+  const activeFilterCount = activeFeedFilterCount(filter) + (activeChannel && activeChannel !== "for_you" ? 1 : 0);
   const descriptor = activeChannel ? channelDescriptor(activeChannel, role) : null;
   const isChannelLoading = needsClassQuestions ? isLoadingClasses || isLoading : isLoading;
+  const goalCaption =
+    isStudent && summary.dailyGoal > 0 ? `Bugünkü hedef ${summary.reviewedToday} / ${summary.dailyGoal}` : null;
 
-  // Absolutely positioned chrome — see the layout note in this file's header
-  // for why it floats rather than taking flow space.
-  const chrome = (
-    <View style={[styles.chrome, { top: insets.top }]} pointerEvents="box-none">
-      {isFocused && !isGuidedTourVisible ? <StatusBar style="light" /> : null}
-      <View style={styles.chromeRow}>
-        <BrandLockup size="compact" onDark />
-        <View style={styles.chromeActions}>
+  const header = (
+    <View style={styles.header}>
+      <View style={styles.headerRow}>
+        <View style={styles.identity}>
+          <Text style={styles.title}>{FEED_TITLE}</Text>
+          {goalCaption ? <Text style={styles.subtitle}>{goalCaption}</Text> : null}
+        </View>
+        <View style={styles.headerActions}>
           <Pressable
-            onPress={() => setIsDailyFlowOpen(true)}
-            style={styles.chromePill}
+            onPress={openPicker}
+            disabled={isUploading}
+            style={styles.iconButton}
             accessibilityRole="button"
-            accessibilityLabel="Bugünkü akışın"
+            accessibilityLabel="Soru yükle"
+            accessibilityState={{ disabled: isUploading }}
           >
-            <Ionicons name="sparkles-outline" size={14} color={CHROME_FOREGROUND} />
-            {dailyFlowItems.length > 0 ? (
-              <View style={styles.chromeBadge}>
-                <Text style={styles.chromeBadgeText}>{dailyFlowItems.length}</Text>
-              </View>
-            ) : null}
+            {isUploading ? (
+              <ActivityIndicator color={colors.textSecondary} />
+            ) : (
+              <Ionicons name="camera-outline" size={iconSize.md} color={colors.textSecondary} accessibilityElementsHidden />
+            )}
           </Pressable>
           <Pressable
             onPress={() => setIsFilterSheetOpen(true)}
-            style={styles.chromePill}
+            style={[styles.iconButton, activeFilterCount > 0 ? styles.iconButtonActive : null]}
             accessibilityRole="button"
-            accessibilityLabel="Filtrele"
+            accessibilityLabel={activeFilterCount > 0 ? `Filtrele, ${activeFilterCount} filtre etkin` : "Filtrele"}
           >
-            <Ionicons name="options-outline" size={14} color={CHROME_FOREGROUND} />
+            <Ionicons
+              name="options-outline"
+              size={iconSize.md}
+              color={activeFilterCount > 0 ? colors.primary : colors.textSecondary}
+              accessibilityElementsHidden
+            />
             {activeFilterCount > 0 ? (
-              <View style={styles.chromeBadge}>
-                <Text style={styles.chromeBadgeText}>{activeFilterCount}</Text>
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>{activeFilterCount}</Text>
               </View>
             ) : null}
           </Pressable>
         </View>
       </View>
-
-      <FeedChannelBar
-        channels={channels}
-        activeChannel={activeChannel}
-        onSelect={setChannel}
-        surface="immersive"
-      />
+      <SubjectPillBar subjects={QUESTION_SUBJECTS} selected={filter.subject} onSelect={selectSubject} />
     </View>
   );
 
   const sheets = (
     <>
-      <DailyFlowSheet
-        visible={isDailyFlowOpen}
-        onClose={() => setIsDailyFlowOpen(false)}
-        title="Bugünkü Akışın"
-        items={dailyFlowItems}
-        emptyText={
-          snapshot.hasStudyHistory
-            ? "Şimdilik öncelikli bir adım yok. Keşfet'ten yeni sorularla devam edebilirsin."
-            : "Keşfet'ten bir soru çözerek başlayabilirsin."
-        }
-        onPressItem={handleDailyFlowPress}
-      />
       <FeedFilterSheet
         visible={isFilterSheetOpen}
         filter={filter}
         onChange={setFilter}
         onClose={() => setIsFilterSheetOpen(false)}
+        channels={channels}
+        activeChannel={activeChannel}
+        onSelectChannel={setChannel}
       />
-    </>
-  );
-
-  if (isChannelLoading) {
-    return (
-      <View style={styles.centered}>
-        <LoadingSkeleton width="86%" height={pageHeight * 0.6} borderRadius={24} />
-        {chrome}
-        {sheets}
-      </View>
-    );
-  }
-
-  if (error && questions.length === 0) {
-    return (
-      <View style={styles.centered}>
-        {/* Phase 104 (M5) — styles.centered is IMMERSIVE_SURFACE, so this
-            panel sits on the pinned-dark ground exactly like the two empty
-            branches below and needs the same pinned foreground. */}
-        <SharedEmptyState icon="cloud-offline-outline" title={error} tone="immersive" />
-        <PrimaryButton label="Tekrar Dene" onPress={refresh} />
-        {chrome}
-        {sheets}
-      </View>
-    );
-  }
-
-  return (
-    <View style={styles.flex}>
-      <View style={styles.centerColumn}>
-        <View style={[styles.column, width > MAX_CONTENT_WIDTH ? styles.columnCapped : null]}>
-          <FlatList
-            ref={listRef}
-            data={items}
-            keyExtractor={keyExtractor}
-            renderItem={renderItem}
-            getItemLayout={getItemLayout}
-            // pagingEnabled + a full-page item height is what guarantees one
-            // learning moment at rest — the exact combination ClassFeedScreen
-            // has used unchanged since Phase 19.2 and which Phase 51
-            // validated on device.
-            pagingEnabled
-            snapToInterval={pageHeight}
-            snapToAlignment="start"
-            decelerationRate="fast"
-            disableIntervalMomentum
-            showsVerticalScrollIndicator={false}
-            onMomentumScrollEnd={handleMomentumScrollEnd}
-            onEndReachedThreshold={0.5}
-            onEndReached={handleEndReached}
-            // Only a small window of full-page cards needs to stay mounted
-            // around the visible one.
-            initialNumToRender={1}
-            maxToRenderPerBatch={2}
-            windowSize={3}
-            removeClippedSubviews
-            ListEmptyComponent={
-              isFeedFilterActive(filter) ? (
-                <SharedEmptyState
-                  icon="filter-outline"
-                  title="Bu filtreye uyan soru yok"
-                  description="Farklı bir ders, sınıf veya konu deneyebilirsin."
-                  tone="immersive"
-                  style={{ width: "100%", height: pageHeight, backgroundColor: IMMERSIVE_SURFACE }}
-                />
-              ) : descriptor ? (
-                <SharedEmptyState
-                  icon="sparkles-outline"
-                  title={descriptor.emptyTitle}
-                  tone="immersive"
-                  style={{ width: "100%", height: pageHeight, backgroundColor: IMMERSIVE_SURFACE }}
-                />
-              ) : (
-                <EmptyState height={pageHeight} />
-              )
-            }
-            ListFooterComponent={
-              error && questions.length > 0 ? (
-                <View style={styles.loadingMore}>
-                  <Text style={styles.paginationErrorText}>{error}</Text>
-                  <Pressable
-                    onPress={loadMore}
-                    accessibilityRole="button"
-                    accessibilityLabel="Daha fazla soru yüklemeyi tekrar dene"
-                  >
-                    <Text style={styles.paginationRetryText}>Tekrar dene</Text>
-                  </Pressable>
-                </View>
-              ) : isLoadingMore ? (
-                <View style={styles.loadingMore}>
-                  <ActivityIndicator color={colors.textPrimary} />
-                </View>
-              ) : null
-            }
-          />
-        </View>
-      </View>
-
-      {chrome}
-
-      <CameraButton onPress={openPicker} isLoading={isUploading} />
-
-      <VisibilityPicker
-        visible={isPickerOpen}
-        onSelect={captureWithVisibility}
-        onCancel={closePicker}
-      />
-
+      <VisibilityPicker visible={isPickerOpen} onSelect={captureWithVisibility} onCancel={closePicker} />
       <QuestionMetadataModal
         visible={pendingImageUri !== null}
         imageUri={pendingImageUri}
@@ -566,21 +411,166 @@ export function FeedScreen() {
         onSubmit={submitMetadata}
         onCancel={cancelMetadata}
       />
+      <ImageViewer visible={previewUri !== null} uri={previewUri} onClose={() => setPreviewUri(null)} />
+    </>
+  );
+
+  const emptyState = isFeedFilterActive(filter) || (activeChannel && activeChannel !== "for_you") ? (
+    <View style={[styles.pageState, { height: pageHeight }]}>
+      <EmptyState
+        icon="filter-outline"
+        title={FEED_FILTER_EMPTY_TITLE}
+        description={descriptor && activeChannel !== "for_you" ? descriptor.emptyTitle : "Farklı bir ders, konu veya soru türü deneyebilirsin."}
+      />
+      <PrimaryButton label="Filtreleri Temizle" onPress={clearFilters} variant="secondary" />
+    </View>
+  ) : (
+    <View style={[styles.pageState, { height: pageHeight }]}>
+      <EmptyState
+        icon="sparkles-outline"
+        title={descriptor?.emptyTitle ?? "Şu anda gösterilecek soru yok."}
+        description="Sınıfına katıldığında ve sorular paylaşıldığında burada görünürler."
+      />
+    </View>
+  );
+
+  return (
+    <SafeAreaView style={styles.flex} edges={["top"]}>
+      {header}
+      <View style={styles.pager} onLayout={handlePagerLayout}>
+        {pageHeight > 0 && isChannelLoading ? (
+          <View style={styles.centered}>
+            <LoadingSkeleton width="90%" height={pageHeight * 0.55} borderRadius={radius.xl} />
+          </View>
+        ) : null}
+
+        {pageHeight > 0 && !isChannelLoading && error && questions.length === 0 ? (
+          <View style={styles.centered}>
+            <EmptyState icon="cloud-offline-outline" title={error} description="Bağlantını kontrol edip tekrar deneyebilirsin." />
+            <PrimaryButton label="Tekrar Dene" onPress={refresh} />
+          </View>
+        ) : null}
+
+        {pageHeight > 0 && !isChannelLoading && !(error && questions.length === 0) ? (
+          <View style={[styles.column, width > MAX_CONTENT_WIDTH ? styles.columnCapped : null]}>
+            <FlatList
+              ref={listRef}
+              data={items}
+              keyExtractor={keyExtractor}
+              renderItem={renderItem}
+              getItemLayout={getItemLayout}
+              // pagingEnabled + a full-page item height is what guarantees one
+              // learning moment at rest — the exact combination ClassFeedScreen
+              // has used unchanged since Phase 19.2 and which Phase 51
+              // validated on device.
+              pagingEnabled
+              snapToInterval={pageHeight}
+              snapToAlignment="start"
+              decelerationRate="fast"
+              disableIntervalMomentum
+              showsVerticalScrollIndicator={false}
+              onMomentumScrollEnd={handleMomentumScrollEnd}
+              onEndReachedThreshold={0.5}
+              onEndReached={handleEndReached}
+              // Only a small window of full-page cards needs to stay mounted
+              // around the visible one.
+              initialNumToRender={1}
+              maxToRenderPerBatch={2}
+              windowSize={3}
+              removeClippedSubviews
+              ListEmptyComponent={emptyState}
+              ListFooterComponent={
+                error && questions.length > 0 ? (
+                  <View style={styles.loadingMore}>
+                    <Text style={styles.paginationErrorText}>{error}</Text>
+                    <Pressable
+                      onPress={loadMore}
+                      accessibilityRole="button"
+                      accessibilityLabel="Daha fazla soru yüklemeyi tekrar dene"
+                      style={styles.retry}
+                    >
+                      <Text style={styles.paginationRetryText}>Tekrar dene</Text>
+                    </Pressable>
+                  </View>
+                ) : isLoadingMore ? (
+                  <View style={styles.loadingMore}>
+                    <ActivityIndicator color={colors.textSecondary} />
+                  </View>
+                ) : null
+              }
+            />
+          </View>
+        ) : null}
+      </View>
 
       {sheets}
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = themedStyles(() => ({
   flex: {
     flex: 1,
-    backgroundColor: IMMERSIVE_SURFACE,
+    backgroundColor: colors.background,
   },
-  centerColumn: {
+  header: {
+    gap: spacing.xs,
+    paddingTop: spacing.xs,
+    paddingBottom: spacing.xs,
+  },
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+  },
+  identity: {
+    flex: 1,
+    minWidth: 0,
+  },
+  title: {
+    ...typography.title,
+    color: colors.textPrimary,
+  },
+  subtitle: {
+    ...typography.caption,
+    color: colors.textSecondary,
+  },
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xxs,
+  },
+  iconButton: {
+    width: minTouchTarget,
+    height: minTouchTarget,
+    borderRadius: radius.pill,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  iconButtonActive: {
+    backgroundColor: colors.primaryMuted,
+  },
+  badge: {
+    position: "absolute",
+    top: 4,
+    right: 4,
+    minWidth: 16,
+    height: 16,
+    borderRadius: radius.pill,
+    backgroundColor: colors.primary,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 4,
+  },
+  badgeText: {
+    ...typography.label,
+    color: colors.textInverse,
+  },
+  pager: {
     flex: 1,
     alignItems: "center",
-    backgroundColor: IMMERSIVE_SURFACE,
   },
   column: {
     flex: 1,
@@ -591,67 +581,27 @@ const styles = themedStyles(() => ({
   },
   centered: {
     flex: 1,
+    width: "100%",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: IMMERSIVE_SURFACE,
     gap: spacing.md,
     paddingHorizontal: spacing.xl,
   },
-  chrome: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    gap: spacing.xxs,
-    zIndex: 10,
-  },
-  chromeRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.xs,
-  },
-  chromeActions: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.xs,
-  },
-  chromePill: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.xxs,
-    // Deliberately a literal scrim rather than a theme token: this chrome
-    // floats over an arbitrary full-bleed question photograph in BOTH
-    // themes, so it needs a constant dark ground for contrast — the same
-    // reasoning Phase 51 documented for ClassFeedScreen and ImageViewer.
-    backgroundColor: "rgba(0,0,0,0.45)",
-    borderRadius: radius.pill,
-    // 36pt tall with the padding below — a comfortable target for an
-    // icon-only control.
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    minWidth: 44,
-    minHeight: 36,
-    justifyContent: "center",
-  },
-  chromeBadge: {
-    minWidth: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: colors.primary,
+  pageState: {
+    width: "100%",
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 4,
-  },
-  chromeBadgeText: {
-    fontSize: 10,
-    fontWeight: "700",
-    color: colors.textInverse,
+    gap: spacing.md,
+    paddingHorizontal: spacing.xl,
   },
   loadingMore: {
-    paddingVertical: 24,
+    paddingVertical: spacing.lg,
     alignItems: "center",
     gap: spacing.xs,
+  },
+  retry: {
+    minHeight: minTouchTarget,
+    justifyContent: "center",
   },
   paginationErrorText: {
     ...typography.caption,

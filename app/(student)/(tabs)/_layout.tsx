@@ -3,9 +3,15 @@ import { Tabs } from "expo-router";
 
 import { ProfileTabButton } from "@features/authentication/components/ProfileTabButton";
 import { colors } from "@theme/colors";
-import { immersiveChrome, immersiveTabBarStyle } from "@theme/immersive";
 import { useThemeSubscription } from "@theme/ThemeProvider";
 
+// Phase 109 — exactly four student tabs: Akış, Çalış, Sınıf, Profil.
+//
+// Akış (index) is the landing tab and the question feed. Kişisel Analiz is
+// no longer a tab: its summaries live inline in Çalış and Profil, and its
+// deep readings remain reachable as nested routes under /(student)/analytics.
+// The feed now follows the theme like every other tab, so the bar keeps one
+// themed chrome throughout.
 export default function StudentTabsLayout() {
   useThemeSubscription();
   return (
@@ -26,45 +32,22 @@ export default function StudentTabsLayout() {
         options={{
           title: "Akış",
           tabBarIcon: ({ color, size }) => <Ionicons name="home" color={color} size={size} />,
-          // Phase 102 — the feed is an immersive dark pager in BOTH themes
-          // (Phase 55); its tab bar follows that surface, not the theme, so
-          // a Light-theme feed is no longer a dark page with a white bar
-          // under it. Only this tab: the others keep the themed bar above.
-          tabBarStyle: immersiveTabBarStyle(),
-          tabBarActiveTintColor: immersiveChrome.activeTint,
-          tabBarInactiveTintColor: immersiveChrome.inactiveTint,
         }}
       />
-      {/* Phase 16 — the adaptive review queue. Placed second so the daily
-          study session sits beside the feed rather than buried behind the
-          profile; student-only by construction (this layout is the
-          (student) group's, and recordStudyOutcome rejects non-students). */}
+      {/* Phase 16 — the study workspace. Placed second so the day's work
+          sits beside the feed; student-only by construction (this layout is
+          the (student) group's, and recordStudyOutcome rejects non-students). */}
       <Tabs.Screen
         name="study"
         options={{
           title: "Çalış",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="library" color={color} size={size} />
-          ),
-        }}
-      />
-      {/* Phase 107 — Kişisel Analiz: the student's own learning history and
-          the "Çözemediğim Sorular" archive. Beside Çalış so the two learning
-          surfaces sit together — Çalış decides what to do now, Analiz shows
-          what has happened. A fifth tab rather than a Hub row: the archive is
-          a destination the student returns to, and the Hub already carries
-          the next action it must not bury. Inherits the themed chrome above. */}
-      <Tabs.Screen
-        name="analytics"
-        options={{
-          title: "Analiz",
-          tabBarIcon: ({ color, size }) => <Ionicons name="analytics" color={color} size={size} />,
+          tabBarIcon: ({ color, size }) => <Ionicons name="library" color={color} size={size} />,
         }}
       />
       <Tabs.Screen
         name="classes"
         options={{
-          title: "Sınıflarım",
+          title: "Sınıf",
           tabBarIcon: ({ color, size }) => <Ionicons name="school" color={color} size={size} />,
         }}
       />

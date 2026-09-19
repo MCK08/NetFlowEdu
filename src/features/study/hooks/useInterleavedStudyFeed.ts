@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { computeReshowInsertIndex, pickReshowOffset } from "@features/classes/services/classFeedStudyGating";
 import {
   FeedItem,
+  RatingPolicy,
   reconcileFeedItems,
   reinjectPairForSecondChance,
 } from "@features/classes/services/feedItems";
@@ -32,6 +33,10 @@ interface UseInterleavedStudyFeedParams {
   // than weakening that guarantee). Omitted entirely by ClassFeedScreen,
   // which has no filter and keeps its exact pre-existing behavior.
   resetKey?: string | number;
+  // Phase 109 — optional per-question rating policy (see feedItems.ts's
+  // RatingPolicy). Omitted, every student question gets its rating pair,
+  // exactly as before; ClassFeedScreen passes nothing.
+  ratingPolicy?: (question: Question) => boolean;
 }
 
 // Phase 19.2 — replaces the overlay + scroll-prediction architecture
@@ -49,7 +54,9 @@ export function useInterleavedStudyFeed({
   isStudent,
   scrollToIndex,
   resetKey,
+  ratingPolicy,
 }: UseInterleavedStudyFeedParams) {
+  const policy: RatingPolicy = isStudent ? (ratingPolicy ?? true) : false;
   const [items, setItems] = useState<FeedItem[]>([]);
   // Session-local only, never persisted — see classFeedStudyGating.ts's
   // module doc for why the reshow itself deliberately never touches
@@ -76,8 +83,11 @@ export function useInterleavedStudyFeed({
     const keyChanged = resetKeyRef.current !== resetKey;
     resetKeyRef.current = resetKey;
     if (keyChanged) reshownThisSessionRef.current = new Set();
-    setItems((prev) => reconcileFeedItems(keyChanged ? [] : prev, questions, isStudent));
-  }, [questions, isStudent, resetKey]);
+    setItems((prev) => reconcileFeedItems(keyChanged ? [] : prev, questions, policy));
+    // `policy` is derived from isStudent/ratingPolicy; listing those keeps
+    // the dependency honest without re-running on a fresh closure identity.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [questions, isStudent, ratingPolicy, resetKey]);
 
   // Called by a RatingCard once ITS OWN mutation is confirmed successful
   // (see RatingCard's doc comment) — `itemIndex` is that card's own
@@ -106,5 +116,26 @@ export function useInterleavedStudyFeed({
     [scrollToIndex],
   );
 
-  return { items, handleOutcomeRecorded };
+  // Phase 109 — an outcome recorded ON the question page itself (an inline
+  // multiple-choice answer). Same reshow rule as above, but no scroll: the
+  // student reads the feedback and moves on when they choose to.
+  const handleInlineOutcome = useCallback(
+    (outcome: StudyOutcome, question: Question, itemIndex: number, questionIndex: number) => {
+      if (outcome !== "struggled" || reshownThisSessionRef.current.has(question.id)) return;
+      setItems((prev) => {
+        const insertIndex = computeReshowInsertIndex({
+          currentIndex: itemIndex,
+          totalLength: prev.length,
+          offset: pickReshowOffset(),
+          alreadyReshownThisSession: false,
+        });
+        if (insertIndex === null) return prev;
+        reshownThisSessionRef.current.add(question.id);
+        return reinjectPairForSecondChance(prev, question, questionIndex, insertIndex, policy);
+      });
+    },
+    [policy],
+  );
+
+  return { items, handleOutcomeRecorded, handleInlineOutcome };
 }

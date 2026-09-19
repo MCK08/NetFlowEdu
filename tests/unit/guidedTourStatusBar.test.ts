@@ -17,13 +17,15 @@ const read = (rel: string) => fs.readFileSync(path.join(__dirname, "..", "..", r
 describe("guided tour status bar", () => {
   const feed = read("src/features/feed/screens/FeedScreen.tsx");
 
-  it("the Feed claims its light status bar only while focused AND no tour covers it", () => {
-    expect(feed).toContain('{isFocused && !isGuidedTourVisible ? <StatusBar style="light" /> : null}');
-    expect(feed).toContain('const isGuidedTourVisible = guidedTour?.presentation.kind === "visible";');
+  it("the Feed no longer declares a status bar of its own (Phase 109: a themed surface)", () => {
+    // The Phase 103 yield existed because the Feed forced a light bar for
+    // its pinned-dark pager. The pager follows the theme now, so the root
+    // layout's theme-matched bar is the only one, tour or no tour.
+    expect(feed).not.toContain("<StatusBar");
+    expect(feed).not.toContain("useGuidedTour");
   });
 
-  it("the Feed reads the same hoisted tour state the overlay is rendered from", () => {
-    expect(feed).toContain('import { useGuidedTour } from "@features/onboarding";');
+  it("the overlay still reads the hoisted tour state it is rendered from", () => {
     const host = read("src/features/onboarding/components/GuidedTourHost.tsx");
     expect(host).toContain('tour.presentation.kind !== "visible"');
   });

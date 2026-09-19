@@ -38,6 +38,7 @@ import { resolvePublicIdentity } from "@utils/publicIdentity";
 import { Question } from "@/types/question";
 
 import { ProfileHero } from "../components/ProfileHero";
+import { ProfileLearningSummary } from "../components/ProfileLearningSummary";
 import { ProfileLoadingSkeleton } from "../components/ProfileLoadingSkeleton";
 import { ProfileStatsRow } from "../components/ProfileStatsRow";
 import { QuestionGridItem } from "../components/QuestionGridItem";
@@ -154,6 +155,12 @@ export function ProfileScreen() {
             >
               <ProfileStatsRow stats={stats} />
             </ProfileHero>
+
+            {/* Phase 109 — the student's learning summary sits right under
+                the identity: the numbers Kişisel Analiz used to lead with,
+                now three facts and two links, since Analiz is no longer a
+                tab. Students only; a teacher has no study items. */}
+            {!isTeacher ? <ProfileLearningSummary uid={firebaseUser?.uid} /> : null}
 
             {/* Primary management action first, at full width — the old
                 screen buried "Profili Düzenle" in a 2x2 grid of identical

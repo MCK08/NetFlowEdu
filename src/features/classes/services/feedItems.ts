@@ -68,15 +68,26 @@ const START_ANCHOR = "\0start";
 // it HERE (never building the item at all) rather than hiding it in the
 // renderer is what guarantees a teacher's feed is pure questions, same
 // spacing/index math as a plain list.
+// Phase 109 — `includeRating` may also be a per-question predicate: the Akış
+// feed answers a multiple-choice question INLINE (MultipleChoiceAnswer's own
+// bridge records the outcome), so a rating card after it would record the
+// same review twice. Open-ended questions keep their rating pair. A plain
+// boolean keeps every existing caller byte-identical.
+export type RatingPolicy = boolean | ((question: Question) => boolean);
+
+function wantsRating(policy: RatingPolicy, question: Question): boolean {
+  return typeof policy === "function" ? policy(question) : policy;
+}
+
 export function buildFeedItems(
   questions: Question[],
   baseIndexOffset = 0,
-  includeRating = true,
+  includeRating: RatingPolicy = true,
 ): FeedItem[] {
   const items: FeedItem[] = [];
   questions.forEach((question, i) => {
     const questionIndex = baseIndexOffset + i;
-    if (includeRating) {
+    if (wantsRating(includeRating, question)) {
       items.push(...buildPair(question, questionIndex, false));
     } else {
       items.push({
@@ -101,10 +112,14 @@ export function reinjectPairForSecondChance(
   question: Question,
   questionIndex: number,
   insertIndex: number,
+  includeRating: RatingPolicy = true,
 ): FeedItem[] {
   const clamped = Math.max(0, Math.min(insertIndex, items.length));
   const next = items.slice();
-  next.splice(clamped, 0, ...buildPair(question, questionIndex, true));
+  const block: FeedItem[] = wantsRating(includeRating, question)
+    ? buildPair(question, questionIndex, true)
+    : [{ type: "question", question, questionIndex, isReshow: true, key: questionKey(question, true) }];
+  next.splice(clamped, 0, ...block);
   return next;
 }
 
@@ -130,7 +145,7 @@ export function reinjectPairForSecondChance(
 export function reconcileFeedItems(
   prevItems: FeedItem[],
   questions: Question[],
-  includeRating: boolean,
+  includeRating: RatingPolicy,
 ): FeedItem[] {
   const reshowByAnchor = new Map<string, FeedItem[]>();
   let anchor: string | null = null;
@@ -166,7 +181,7 @@ export function reconcileFeedItems(
 
   appendReshowBlocksFor(START_ANCHOR);
   questions.forEach((question, index) => {
-    if (includeRating) {
+    if (wantsRating(includeRating, question)) {
       result.push(...buildPair(question, index, false));
     } else {
       result.push({

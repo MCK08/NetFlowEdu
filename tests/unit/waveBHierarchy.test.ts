@@ -104,25 +104,27 @@ describe("B2 — grouping rhythm", () => {
   });
 
   it("pairs the Hub's related blocks and keeps its order", () => {
+    // Phase 109 — the Hub became one scrolling workspace: tight inside the
+    // identity, a clear step between sections, and the sections in the
+    // order the student needs them (act, plan, unresolved, practice, gaps,
+    // strengths, progress, goal). The B2 rhythm rule is the same; the
+    // blocks it applies to are Phase 109's.
     const source = read(STUDY);
-    expect(styleBlock(source, "header")).toContain("gap: spacing.lg");
-    expect(styleBlock(source, "identity")).toContain("gap: spacing.xs");
-    expect(styleBlock(source, "pair")).toContain("gap: spacing.xs");
-    expect(styleBlock(source, "lenses")).toContain("gap: spacing.sm");
-    const header = source.slice(source.indexOf("ListHeaderComponent="), source.indexOf("ListEmptyComponent="));
+    expect(styleBlock(source, "content")).toContain("gap: spacing.xl");
+    expect(styleBlock(source, "identity")).toContain("gap: spacing.xxs");
+    expect(styleBlock(source, "section")).toContain("gap: spacing.sm");
     const order = [
-      "Öğrenme Merkezi",
-      "<NextActionSection",
-      "<LearningStoryEntryCard",
-      "<LearningAtlasEntryCard",
+      "FOCUS_TITLE}",
+      "TODAY_TITLE}",
       "<AssignedWorkSection",
-      "<DailyPracticePlanSection",
-      "<ReviewReadySection",
-      "<StudyProgressCard",
+      "UNRESOLVED_TITLE}",
+      "PRACTICE_SECTION_TITLE}",
+      "STRUGGLE_TITLE}",
+      "STRENGTHS_TITLE}",
+      "PROGRESS_TITLE}",
+      "GOAL_TITLE}",
       "<DailyGoalEditor",
-      "<WeakTopicsSection",
-      "<SubjectBreakdownSection",
-    ].map((marker) => header.indexOf(marker));
+    ].map((marker) => source.indexOf(marker, source.indexOf("return (")));
     expect(order.every((index) => index > -1)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
   });
