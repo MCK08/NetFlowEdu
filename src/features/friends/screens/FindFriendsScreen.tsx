@@ -118,7 +118,7 @@ export function FindFriendsScreen() {
   return (
     <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
       <View style={styles.header}>
-        <AppBackButton fallbackHref={ownProfile?.role === "teacher" ? "/(teacher)/(tabs)/friends" : "/(student)/friends"} />
+        <AppBackButton fallbackHref={ownProfile?.role === "teacher" ? "/(teacher)/friends" : "/(student)/friends"} />
         <Text style={styles.title}>Arkadaş Bul</Text>
         <View style={styles.headerSpacer} />
       </View>

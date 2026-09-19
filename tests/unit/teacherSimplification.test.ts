@@ -55,6 +55,16 @@ describe("§33 teacher information architecture", () => {
     expect(existsSync(join(ROOT, "app/(teacher)/(tabs)/friends.tsx"))).toBe(false);
   });
 
+  it("leaves no link to the removed teacher friends tab", () => {
+    // Typed routes live in a gitignored cache, so tsc only catches a stale
+    // href after Metro regenerates it — and a plain-string path never. Expo
+    // Router resolves this one to the Bugün tab, silently misrouting.
+    for (const file of ["src/features/notifications/services/notificationNavigation.ts", "src/features/friends/screens/FindFriendsScreen.tsx"]) {
+      expect(read(file)).not.toContain("(teacher)/(tabs)/friends");
+      expect(read(file)).toContain("/(teacher)/friends");
+    }
+  });
+
   it("3. leaves the student tabs exactly as they were", () => {
     expect(tabTitles("app/(student)/(tabs)/_layout.tsx")).toEqual(["Akış", "Çalış", "Sınıf", "Profil"]);
   });

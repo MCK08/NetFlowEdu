@@ -32,7 +32,7 @@ function questionDestination(
 
 function friendsDestination(role: UserRole): NotificationDestination {
   if (role === "teacher") {
-    return { kind: "route", path: "/(teacher)/(tabs)/friends" };
+    return { kind: "route", path: "/(teacher)/friends" };
   }
   return { kind: "route", path: "/(student)/friends" };
 }

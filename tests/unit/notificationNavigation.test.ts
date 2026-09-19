@@ -81,12 +81,12 @@ describe("resolveNotificationDestination", () => {
     expect(result).toEqual({ kind: "route", path: "/(student)/friends" });
   });
 
-  it("routes friend_request_received to the teacher friends tab", () => {
+  it("routes friend_request_received to the teacher friends screen", () => {
     const result = resolveNotificationDestination(
       notification({ type: "friend_request_received" }),
       "teacher",
     );
-    expect(result).toEqual({ kind: "route", path: "/(teacher)/(tabs)/friends" });
+    expect(result).toEqual({ kind: "route", path: "/(teacher)/friends" });
   });
 
   it("routes friend_request_accepted the same way as friend_request_received", () => {
