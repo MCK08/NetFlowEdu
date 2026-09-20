@@ -23,12 +23,9 @@ function expectSingleLineShrinkToFit(tag: string): void {
 }
 
 describe("action label text scaling", () => {
-  it("ActionTile's label shrinks to fit on one line instead of ellipsizing", () => {
-    const tags = textOpeningTags(read("src/components/ui/ActionTile.tsx"));
-
-    expect(tags).toHaveLength(1);
-    expectSingleLineShrinkToFit(tags[0] ?? "");
-  });
+  // Phase 114 — ActionTile's own case was removed with the component: the
+  // Profile quick-action row was its last call site, and a primitive with no
+  // caller is not a shrink-to-fit guarantee, just an untested file.
 
   it("AppearanceSelector's option label shrinks to fit instead of wrapping mid-word", () => {
     const tags = textOpeningTags(read("src/theme/AppearanceSelector.tsx"));
@@ -53,13 +50,15 @@ describe("action label text scaling", () => {
     expect(source).toMatch(/flex: 1,\s*minWidth: 0,/);
   });
 
-  it("keeps the equal-width tile rows that make shrinking necessary", () => {
-    // Phase 111 removed the teacher dashboard's four-tile row along with the
-    // dashboard itself (Bugün replaced it); Profile's row is the one left.
-    for (const file of ["src/features/profile/screens/ProfileScreen.tsx"]) {
-      const source = read(file);
-      expect(source).toContain("<ActionTile");
-      expect(source).toMatch(/flex: 1,\s*minWidth: 0,/);
-    }
+  // Phase 114 — there is no equal-width tile row left in the app. Profile's
+  // was the last one (Phase 111 had already removed the teacher dashboard's),
+  // and it is now a grouped list whose rows are full width, so a label has
+  // the whole row to use and wraps instead of competing for a third of it.
+  it("replaces the tile row with full-width rows whose text can wrap", () => {
+    const group = read("src/features/profile/components/ProfileMenuGroup.tsx");
+
+    expect(read("src/features/profile/screens/ProfileScreen.tsx")).not.toContain("<ActionTile");
+    expect(group).toMatch(/flex: 1,\s*minWidth: 0,/);
+    expect(group).not.toMatch(/<Text style={styles.description} numberOfLines/);
   });
 });

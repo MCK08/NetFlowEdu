@@ -5,7 +5,6 @@ import {
   ActivityIndicator,
   FlatList,
   ListRenderItemInfo,
-  Pressable,
   StyleSheet,
   Text,
   View,
@@ -13,22 +12,13 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { Ionicons } from "@expo/vector-icons";
-
-import { ActionTile } from "@components/ui/ActionTile";
-import { Card } from "@components/ui/Card";
-import { Divider } from "@components/ui/Divider";
 import { EmptyState } from "@components/ui/EmptyState";
-import { PrimaryButton } from "@components/ui/PrimaryButton";
-import { SectionHeader } from "@components/ui/SectionHeader";
+import { IconButton } from "@components/ui/IconButton";
 import { useAuth } from "@features/authentication";
-import { GoogleSignInButton } from "@features/authentication/components/GoogleSignInButton";
-import { useSignOut } from "@features/authentication/hooks/useSignOut";
 import { useSocialMeta } from "@features/friends";
-import { useGuidedTour } from "@features/onboarding";
+import { ANALYTICS_ROUTES } from "@features/studentAnalytics/routes";
+import { PLAN_ROUTES } from "@features/studyPlan/routes";
 import { useNavigationGuard } from "@hooks/useNavigationGuard";
-import { AppearanceSelector } from "@theme/AppearanceSelector";
-import { ROUTES } from "@constants/routes";
 import { colors } from "@theme/colors";
 import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
@@ -37,13 +27,13 @@ import { themedStyles } from "@theme/themeRuntime";
 import { resolvePublicIdentity } from "@utils/publicIdentity";
 import { Question } from "@/types/question";
 
-import { ProfileHero } from "../components/ProfileHero";
+import { ProfileIdentityCard } from "../components/ProfileIdentityCard";
 import { ProfileLearningSummary } from "../components/ProfileLearningSummary";
 import { ProfileLoadingSkeleton } from "../components/ProfileLoadingSkeleton";
-import { ProfileStatsRow } from "../components/ProfileStatsRow";
+import { ProfileMenuGroup, ProfileMenuItem } from "../components/ProfileMenuGroup";
 import { QuestionGridItem } from "../components/QuestionGridItem";
 import { ArchiveMode, useQuestionArchive } from "../hooks/useQuestionArchive";
-import { ownProfileStats } from "../services/profileStats";
+import { profileRoutesFor } from "../routes";
 
 const GRID_COLUMNS = 3;
 
@@ -64,48 +54,106 @@ const EMPTY_CONTENT: Record<ArchiveMode, { title: string; description: string }>
 };
 
 export function ProfileScreen() {
-  const { profile, firebaseUser, knownAccounts, openAccountSwitcher, linkGoogleAccount } = useAuth();
-  const { signOut, isSigningOut } = useSignOut();
+  const { profile, firebaseUser, openAccountSwitcher } = useAuth();
   const { width } = useWindowDimensions();
   const tabBarHeight = useBottomTabBarHeight();
   const [mode, setMode] = useState<ArchiveMode>("own");
-  const [linkError, setLinkError] = useState<string | null>(null);
-  const providerIds = firebaseUser?.providerData.map((p) => p.providerId) ?? [];
-  const isGoogleLinked = providerIds.includes("google.com");
   const { questions, isLoading, isLoadingMore, hasMore, loadMore } = useQuestionArchive(
     firebaseUser?.uid,
     mode,
   );
-  const socialMeta = useSocialMeta(firebaseUser?.uid);
-  // Null only if Profile is ever rendered outside the root provider —
-  // the row below simply does not appear in that case.
-  const guidedTour = useGuidedTour();
-  // expo-router's push() does not deduplicate; the profile's four
-  // destinations previously used raw pushes, so a double-tap stacked the
-  // same screen twice.
+  // expo-router's push() does not deduplicate; the profile's destinations
+  // previously used raw pushes, so a double-tap stacked the same screen
+  // twice.
   const guardedNavigate = useNavigationGuard();
+  // Phase 103/114 — the live counters that used to be a three-cell stat row
+  // above the fold. They are a reason to OPEN Arkadaşlarım, not a statistic
+  // about the student, so they now describe that row instead of decorating
+  // the header. Same listener, same one-document cost, same status
+  // semantics: a listener that has not answered yet says nothing rather
+  // than claiming a confident 0.
+  const socialMeta = useSocialMeta(firebaseUser?.uid);
 
   const isTeacher = profile?.role === "teacher";
-  // Friends, Find Friends and Edit Profile are plain stack screens for both
-  // roles, one per role group. (Phase 111 moved the teacher's Friends out of
-  // the tab bar — Bugün / Sınıflar / Aksiyonlar / Profil — to reach it here.)
-  const friendsHref = isTeacher ? "/(teacher)/friends" : "/(student)/friends";
-  const findFriendsHref = isTeacher ? "/(teacher)/find-friends" : "/(student)/find-friends";
-  const editProfileHref = isTeacher ? "/(teacher)/edit-profile" : ROUTES.editProfile;
+  // One resolver for every role-specific destination on this screen — see
+  // ../routes.ts, which also documents why the teacher's Friends must stay
+  // "/(teacher)/friends" and never the removed tab path.
+  const routes = profileRoutesFor(profile?.role);
 
   const itemSize = width / GRID_COLUMNS;
 
-  const stats = useMemo(
-    () =>
-      ownProfileStats({
-        friendCount: socialMeta.friendCount,
-        incomingRequestCount: socialMeta.incomingRequestCount,
-        // Phase 103 — skeletons only until the listener answers. updatedAt
-        // was used as that signal, but it is also 0 for every user with no
-        // friendship activity, so their counters never left the skeleton.
-        socialMetaStatus: socialMeta.status,
-      }),
-    [socialMeta],
+  // Phase 114 — the learning group. Every row is an existing screen with
+  // real content behind it; none of them is a summary of another.
+  const learningItems = useMemo<ProfileMenuItem[]>(
+    () => [
+      {
+        key: "analytics",
+        icon: "stats-chart-outline",
+        title: "Kişisel Analiz",
+        description: "Güçlü yönlerini gör, sonraki adımlarını planla",
+        onPress: () => go("analytics", ANALYTICS_ROUTES.overview),
+      },
+      {
+        key: "progress",
+        icon: "map-outline",
+        title: "İlerleme Haritam",
+        description: "Konulardaki gelişimini keşfet",
+        onPress: () => go("progress", PLAN_ROUTES.progress),
+      },
+      {
+        key: "plan-settings",
+        icon: "calendar-outline",
+        title: "Çalışma Ayarları",
+        description: "Hedeflerini ve tercihlerini düzenle",
+        onPress: () => go("plan-settings", PLAN_ROUTES.settings),
+      },
+    ],
+    // `go` closes over the guard, which is stable for the screen's life.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
+  const friendsDescription = useMemo(() => {
+    if (socialMeta.status !== "ready") return "Arkadaşlarını ve isteklerini yönet";
+    const friends = `${socialMeta.friendCount} arkadaş`;
+    return socialMeta.incomingRequestCount > 0
+      ? `${friends} · ${socialMeta.incomingRequestCount} yeni istek`
+      : friends;
+  }, [socialMeta.status, socialMeta.friendCount, socialMeta.incomingRequestCount]);
+
+  const accountItems = useMemo<ProfileMenuItem[]>(
+    () => [
+      {
+        key: "edit-profile",
+        icon: "person-outline",
+        title: "Hesap ve Profil",
+        description: "Ad, kullanıcı adı, profil fotoğrafı",
+        onPress: () => go("edit-profile", routes.editProfile),
+      },
+      {
+        key: "friends",
+        icon: "people-outline",
+        title: "Arkadaşlarım",
+        description: friendsDescription,
+        onPress: () => go("friends", routes.friends),
+      },
+      {
+        key: "find-friends",
+        icon: "person-add-outline",
+        title: "Arkadaş Bul",
+        description: "Kullanıcı adına göre ara ve ekle",
+        onPress: () => go("find-friends", routes.findFriends),
+      },
+      {
+        key: "switch-account",
+        icon: "swap-horizontal-outline",
+        title: "Hesap Değiştir",
+        description: "Bu cihazdaki diğer hesaplarına geç",
+        onPress: openAccountSwitcher,
+      },
+    ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [routes.editProfile, routes.friends, routes.findFriends, openAccountSwitcher, friendsDescription],
   );
 
   const keyExtractor = useCallback((item: Question) => item.id, []);
@@ -146,140 +194,47 @@ export function ProfileScreen() {
         }}
         ListHeaderComponent={
           <View>
-            <ProfileHero
-              photoURL={profile.photoURL}
-              primaryName={identity.primaryName}
-              usernameHandle={identity.usernameHandle}
-              role={profile.role}
-            >
-              <ProfileStatsRow stats={stats} />
-            </ProfileHero>
-
-            {/* Phase 109 — the student's learning summary sits right under
-                the identity: the numbers Kişisel Analiz used to lead with,
-                now three facts and two links, since Analiz is no longer a
-                tab. Students only; a teacher has no study items. */}
-            {!isTeacher ? <ProfileLearningSummary uid={firebaseUser?.uid} /> : null}
-
-            {/* Primary management action first, at full width — the old
-                screen buried "Profili Düzenle" in a 2x2 grid of identical
-                secondary buttons that also contained logout. */}
-            <View style={styles.primaryActionWrapper}>
-              <PrimaryButton
-                label="Profili Düzenle"
-                onPress={() => go("edit-profile", editProfileHref)}
+            {/* PHASE 114 — Profil's order is: who you are, how your
+                learning is going, where you can go, and only then the
+                account itself. Preferences and Çıkış Yap moved behind the
+                gear (SettingsScreen); nothing was deleted, and the screen
+                stopped being a stack of equally loud cards. */}
+            <View style={styles.screenHeader}>
+              <Text style={styles.screenTitle}>Profil</Text>
+              <IconButton
+                icon="settings-outline"
+                onPress={() => go("settings", routes.settings)}
+                accessibilityLabel="Ayarlar"
+                color={colors.textSecondary}
               />
             </View>
 
-            <View style={styles.quickActions}>
-              <ActionTile
-                icon="people-outline"
-                label="Arkadaşlarım"
-                onPress={() => go("friends", friendsHref)}
-                style={styles.quickActionTile}
-              />
-              <ActionTile
-                icon="person-add-outline"
-                label="Arkadaş Bul"
-                onPress={() => go("find-friends", findFriendsHref)}
-                style={styles.quickActionTile}
-              />
-              <ActionTile
-                icon="swap-horizontal-outline"
-                label="Hesap Değiştir"
-                onPress={openAccountSwitcher}
-                style={styles.quickActionTile}
+            <View style={styles.block}>
+              <ProfileIdentityCard
+                photoURL={profile.photoURL}
+                primaryName={identity.primaryName}
+                usernameHandle={identity.usernameHandle}
+                role={profile.role}
+                onPress={() => go("edit-profile", routes.editProfile)}
               />
             </View>
 
-            {/* Phase 49 — appearance sits above the account card: it is a
-                device setting anyone can use, including before any of the
-                account-specific rows below mean anything. */}
-            <View style={styles.sectionGroupStart}>
-              <AppearanceSelector />
-            </View>
-
-            {/* Phase 74 — the guided tour's only re-entry point. Deliberately
-                a row inside the settings column that already exists, not a new
-                Help/Settings area built to house it: the tour is three cards,
-                and giving it its own destination would cost more navigation
-                than it is worth. Hidden entirely for roles with no authored
-                tour rather than shown disabled. */}
-            {guidedTour?.replayAudience ? (
-              <View style={styles.sectionGroupStart}>
-                <Card>
-                  <Pressable
-                    onPress={guidedTour.replay}
-                    style={styles.tourRow}
-                    accessibilityRole="button"
-                    accessibilityLabel="Tanıtımı tekrar gör"
-                    accessibilityHint="NetFlowEdu tanıtımını yeniden açar"
-                  >
-                    <Ionicons
-                      name="information-circle-outline"
-                      size={22}
-                      color={colors.primary}
-                      accessibilityElementsHidden
-                    />
-                    <View style={styles.tourCopy}>
-                      <Text style={styles.tourTitle}>Tanıtımı Tekrar Gör</Text>
-                      <Text style={styles.tourDetail}>
-                        NetFlowEdu&apos;nun nasıl çalıştığını anlatan kısa tanıtım.
-                      </Text>
-                    </View>
-                    <Ionicons
-                      name="chevron-forward"
-                      size={18}
-                      color={colors.textTertiary}
-                      accessibilityElementsHidden
-                    />
-                  </Pressable>
-                </Card>
+            {/* Students only: a teacher has no study items of their own, and
+                inventing a teacher "learning summary" would be fiction. */}
+            {!isTeacher ? (
+              <View style={styles.block}>
+                <ProfileLearningSummary uid={firebaseUser?.uid} />
               </View>
             ) : null}
 
-            <View style={styles.sectionWrapper}>
-              <Card>
-                <SectionHeader title="Hesap" />
-                <InfoRow label="E-posta" value={profile.email} />
-                <InfoRow label="Kayıtlı hesap" value={String(knownAccounts.length)} />
-                <InfoRow label="Google bağlı" value={isGoogleLinked ? "Evet" : "Hayır"} />
-                {!isGoogleLinked ? (
-                  <View style={styles.linkButtonWrapper}>
-                    <GoogleSignInButton
-                      onIdToken={async (idToken) => {
-                        setLinkError(null);
-                        try {
-                          await linkGoogleAccount(idToken);
-                        } catch (error) {
-                          setLinkError(
-                            error instanceof Error ? error.message : "Google hesabı bağlanamadı.",
-                          );
-                        }
-                      }}
-                      onError={setLinkError}
-                      label="Google Hesabını Bağla"
-                    />
-                  </View>
-                ) : null}
-                {linkError ? (
-                  <Text style={styles.errorText} accessibilityRole="alert">
-                    {linkError}
-                  </Text>
-                ) : null}
-              </Card>
-            </View>
+            {!isTeacher ? (
+              <View style={styles.block}>
+                <ProfileMenuGroup items={learningItems} />
+              </View>
+            ) : null}
 
-            {/* Destructive action, visually separated below its own divider
-                and never competing with the primary actions above. */}
-            <Divider style={styles.logoutDivider} />
-            <View style={styles.logoutWrapper}>
-              <PrimaryButton
-                label="Çıkış Yap"
-                onPress={signOut}
-                variant="secondary"
-                isLoading={isSigningOut}
-              />
+            <View style={styles.block}>
+              <ProfileMenuGroup items={accountItems} />
             </View>
 
             <View style={styles.tabRow}>
@@ -331,120 +286,41 @@ export function ProfileScreen() {
   );
 }
 
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.infoRow}>
-      <Text style={styles.infoLabel}>{label}</Text>
-      <Text style={styles.infoValue} numberOfLines={1}>
-        {value}
-      </Text>
-    </View>
-  );
-}
-
 const styles = themedStyles(() => ({
   flex: {
     flex: 1,
     backgroundColor: colors.background,
   },
-  // Phase 104 (M4) — rhythm, not more containers.
+  // PHASE 114 — one rhythm for the whole screen.
   //
-  // Every group on this screen arrived at the same distance from the last
-  // one (md, md, md), so identity, preferences and account read as one
-  // undifferentiated stack of equally weighted panels. Nothing here is
-  // wrong individually — the Cards each group something real — but the
-  // spacing never said where one subject ended and the next began.
-  //
-  // The rule now: tight inside a group (xs/sm), and a clear gap before a new
-  // one (xl). No new wrappers, no new headings, no surface changes.
-  primaryActionWrapper: {
-    paddingHorizontal: spacing.lg,
-    marginTop: spacing.md,
-  },
-  quickActions: {
+  // Phase 104 tuned five different margins to tell equally weighted cards
+  // apart. With the page down to four blocks that distinction is carried by
+  // the grouping itself, so every block simply gets the same gap and the
+  // screen reads without anyone having to remember which wrapper is which.
+  screenHeader: {
     flexDirection: "row",
-    gap: spacing.xs,
-    paddingHorizontal: spacing.lg,
-    // Still inside IDENTITY: the tiles belong with the button above them.
-    marginTop: spacing.xs,
-  },
-  quickActionTile: {
-    flex: 1,
-    minWidth: 0,
-  },
-  tourRow: {
-    flexDirection: "row",
-    // Top-aligned, not centred: the detail line wraps to two lines at 375px
-    // with a large OS font scale, and centring would orphan the icon.
-    alignItems: "flex-start",
-    gap: spacing.sm,
-    minHeight: 44,
-  },
-  tourCopy: {
-    flex: 1,
-    minWidth: 0,
-    gap: 2,
-  },
-  tourTitle: {
-    ...typography.bodyStrong,
-    color: colors.textPrimary,
-  },
-  tourDetail: {
-    ...typography.caption,
-    color: colors.textTertiary,
-  },
-  // Within a semantic group: the account Card sits under the tour row it
-  // belongs with, at the same distance the groups above use internally.
-  sectionWrapper: {
-    paddingHorizontal: spacing.lg,
-    marginTop: spacing.md,
-  },
-  // Phase 104 (M4) — the first member of a NEW semantic group.
-  //
-  // Only the opening member takes the wider gap; everything after it keeps
-  // sectionWrapper, so a group reads as one block rather than a run of
-  // equally spaced panels. Deliberately lg and not xl: this is a boundary
-  // cue, not a chapter break, and Profile should stay dense enough to scan.
-  sectionGroupStart: {
-    paddingHorizontal: spacing.lg,
-    marginTop: spacing.lg,
-  },
-  linkButtonWrapper: {
-    marginTop: spacing.xs,
-  },
-  infoRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    gap: spacing.sm,
-    paddingVertical: 2,
-  },
-  infoLabel: {
-    ...typography.body,
-    color: colors.textSecondary,
-  },
-  infoValue: {
-    ...typography.bodyStrong,
-    color: colors.textPrimary,
-    flexShrink: 1,
-  },
-  errorText: {
-    ...typography.caption,
-    color: colors.danger,
-    marginTop: spacing.xxs,
-  },
-  logoutDivider: {
-    marginTop: spacing.lg,
-  },
-  logoutWrapper: {
+    justifyContent: "space-between",
     paddingHorizontal: spacing.lg,
-    marginTop: spacing.md,
+    paddingTop: spacing.xs,
+    paddingBottom: spacing.sm,
+    gap: spacing.sm,
+  },
+  screenTitle: {
+    ...typography.screenTitle,
+    color: colors.textPrimary,
+    flex: 1,
+    minWidth: 0,
+  },
+  block: {
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.md,
   },
   tabRow: {
     flexDirection: "row",
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.divider,
-    marginTop: spacing.lg,
+    marginTop: spacing.sm,
   },
   tab: {
     ...typography.bodyStrong,

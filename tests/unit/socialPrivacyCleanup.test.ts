@@ -135,12 +135,14 @@ describe("§3 the client reads the same contract", () => {
 });
 
 describe("§8 peer-visible surfaces show no measurement", () => {
-  // profileStats.ts joined this list in Phase 113: it used to be excluded
-  // because it still built the OWNER's own "Puan" from private data, and
-  // that stat is now gone entirely (nothing ever awarded a point).
+  // profileStats.ts was on this list in Phase 113 and is gone in Phase 114:
+  // once the owner's "Puan" was removed the module had no caller left, so
+  // the file was deleted rather than kept as an empty formatter.
   for (const file of [
     "src/features/profile/screens/PublicProfileScreen.tsx",
-    "src/features/profile/services/profileStats.ts",
+    "src/features/profile/screens/ProfileScreen.tsx",
+    "src/features/profile/components/ProfileMenuGroup.tsx",
+    "src/features/profile/components/ProfileIdentityCard.tsx",
     "src/features/friends/components/FriendRow.tsx",
     "src/features/friends/screens/FindFriendsScreen.tsx",
     "src/features/friends/screens/FriendsScreen.tsx",
@@ -154,7 +156,9 @@ describe("§8 peer-visible surfaces show no measurement", () => {
 
   it("leaves a peer's profile with no stats row at all, rather than an empty one", () => {
     const screen = read("src/features/profile/screens/PublicProfileScreen.tsx");
+    // ProfileStatsRow no longer exists at all (Phase 114).
     expect(screen).not.toContain("ProfileStatsRow");
+    expect(existsSync(join(ROOT, "src/features/profile/components/ProfileStatsRow.tsx"))).toBe(false);
     expect(screen).not.toContain("publicProfileStats");
   });
 });

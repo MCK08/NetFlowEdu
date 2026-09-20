@@ -59,10 +59,19 @@ describe("§33 teacher information architecture", () => {
     // Typed routes live in a gitignored cache, so tsc only catches a stale
     // href after Metro regenerates it — and a plain-string path never. Expo
     // Router resolves this one to the Bugün tab, silently misrouting.
-    for (const file of ["src/features/notifications/services/notificationNavigation.ts", "src/features/friends/screens/FindFriendsScreen.tsx"]) {
-      expect(read(file)).not.toContain("(teacher)/(tabs)/friends");
+    // Phase 114 — Profil's copy of this path moved into the profile
+    // feature's routes module, so that is where the guarantee is checked now.
+    for (const file of [
+      "src/features/notifications/services/notificationNavigation.ts",
+      "src/features/friends/screens/FindFriendsScreen.tsx",
+      "src/features/profile/routes.ts",
+    ]) {
+      expect(strip(read(file))).not.toContain("(teacher)/(tabs)/friends");
       expect(read(file)).toContain("/(teacher)/friends");
     }
+    // And Profil resolves its destinations through that module rather than
+    // rebuilding a path from a role flag.
+    expect(read("src/features/profile/screens/ProfileScreen.tsx")).toContain("profileRoutesFor");
   });
 
   it("3. leaves the student tabs exactly as they were", () => {
@@ -87,8 +96,11 @@ describe("§33 teacher information architecture", () => {
     const classPage = read(CLASS_DETAIL);
     expect(classPage).toContain('pathname: "/(teacher)/class/[classId]/performance"');
     expect(classPage).toContain('pathname: "/(teacher)/class/[classId]/actions"');
-    // Friends is opened from Profil now, the feed from Bugün.
-    expect(read("src/features/profile/screens/ProfileScreen.tsx")).toContain('isTeacher ? "/(teacher)/friends"');
+    // Friends is opened from Profil now, the feed from Bugün. Phase 114 —
+    // Profil asks profileRoutesFor for the role's copy instead of spelling
+    // the path inline, and that resolver is pinned above.
+    expect(read("src/features/profile/screens/ProfileScreen.tsx")).toContain("routes.friends");
+    expect(read("src/features/profile/routes.ts")).toContain('teacherFriends: "/(teacher)/friends"');
     expect(read(TODAY)).toContain('router.push("/(teacher)/feed" as never)');
   });
 

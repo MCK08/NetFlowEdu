@@ -32,10 +32,11 @@ const GAMIFICATION = /\bXP\b|experiencePoints|gamification|\bcoins?\b|\brozet|\b
 const PRODUCT_SOURCES = [
   "src/types/user.ts",
   "src/services/firebase/firestore.ts",
-  "src/features/profile/services/profileStats.ts",
+  "src/features/profile/components/ProfileMenuGroup.tsx",
   "src/features/profile/screens/ProfileScreen.tsx",
   "src/features/profile/screens/PublicProfileScreen.tsx",
-  "src/features/profile/components/ProfileStatsRow.tsx",
+  "src/features/profile/components/ProfileIdentityCard.tsx",
+  "src/features/profile/components/ProfileLearningSummary.tsx",
   "functions/src/triggers/onUserCreate.ts",
   "functions/src/profiles/syncPublicProfile.ts",
 ];
@@ -92,19 +93,23 @@ describe("§4 user creation", () => {
 
 describe("§6 the owner's own profile", () => {
   it("renders no Puan stat and no replacement for it", () => {
-    for (const file of ["src/features/profile/screens/ProfileScreen.tsx", "src/features/profile/services/profileStats.ts"]) {
+    for (const file of [
+      "src/features/profile/screens/ProfileScreen.tsx",
+      "src/features/profile/components/ProfileLearningSummary.tsx",
+    ]) {
       expect(code(file)).not.toMatch(GAMIFICATION);
     }
   });
 
-  it("keeps the two real counters, so the row is not left empty", () => {
-    const stats = code("src/features/profile/services/profileStats.ts");
-    expect(stats).toMatch(/key: "friends", label: "Arkadaş"/);
-    expect(stats).toMatch(/key: "requests", label: "Gelen İstek"/);
-  });
-
-  it("drops the helper that existed only to state a points value", () => {
-    expect(code("src/features/profile/services/profileStats.ts")).not.toMatch(/export function statValue/);
+  // Phase 114 — the stat row that held "Puan" is gone entirely, and with it
+  // the module that built it: profileStats.ts had no caller once the points
+  // stat was removed. The friend/request counts it used to render survive as
+  // the description of the Arkadaşlarım row.
+  it("keeps the real friend counters, now on the row that leads to them", () => {
+    const screen = code("src/features/profile/screens/ProfileScreen.tsx");
+    expect(screen).toMatch(/arkadaş/);
+    expect(screen).toMatch(/yeni istek/);
+    expect(existsSync(join(ROOT, "src/features/profile/services/profileStats.ts"))).toBe(false);
   });
 
   it("still routes to the real personal analytics", () => {

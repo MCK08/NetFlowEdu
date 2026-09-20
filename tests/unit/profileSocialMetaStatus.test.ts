@@ -12,9 +12,13 @@ const code = (text: string) =>
   text.split("\n").filter((l) => !l.trim().startsWith("//") && !l.trim().startsWith("*")).join("\n");
 
 describe("profile social counters load state", () => {
-  it("Profile passes the listener's own status, not a timestamp heuristic", () => {
+  // Phase 114 — the counters are no longer a stat row above the fold; they
+  // describe the Arkadaşlarım row that leads to them. The guarantee is
+  // unchanged and still checked at the same place: Profile reads the
+  // listener's own status and says nothing until it has answered.
+  it("Profile reads the listener's own status, not a timestamp heuristic", () => {
     const screen = code(read("src/features/profile/screens/ProfileScreen.tsx"));
-    expect(screen).toContain("socialMetaStatus: socialMeta.status");
+    expect(screen).toContain('socialMeta.status !== "ready"');
     expect(screen).not.toMatch(/updatedAt\s*===\s*0/);
   });
 

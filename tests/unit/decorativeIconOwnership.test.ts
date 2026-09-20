@@ -40,12 +40,15 @@ function expectDecorative(icons: string[], name: string): void {
 }
 
 describe("decorative icon ownership", () => {
-  it("ActionTile announces its label, not its glyph", () => {
-    const source = read("components/ui/ActionTile.tsx");
-    const parent = openingTag(source, "AnimatedPressable", "accessibilityLabel={label}");
+  // Phase 114 — ActionTile was deleted with Profile's tile row. Its grouped
+  // replacement carries the same rule: the row owns one label, and both the
+  // leading glyph and the chevron stay decorative.
+  it("ProfileMenuGroup announces the row, not its glyphs", () => {
+    const source = read("features/profile/components/ProfileMenuGroup.tsx");
+    const parent = openingTag(source, "Pressable", "accessibilityLabel={`${item.title}. ${item.description}`}");
 
     expect(parent).toContain('accessibilityRole="button"');
-    expectDecorative(iconTags(source), "{icon}");
+    expectDecorative(iconTags(source), "{item.icon}");
   });
 
   it("IconButton requires its own name and keeps the glyph silent", () => {
