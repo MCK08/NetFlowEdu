@@ -20,10 +20,18 @@ export interface ProfileMenuItem {
   onPress: () => void;
   /** Sign out and the like: same geometry, danger-toned label. */
   tone?: "default" | "danger";
+  /** Phase 115 — false for a row that ACTS instead of navigating. A chevron
+   *  promises another screen; signing out is not one. */
+  chevron?: boolean;
+  disabled?: boolean;
 }
 
 interface ProfileMenuGroupProps {
   items: readonly ProfileMenuItem[];
+  /** Phase 115 — the section label above the card ("Hesap", "Uygulama").
+   *  Settings groups several cards under names; Profil's two groups do not
+   *  need them, so this stays optional rather than forcing empty headings. */
+  title?: string;
 }
 
 // Phase 114 — several destinations as ONE object.
@@ -37,18 +45,22 @@ interface ProfileMenuGroupProps {
 // AnalyticsNavRow is deliberately not reused — it is one card PER row, which
 // is the opposite grouping, and widening it with a "sometimes grouped" mode
 // would blur what it means on the screens already using it.
-export const ProfileMenuGroup = memo(function ProfileMenuGroup({ items }: ProfileMenuGroupProps) {
+export const ProfileMenuGroup = memo(function ProfileMenuGroup({ items, title }: ProfileMenuGroupProps) {
   useThemeSubscription();
   if (items.length === 0) return null;
 
   return (
-    <Card style={styles.card}>
+    <View style={styles.section}>
+      {title ? <Text style={styles.sectionTitle}>{title}</Text> : null}
+      <Card style={styles.card}>
       {items.map((item, index) => (
         <Fragment key={item.key}>
           {index > 0 ? <View style={styles.separator} /> : null}
           <Pressable
             onPress={item.onPress}
+            disabled={item.disabled}
             accessibilityRole="button"
+            accessibilityState={{ disabled: item.disabled ?? false }}
             // Title and description in one label: VoiceOver reads the row as
             // the single thing it is, and the icon stays decorative.
             accessibilityLabel={`${item.title}. ${item.description}`}
@@ -71,20 +83,31 @@ export const ProfileMenuGroup = memo(function ProfileMenuGroup({ items }: Profil
                   grows with it. */}
               <Text style={styles.description}>{item.description}</Text>
             </View>
-            <Ionicons
-              name="chevron-forward"
-              size={iconSize.sm}
-              color={colors.textTertiary}
-              accessibilityElementsHidden
-            />
+            {item.chevron === false ? null : (
+              <Ionicons
+                name="chevron-forward"
+                size={iconSize.sm}
+                color={colors.textTertiary}
+                accessibilityElementsHidden
+              />
+            )}
           </Pressable>
         </Fragment>
       ))}
-    </Card>
+      </Card>
+    </View>
   );
 });
 
 const styles = themedStyles(() => ({
+  section: {
+    gap: spacing.xs,
+  },
+  sectionTitle: {
+    ...typography.caption,
+    color: colors.textTertiary,
+    paddingHorizontal: spacing.xs,
+  },
   card: {
     // The rows carry their own padding so a separator can run the full width
     // of the card rather than floating inside it.

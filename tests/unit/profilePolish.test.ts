@@ -110,19 +110,27 @@ describe("§6 every row resolves to a real route", () => {
 
   it("gives the gear a destination that exists for both roles", () => {
     expect(code(PROFILE)).toContain("routes.settings");
-    expect(existsSync(join(ROOT, "app/(student)/settings.tsx"))).toBe(true);
-    expect(existsSync(join(ROOT, "app/(teacher)/settings.tsx"))).toBe(true);
+    // Phase 115 — Ayarlar gained nested children (Görünüm, Hesap Bilgileri),
+    // so its route file moved to settings/index.tsx. The URL is unchanged.
+    expect(existsSync(join(ROOT, "app/(student)/settings/index.tsx"))).toBe(true);
+    expect(existsSync(join(ROOT, "app/(teacher)/settings/index.tsx"))).toBe(true);
   });
 
   it("resolves each role to its own copy of every account destination", () => {
     expect(profileRoutesFor("student")).toEqual({
+      profileTab: "/(student)/(tabs)/profile",
       settings: "/(student)/settings",
+      appearance: "/(student)/settings/appearance",
+      accountInfo: "/(student)/settings/account",
       editProfile: "/(student)/edit-profile",
       friends: "/(student)/friends",
       findFriends: "/(student)/find-friends",
     });
     expect(profileRoutesFor("teacher")).toEqual({
+      profileTab: "/(teacher)/(tabs)/profile",
       settings: "/(teacher)/settings",
+      appearance: "/(teacher)/settings/appearance",
+      accountInfo: "/(teacher)/settings/account",
       editProfile: "/(teacher)/edit-profile",
       friends: "/(teacher)/friends",
       findFriends: "/(teacher)/find-friends",
@@ -151,12 +159,17 @@ describe("§6 every row resolves to a real route", () => {
 });
 
 describe("§6 the gear's destination holds real settings, moved not copied", () => {
+  // Phase 115 — Ayarlar still owns all four, but two became their own
+  // screens under it (Görünüm, Hesap Bilgileri) instead of panels on the
+  // page. Nothing returned to Profil; settingsExperience.test.ts pins where
+  // each one lives now.
   it("owns appearance, the tour, the account facts and sign out", () => {
     const source = code(SETTINGS);
-    expect(source).toContain("<AppearanceSelector />");
+    expect(source).toContain("routes.appearance");
     expect(source).toContain("guidedTour");
-    expect(source).toContain('label="Çıkış Yap"');
-    expect(source).toContain("GoogleSignInButton");
+    expect(source).toContain('title: "Çıkış Yap"');
+    expect(source).toContain("routes.accountInfo");
+    expect(code("src/features/profile/screens/AccountInfoScreen.tsx")).toContain("GoogleSignInButton");
   });
 
   it("leaves none of them behind on Profil, so nothing is duplicated", () => {

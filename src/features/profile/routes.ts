@@ -7,8 +7,15 @@
 // union is generated into a gitignored cache and does not know a new route
 // until the dev server regenerates it.
 export const PROFILE_ROUTES = {
+  studentProfileTab: "/(student)/(tabs)/profile",
+  teacherProfileTab: "/(teacher)/(tabs)/profile",
   studentSettings: "/(student)/settings",
   teacherSettings: "/(teacher)/settings",
+  // Phase 115 — Ayarlar's two nested subjects.
+  studentAppearance: "/(student)/settings/appearance",
+  teacherAppearance: "/(teacher)/settings/appearance",
+  studentAccountInfo: "/(student)/settings/account",
+  teacherAccountInfo: "/(teacher)/settings/account",
   studentEditProfile: "/(student)/edit-profile",
   teacherEditProfile: "/(teacher)/edit-profile",
   studentFriends: "/(student)/friends",
@@ -21,7 +28,10 @@ export const PROFILE_ROUTES = {
 } as const;
 
 export interface ProfileRoleRoutes {
+  profileTab: string;
   settings: string;
+  appearance: string;
+  accountInfo: string;
   editProfile: string;
   friends: string;
   findFriends: string;
@@ -32,13 +42,19 @@ export interface ProfileRoleRoutes {
 export function profileRoutesFor(role: string | undefined): ProfileRoleRoutes {
   return role === "teacher"
     ? {
+        profileTab: PROFILE_ROUTES.teacherProfileTab,
         settings: PROFILE_ROUTES.teacherSettings,
+        appearance: PROFILE_ROUTES.teacherAppearance,
+        accountInfo: PROFILE_ROUTES.teacherAccountInfo,
         editProfile: PROFILE_ROUTES.teacherEditProfile,
         friends: PROFILE_ROUTES.teacherFriends,
         findFriends: PROFILE_ROUTES.teacherFindFriends,
       }
     : {
+        profileTab: PROFILE_ROUTES.studentProfileTab,
         settings: PROFILE_ROUTES.studentSettings,
+        appearance: PROFILE_ROUTES.studentAppearance,
+        accountInfo: PROFILE_ROUTES.studentAccountInfo,
         editProfile: PROFILE_ROUTES.studentEditProfile,
         friends: PROFILE_ROUTES.studentFriends,
         findFriends: PROFILE_ROUTES.studentFindFriends,

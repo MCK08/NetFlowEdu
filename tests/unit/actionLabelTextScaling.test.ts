@@ -1,4 +1,4 @@
-import { readFileSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 
 // Phase 103 — 150% text audit. Equal-width button rows (Profile quick
@@ -27,11 +27,16 @@ describe("action label text scaling", () => {
   // Profile quick-action row was its last call site, and a primitive with no
   // caller is not a shrink-to-fit guarantee, just an untested file.
 
-  it("AppearanceSelector's option label shrinks to fit instead of wrapping mid-word", () => {
-    const tags = textOpeningTags(read("src/theme/AppearanceSelector.tsx"));
+  // Phase 115 — AppearanceSelector's three-pill row became the Görünüm
+  // screen, where each option owns a full-width row. A label with the whole
+  // row does not need to shrink; it wraps. So the shrink-to-fit case went
+  // with the component, and the wrapping rule that replaced it is checked.
+  it("gives each appearance option a full row whose label can wrap", () => {
+    const source = read("src/features/profile/screens/AppearanceScreen.tsx");
 
-    expect(tags).toHaveLength(1);
-    expectSingleLineShrinkToFit(tags[0] ?? "");
+    expect(existsSync(join(ROOT, "src/theme/AppearanceSelector.tsx"))).toBe(false);
+    expect(source).toMatch(/label: \{[\s\S]*?flex: 1,\s*minWidth: 0,/);
+    expect(source).not.toMatch(/<Text style={styles.label}[^>]*numberOfLines/);
   });
 
   it("StudyProgressCard's stat labels shrink to fit instead of clipping", () => {

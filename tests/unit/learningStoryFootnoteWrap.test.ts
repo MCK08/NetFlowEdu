@@ -32,12 +32,14 @@ describe("learning story footnote wrapping", () => {
     expect(styleBlock(source, "footnoteText")).not.toMatch(/\bflex(Shrink|Grow)?:/);
   });
 
-  // Phase 114 moved the tour row from Profil to the Ayarlar screen behind
-  // the gear. Same row, same wrapping shape — only its address changed.
-  it("mirrors the tour row that already wraps correctly at a large text size", () => {
-    const source = read("src/features/profile/screens/SettingsScreen.tsx");
+  // Phase 114 moved the tour row from Profil to Ayarlar; Phase 115 made it
+  // one row of a grouped menu, which is where that shape now lives. Same
+  // rule, same reference: a top-aligned row with the sentence in its own
+  // flex column, so a wrapped subtitle does not orphan the icon.
+  it("mirrors the menu row that already wraps correctly at a large text size", () => {
+    const source = read("src/features/profile/components/ProfileMenuGroup.tsx");
 
-    expect(styleBlock(source, "tourRow")).toMatch(/alignItems: "flex-start",/);
-    expect(styleBlock(source, "tourCopy")).toMatch(/flex: 1,\s*minWidth: 0,/);
+    expect(styleBlock(source, "row")).toMatch(/alignItems: "flex-start",/);
+    expect(styleBlock(source, "text")).toMatch(/flex: 1,\s*minWidth: 0,/);
   });
 });

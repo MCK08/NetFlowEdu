@@ -1,152 +1,133 @@
-import { Ionicons } from "@expo/vector-icons";
+import { router } from "expo-router";
+import { useMemo } from "react";
 import { ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useState } from "react";
 
 import { AppBackButton } from "@components/ui/AppBackButton";
-import { Card } from "@components/ui/Card";
-import { PrimaryButton } from "@components/ui/PrimaryButton";
-import { SectionHeader } from "@components/ui/SectionHeader";
 import { useAuth } from "@features/authentication";
-import { GoogleSignInButton } from "@features/authentication/components/GoogleSignInButton";
 import { useSignOut } from "@features/authentication/hooks/useSignOut";
 import { useGuidedTour } from "@features/onboarding";
-import { AppearanceSelector } from "@theme/AppearanceSelector";
+import { useNavigationGuard } from "@hooks/useNavigationGuard";
 import { colors } from "@theme/colors";
-import { iconSize, minTouchTarget } from "@theme/sizes";
+import { minTouchTarget } from "@theme/sizes";
 import { spacing } from "@theme/spacing";
 import { themedStyles } from "@theme/themeRuntime";
 import { typography } from "@theme/typography";
-import { Pressable } from "react-native";
 
+import { ProfileMenuGroup, ProfileMenuItem } from "../components/ProfileMenuGroup";
 import { profileRoutesFor } from "../routes";
 
 export const SETTINGS_TITLE = "Ayarlar";
 
-// Phase 114 — the destination behind Profil's gear.
+// Phase 115 — Ayarlar as a list of destinations, grouped by subject.
 //
-// Nothing here is new. Appearance, the guided-tour replay, the account
-// facts and Çıkış Yap all previously sat on Profil itself, each in its own
-// card, which is what made that screen read as a settings page with a
-// profile at the top. They MOVED here rather than being duplicated: Profil
-// keeps identity, learning and navigation; this keeps device and account
-// preferences.
+// Phase 114 gave the gear a real screen by MOVING appearance, the tour
+// replay, the account facts and Çıkış Yap off Profil. That fixed Profil and
+// left Ayarlar as four unlike panels in a column: a segmented control, a
+// row, an info card and a button. This phase gives them one shape —
+// Hesap / Uygulama / Oturum, each a titled group of rows — and pushes the
+// two that are really their own subject (appearance, account facts) into
+// nested screens.
 //
-// Shared by both roles, exactly as ProfileScreen is — the only role-specific
-// thing is which edit-profile route "Hesap ve Profil" belongs to, and
-// neither role gets a control the other does not.
+// WHAT IS DELIBERATELY ABSENT
+//
+// The approved mockup also drew Şifre ve Güvenlik, Bildirim Ayarları, Dil,
+// Yardım Merkezi, Geri Bildirim and Uygulama Hakkında. The audit found no
+// implementation behind any of them: password reset exists only as a
+// PRE-LOGIN screen, notifications have an inbox but no preferences, there
+// is no i18n runtime, and no support, feedback or about surface exists at
+// all. Each would have had to be invented, so none is drawn. A settings row
+// is a promise that something is there.
 export function SettingsScreen() {
-  const { profile, knownAccounts, linkGoogleAccount, firebaseUser } = useAuth();
+  const { profile } = useAuth();
   const { signOut, isSigningOut } = useSignOut();
   // Null only if this screen is ever rendered outside the root provider.
   const guidedTour = useGuidedTour();
-  const [linkError, setLinkError] = useState<string | null>(null);
+  const guardedNavigate = useNavigationGuard();
 
-  const providerIds = firebaseUser?.providerData.map((provider) => provider.providerId) ?? [];
-  const isGoogleLinked = providerIds.includes("google.com");
   const routes = profileRoutesFor(profile?.role);
+
+  const accountItems = useMemo<ProfileMenuItem[]>(
+    () => [
+      {
+        key: "profile-details",
+        icon: "person-outline",
+        title: "Profil Bilgileri",
+        description: "Ad, kullanıcı adı, profil fotoğrafı",
+        onPress: () => guardedNavigate("edit-profile", () => router.push(routes.editProfile as never)),
+      },
+      {
+        key: "account-info",
+        icon: "shield-checkmark-outline",
+        title: "Hesap Bilgileri",
+        description: "E-posta ve bağlı hesaplar",
+        onPress: () => guardedNavigate("account-info", () => router.push(routes.accountInfo as never)),
+      },
+    ],
+    [guardedNavigate, routes.editProfile, routes.accountInfo],
+  );
+
+  const appItems = useMemo<ProfileMenuItem[]>(() => {
+    const items: ProfileMenuItem[] = [
+      {
+        key: "appearance",
+        icon: "color-palette-outline",
+        title: "Görünüm",
+        description: "Açık / Koyu / Sistemle aynı",
+        onPress: () => guardedNavigate("appearance", () => router.push(routes.appearance as never)),
+      },
+    ];
+    // Phase 74's only re-entry point into the guided tour. Hidden entirely
+    // for a role with no authored tour rather than shown disabled — and it
+    // stays, mockup or not, because it is real functionality with nowhere
+    // else to live.
+    if (guidedTour?.replayAudience) {
+      items.push({
+        key: "tour",
+        icon: "information-circle-outline",
+        title: "Uygulama Turunu Tekrar Gör",
+        description: "NetFlowEdu'nun nasıl çalıştığını anlatan kısa tanıtım",
+        onPress: guidedTour.replay,
+        chevron: false,
+      });
+    }
+    return items;
+  }, [guardedNavigate, routes.appearance, guidedTour?.replayAudience, guidedTour?.replay]);
+
+  const sessionItems = useMemo<ProfileMenuItem[]>(
+    () => [
+      {
+        key: "sign-out",
+        icon: "log-out-outline",
+        title: "Çıkış Yap",
+        description: isSigningOut ? "Çıkış yapılıyor…" : "Bu cihazdaki oturumu kapat",
+        onPress: signOut,
+        tone: "danger",
+        // It ends a session rather than opening a screen, so no chevron
+        // promises one.
+        chevron: false,
+        disabled: isSigningOut,
+      },
+    ],
+    [signOut, isSigningOut],
+  );
 
   return (
     <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
       <View style={styles.header}>
-        <AppBackButton fallbackHref={routes.settings === "/(teacher)/settings" ? "/(teacher)/(tabs)/profile" : "/(student)/(tabs)/profile"} />
+        <AppBackButton fallbackHref={routes.profileTab as never} />
         <Text style={styles.headerTitle}>{SETTINGS_TITLE}</Text>
         <View style={styles.headerSpacer} />
       </View>
 
-      <ScrollView
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-      >
-        <AppearanceSelector />
-
-        {/* Phase 74's only re-entry point into the guided tour. Hidden
-            entirely for a role with no authored tour, rather than shown
-            disabled. */}
-        {guidedTour?.replayAudience ? (
-          <Card>
-            <Pressable
-              onPress={guidedTour.replay}
-              style={styles.tourRow}
-              accessibilityRole="button"
-              accessibilityLabel="Tanıtımı tekrar gör"
-              accessibilityHint="NetFlowEdu tanıtımını yeniden açar"
-            >
-              <Ionicons
-                name="information-circle-outline"
-                size={iconSize.md}
-                color={colors.primary}
-                accessibilityElementsHidden
-              />
-              <View style={styles.tourCopy}>
-                <Text style={styles.tourTitle}>Tanıtımı Tekrar Gör</Text>
-                <Text style={styles.tourDetail}>
-                  NetFlowEdu&apos;nun nasıl çalıştığını anlatan kısa tanıtım.
-                </Text>
-              </View>
-              <Ionicons
-                name="chevron-forward"
-                size={iconSize.sm}
-                color={colors.textTertiary}
-                accessibilityElementsHidden
-              />
-            </Pressable>
-          </Card>
-        ) : null}
-
-        <Card>
-          <SectionHeader title="Hesap" />
-          <InfoRow label="E-posta" value={profile?.email ?? "—"} />
-          <InfoRow label="Kayıtlı hesap" value={String(knownAccounts.length)} />
-          <InfoRow label="Google bağlı" value={isGoogleLinked ? "Evet" : "Hayır"} />
-          {!isGoogleLinked ? (
-            <View style={styles.linkButtonWrapper}>
-              <GoogleSignInButton
-                onIdToken={async (idToken) => {
-                  setLinkError(null);
-                  try {
-                    await linkGoogleAccount(idToken);
-                  } catch (error) {
-                    setLinkError(
-                      error instanceof Error ? error.message : "Google hesabı bağlanamadı.",
-                    );
-                  }
-                }}
-                onError={setLinkError}
-                label="Google Hesabını Bağla"
-              />
-            </View>
-          ) : null}
-          {linkError ? (
-            <Text style={styles.errorText} accessibilityRole="alert">
-              {linkError}
-            </Text>
-          ) : null}
-        </Card>
-
-        {/* Session end, last and alone: it is the one action here that
-            throws away state, so it never sits beside a preference. */}
-        <View style={styles.signOutWrapper}>
-          <PrimaryButton
-            label="Çıkış Yap"
-            onPress={signOut}
-            variant="secondary"
-            isLoading={isSigningOut}
-          />
-        </View>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <ProfileMenuGroup title="Hesap" items={accountItems} />
+        <ProfileMenuGroup title="Uygulama" items={appItems} />
+        {/* Last and alone: the one action here that throws state away never
+            sits beside a preference. */}
+        <ProfileMenuGroup title="Oturum" items={sessionItems} />
       </ScrollView>
     </SafeAreaView>
-  );
-}
-
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.infoRow}>
-      <Text style={styles.infoLabel}>{label}</Text>
-      <Text style={styles.infoValue} numberOfLines={1}>
-        {value}
-      </Text>
-    </View>
   );
 }
 
@@ -175,52 +156,6 @@ const styles = themedStyles(() => ({
   content: {
     padding: spacing.lg,
     paddingTop: spacing.xs,
-    gap: spacing.md,
-  },
-  tourRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: spacing.sm,
-    minHeight: minTouchTarget,
-  },
-  tourCopy: {
-    flex: 1,
-    minWidth: 0,
-    gap: 2,
-  },
-  tourTitle: {
-    ...typography.bodyStrong,
-    color: colors.textPrimary,
-  },
-  tourDetail: {
-    ...typography.caption,
-    color: colors.textTertiary,
-  },
-  linkButtonWrapper: {
-    marginTop: spacing.xs,
-  },
-  infoRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: spacing.sm,
-    paddingVertical: 2,
-  },
-  infoLabel: {
-    ...typography.body,
-    color: colors.textSecondary,
-  },
-  infoValue: {
-    ...typography.bodyStrong,
-    color: colors.textPrimary,
-    flexShrink: 1,
-  },
-  errorText: {
-    ...typography.caption,
-    color: colors.danger,
-    marginTop: spacing.xxs,
-  },
-  signOutWrapper: {
-    marginTop: spacing.sm,
+    gap: spacing.lg,
   },
 }));
