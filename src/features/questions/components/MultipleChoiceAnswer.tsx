@@ -3,6 +3,7 @@ import { Pressable, Text, View } from "react-native";
 
 import { colors } from "@theme/colors";
 import { radius } from "@theme/radius";
+import { minTouchTarget } from "@theme/sizes";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
 import { themedStyles } from "@theme/themeRuntime";
@@ -143,7 +144,22 @@ export function MultipleChoiceAnswer({
             accessibilityState={{ selected: isSelected, disabled: selected !== null }}
             accessibilityLabel={`${label} şıkkı: ${text}`}
           >
-            <Text style={styles.optionLetter}>{label}</Text>
+            <View
+              style={[
+                styles.optionLetterBadge,
+                showAsCorrect ? styles.optionLetterBadgeCorrect : null,
+                showAsWrongPick ? styles.optionLetterBadgeWrong : null,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.optionLetter,
+                  showAsCorrect || showAsWrongPick ? styles.optionLetterOnFill : null,
+                ]}
+              >
+                {label}
+              </Text>
+            </View>
             <Text style={styles.optionText}>{text}</Text>
           </Pressable>
         );
@@ -182,13 +198,18 @@ const styles = themedStyles(() => ({
     ...typography.bodyStrong,
     color: colors.textPrimary,
   },
+  // Phase 116 — an option is a target first. A full-width row with a badged
+  // letter, a 44pt minimum and its own rounded surface, so answering is one
+  // confident tap rather than a careful one at a thin outline.
   option: {
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.sm,
+    minHeight: minTouchTarget,
     borderWidth: 1.5,
     borderColor: colors.border,
-    borderRadius: radius.md,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surfaceMuted,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.sm,
   },
@@ -200,11 +221,32 @@ const styles = themedStyles(() => ({
     borderColor: colors.danger,
     backgroundColor: colors.dangerMuted,
   },
+  // Sized by its own text, not by a fixed box: at a large OS text size a
+  // 28pt circle clipped the letter it existed to show.
+  optionLetterBadge: {
+    minWidth: 28,
+    minHeight: 28,
+    paddingHorizontal: spacing.xxs,
+    paddingVertical: 2,
+    borderRadius: radius.pill,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.surface,
+  },
+  optionLetterBadgeCorrect: {
+    backgroundColor: colors.success,
+  },
+  optionLetterBadgeWrong: {
+    backgroundColor: colors.danger,
+  },
   optionLetter: {
-    ...typography.bodyStrong,
+    ...typography.caption,
+    fontWeight: "700",
     color: colors.textSecondary,
-    width: 22,
     textAlign: "center",
+  },
+  optionLetterOnFill: {
+    color: colors.textInverse,
   },
   optionText: {
     ...typography.body,

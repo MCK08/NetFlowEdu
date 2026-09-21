@@ -189,9 +189,18 @@ describe("filters", () => {
     expect(filtered).toContain('label="Filtreleri Temizle"');
   });
 
-  it("the first-level pills are the product's real subject taxonomy, and there is no exam filter", () => {
+  // Phase 116 — SubjectPillBar became FeedScopeBar: the same subject
+  // taxonomy, now behind Phase 50's channels, so "Derslerim" is a pill
+  // instead of three taps through the filter sheet. Both still come from
+  // canonical sources, and neither invents a category.
+  it("the first-level pills are the product's real channels and subject taxonomy, and there is no exam filter", () => {
     const screen = code("src/features/feed/screens/FeedScreen.tsx");
-    expect(screen).toContain("<SubjectPillBar subjects={QUESTION_SUBJECTS}");
+    expect(screen).toContain("subjects={QUESTION_SUBJECTS}");
+    expect(screen).toContain("channels={channels}");
+    const bar = code("src/features/feed/components/FeedScopeBar.tsx");
+    // The channel list is the role's own, never one assembled in the bar.
+    expect(bar).toContain("channels.map");
+    expect(bar).not.toMatch(/const CHANNELS|"Sana Özel"|"Derslerim"/);
     const sheet = code("src/features/feed/components/FeedFilterSheet.tsx");
     for (const source of [screen, sheet, code("src/features/feed/components/QuestionFeedPage.tsx")]) {
       expect(source).not.toMatch(/\bTYT\b|\bAYT\b|\bLGS\b|exam/i);
@@ -295,7 +304,7 @@ describe("the page — one engine, no invented numbers", () => {
   });
 
   it("speaks calmly: no AI claim, no exam, no rank, no emoji icon, theme tokens only", () => {
-    for (const file of [PAGE, "src/features/feed/screens/FeedScreen.tsx", "src/features/feed/components/SubjectPillBar.tsx"]) {
+    for (const file of [PAGE, "src/features/feed/screens/FeedScreen.tsx", "src/features/feed/components/FeedScopeBar.tsx"]) {
       const source = code(file);
       expect(source).not.toMatch(/Yapay zek|AI |sıralama|liderlik|percentile|leaderboard/i);
       expect(source).not.toMatch(/#[0-9a-fA-F]{3,8}\b|"white"|"black"/);

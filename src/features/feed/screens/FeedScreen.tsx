@@ -42,7 +42,7 @@ import { useThemeSubscription } from "@theme/ThemeProvider";
 
 import { FeedFilterSheet } from "../components/FeedFilterSheet";
 import { QuestionFeedPage } from "../components/QuestionFeedPage";
-import { SubjectPillBar } from "../components/SubjectPillBar";
+import { FeedScopeBar } from "../components/FeedScopeBar";
 import { useClassScopedQuestions } from "../hooks/useClassScopedQuestions";
 import { useFeedPersonalizationSignals } from "../hooks/useFeedPersonalizationSignals";
 import { useSocialFeed } from "../hooks/useSocialFeed";
@@ -387,7 +387,16 @@ export function FeedScreen() {
           </Pressable>
         </View>
       </View>
-      <SubjectPillBar subjects={QUESTION_SUBJECTS} selected={filter.subject} onSelect={selectSubject} />
+      {/* Phase 116 — channel AND subject in one reachable line. "Derslerim"
+          used to cost three taps through the filter sheet. */}
+      <FeedScopeBar
+        channels={channels}
+        activeChannel={activeChannel}
+        onSelectChannel={setChannel}
+        subjects={QUESTION_SUBJECTS}
+        selectedSubject={filter.subject}
+        onSelectSubject={selectSubject}
+      />
     </View>
   );
 

@@ -1,8 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { router } from "expo-router";
-import { memo, useCallback } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { memo, useCallback, useState } from "react";
+import { Pressable, ScrollView, Text, useWindowDimensions, View } from "react-native";
 
 import { AnimatedPressable } from "@components/ui/AnimatedPressable";
 import { PrimaryButton } from "@components/ui/PrimaryButton";
@@ -52,6 +52,13 @@ const MEDIA_SHARE = 0.4;
 
 export const COMMUNITY_FEED_SENTENCE = "Bu soru toplulukta da zorlayıcı.";
 
+/** Past this OS text scale the meta row stops being a row. Found on the
+ *  simulator at the largest accessibility size: the subject truncated to
+ *  "Denkle…" while the author's role broke mid-word ("Öğretme / n"), because
+ *  two shrinking columns were sharing one line. Stacked, each gets the full
+ *  width. */
+const STACK_ABOVE_FONT_SCALE = 1.3;
+
 // Phase 109 — one question, one page. The question is the hero: its image,
 // its words, its choices, then the support (hint) and the actions. Answering
 // happens HERE through the same MultipleChoiceAnswer QuestionDetailScreen
@@ -68,6 +75,8 @@ function QuestionFeedPageComponent({
   hasNext,
 }: QuestionFeedPageProps) {
   useThemeSubscription();
+  const { fontScale } = useWindowDimensions();
+  const stackedMeta = fontScale > STACK_ABOVE_FONT_SCALE;
   const { firebaseUser } = useAuth();
   const uid = firebaseUser?.uid;
   const author = useProfileHandle(question.ownerId);
@@ -89,6 +98,18 @@ function QuestionFeedPageComponent({
   const subject = question.subject.trim();
   const topic = question.topic.trim();
   const caption = question.description?.trim() ?? "";
+  const grade = question.gradeLevel.trim();
+  // Phase 116 — the second meta line, from fields the document already has.
+  // The type is read from the choices themselves (the same test that decides
+  // which answer UI renders), so it can never disagree with what is below it.
+  const facts = [grade ? `${grade}. Sınıf` : null, isMultipleChoice ? "Çoktan seçmeli" : "Açık uçlu"]
+    .filter(Boolean)
+    .join(" · ");
+  // A question whose image fails (a deleted upload, a demo fixture that
+  // 404s) previously kept its full 40%-of-the-page box, so the screen's
+  // largest object was an empty grey rectangle. On failure the media
+  // collapses to a short, calm strip instead and the question keeps the room.
+  const [imageFailed, setImageFailed] = useState(false);
 
   const openDetail = useCallback(() => {
     guardedNavigate(`detail-${question.id}`, () =>
@@ -118,49 +139,58 @@ function QuestionFeedPageComponent({
         showsVerticalScrollIndicator={false}
         nestedScrollEnabled
       >
-        <View style={styles.metaRow}>
-          <View style={styles.tags}>
-            {subject ? (
-              <View style={styles.tag}>
-                <Text style={styles.tagText}>{subject}</Text>
-              </View>
+        <View style={[styles.metaRow, stackedMeta ? styles.metaRowStacked : null]}>
+          <View style={styles.meta}>
+            {subject || topic ? (
+              <Text style={styles.subjectLine} numberOfLines={2}>
+                {[subject, topic].filter(Boolean).join("  •  ")}
+              </Text>
             ) : null}
-            {topic ? (
-              <View style={[styles.tag, styles.tagQuiet]}>
-                <Text style={styles.tagQuietText}>{topic}</Text>
-              </View>
-            ) : null}
+            {facts ? <Text style={styles.factsLine}>{facts}</Text> : null}
           </View>
           <Pressable
             onPress={openAuthor}
-            style={styles.author}
+            style={[styles.author, stackedMeta ? styles.authorStacked : null]}
             accessibilityRole="button"
             accessibilityLabel={`${author.primaryName}, ${roleLabel(question.posterRole)}. Profili aç`}
             hitSlop={8}
           >
-            <Text style={styles.authorText} numberOfLines={1}>
+            <Text style={styles.authorText} numberOfLines={stackedMeta ? 2 : 1}>
               {author.primaryName}
             </Text>
             <Text style={styles.authorRole}>{roleLabel(question.posterRole)}</Text>
           </Pressable>
         </View>
 
-        <Pressable
-          onPress={() => onPressImage(question.imageUrl)}
-          style={[styles.media, { height: Math.round(height * MEDIA_SHARE) }]}
-          accessibilityRole="imagebutton"
-          accessibilityLabel="Soru görseli"
-          accessibilityHint="Görseli büyütür"
-        >
-          <Image
-            source={{ uri: question.imageUrl }}
-            style={styles.image}
-            contentFit="contain"
-            transition={duration.normal}
-            accessibilityIgnoresInvertColors
-            accessible={false}
-          />
-        </Pressable>
+        {imageFailed ? (
+          <View style={styles.mediaFallback} accessible accessibilityLabel="Soru görseli yüklenemedi">
+            <Ionicons
+              name="image-outline"
+              size={iconSize.md}
+              color={colors.textTertiary}
+              accessibilityElementsHidden
+            />
+            <Text style={styles.mediaFallbackText}>Görsel yüklenemedi</Text>
+          </View>
+        ) : (
+          <Pressable
+            onPress={() => onPressImage(question.imageUrl)}
+            style={[styles.media, { height: Math.round(height * MEDIA_SHARE) }]}
+            accessibilityRole="imagebutton"
+            accessibilityLabel="Soru görseli"
+            accessibilityHint="Görseli büyütür"
+          >
+            <Image
+              source={{ uri: question.imageUrl }}
+              style={styles.image}
+              contentFit="contain"
+              transition={duration.normal}
+              onError={() => setImageFailed(true)}
+              accessibilityIgnoresInvertColors
+              accessible={false}
+            />
+          </Pressable>
+        )}
 
         {caption ? <Text style={styles.caption}>{caption}</Text> : null}
 
@@ -191,15 +221,21 @@ function QuestionFeedPageComponent({
           />
         ) : null}
 
+        {/* Phase 116 — support, then the way forward.
+            These three were four equal pills, and "Sonraki" was one of them:
+            the single thing a student does after every question looked
+            exactly like "Beğen". Support stays compact and secondary; moving
+            on is the page's one filled button. Swiping still works — the
+            pager is untouched — this is the reachable, announceable way to
+            do the same thing. */}
         <View style={styles.actions}>
           <Action
-            icon="heart-outline"
-            activeIcon="heart"
-            active={liked}
-            activeColor={colors.accent}
-            label={liked ? "Beğendin" : "Beğen"}
-            count={likeCount}
-            onPress={toggleLike}
+            icon="bookmark-outline"
+            activeIcon="bookmark"
+            active={saved}
+            activeColor={colors.primary}
+            label={saved ? "Kaydedildi" : "Kaydet"}
+            onPress={toggleSaved}
           />
           <Action
             icon="chatbubble-outline"
@@ -209,17 +245,27 @@ function QuestionFeedPageComponent({
             hint="Sorunun yorumlarını ve cevaplarını açar"
           />
           <Action
-            icon="bookmark-outline"
-            activeIcon="bookmark"
-            active={saved}
-            activeColor={colors.primary}
-            label={saved ? "Kaydedildi" : "Kaydet"}
-            onPress={toggleSaved}
+            icon="heart-outline"
+            activeIcon="heart"
+            active={liked}
+            activeColor={colors.accent}
+            label={liked ? "Beğendin" : "Beğen"}
+            count={likeCount}
+            onPress={toggleLike}
           />
-          {hasNext ? (
-            <Action icon="arrow-down-circle-outline" label="Sonraki" onPress={onNext} hint="Sonraki soruya geçer" />
-          ) : null}
         </View>
+
+        {hasNext ? (
+          <PrimaryButton
+            label="Sonraki"
+            onPress={onNext}
+            // On an open-ended question "Cevapla" is the thing to do, so
+            // moving on steps back to a secondary button rather than
+            // standing beside it as a second filled call to action.
+            variant={isMultipleChoice ? "primary" : "secondary"}
+            accessibilityHint="Sonraki soruya geçer"
+          />
+        ) : null}
       </ScrollView>
     </View>
   );
@@ -282,35 +328,38 @@ const styles = themedStyles(() => ({
     justifyContent: "space-between",
     gap: spacing.sm,
   },
-  tags: {
-    flexDirection: "row",
-    flexWrap: "wrap",
+  metaRowStacked: {
+    flexDirection: "column",
+    alignItems: "flex-start",
     gap: spacing.xxs,
+  },
+  // Phase 116 — two quiet lines instead of two filled chips. The chips gave
+  // the subject and topic the same visual weight as an action, so the top of
+  // every page read as UI; as text they name the question and step back.
+  meta: {
     flexShrink: 1,
+    minWidth: 0,
+    gap: 2,
   },
-  tag: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xxs,
-    borderRadius: radius.pill,
-    backgroundColor: colors.primaryMuted,
-  },
-  tagText: {
+  subjectLine: {
     ...typography.caption,
-    fontWeight: "600",
+    fontWeight: "700",
     color: colors.primary,
   },
-  tagQuiet: {
-    backgroundColor: colors.surfaceMuted,
-  },
-  tagQuietText: {
-    ...typography.caption,
-    color: colors.textSecondary,
+  factsLine: {
+    ...typography.label,
+    color: colors.textTertiary,
   },
   author: {
     alignItems: "flex-end",
     flexShrink: 1,
     minHeight: minTouchTarget - spacing.sm,
     justifyContent: "center",
+  },
+  authorStacked: {
+    alignItems: "flex-start",
+    alignSelf: "stretch",
+    flexShrink: 0,
   },
   authorText: {
     ...typography.caption,
@@ -330,6 +379,19 @@ const styles = themedStyles(() => ({
   image: {
     width: "100%",
     height: "100%",
+  },
+  mediaFallback: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.xs,
+    paddingVertical: spacing.md,
+    borderRadius: radius.xl,
+    backgroundColor: colors.surfaceMuted,
+  },
+  mediaFallbackText: {
+    ...typography.caption,
+    color: colors.textTertiary,
   },
   caption: {
     ...typography.body,
