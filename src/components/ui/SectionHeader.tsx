@@ -10,9 +10,14 @@ import { useThemeSubscription } from "@theme/ThemeProvider";
 interface SectionHeaderProps {
   title: string;
   action?: { label: string; onPress: () => void };
+  /** Phase 117 — a short fact about the section, stated rather than tapped
+   *  ("1 / 3 tamamlandı"). It sits where an action would and wraps with the
+   *  title under the same rule, so a section can report its own state
+   *  without growing a row for it. */
+  caption?: string;
 }
 
-export const SectionHeader = memo(function SectionHeader({ title, action }: SectionHeaderProps) {
+export const SectionHeader = memo(function SectionHeader({ title, action, caption }: SectionHeaderProps) {
   // Phase 49 — memo() blocks prop-driven re-renders, but NOT context
   // updates; without this subscription this component would keep its
   // previous theme's styles after a live theme switch.
@@ -20,6 +25,7 @@ export const SectionHeader = memo(function SectionHeader({ title, action }: Sect
   return (
     <View style={styles.row}>
       <Text style={styles.title}>{title}</Text>
+      {caption && !action ? <Text style={styles.caption}>{caption}</Text> : null}
       {action ? (
         <Text style={styles.action} onPress={action.onPress} accessibilityRole="button">
           {action.label}
@@ -54,6 +60,11 @@ const styles = themedStyles(() => ({
     ...typography.caption,
     color: colors.primary,
     fontWeight: "600",
+    flexShrink: 0,
+  },
+  caption: {
+    ...typography.caption,
+    color: colors.textTertiary,
     flexShrink: 0,
   },
 }));

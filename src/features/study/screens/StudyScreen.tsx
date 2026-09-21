@@ -1,10 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router, useFocusEffect } from "expo-router";
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { EmptyState } from "@components/ui/EmptyState";
+import { IconButton } from "@components/ui/IconButton";
 import { LoadingSkeleton } from "@components/ui/LoadingSkeleton";
 import { PrimaryButton } from "@components/ui/PrimaryButton";
 import { SectionHeader } from "@components/ui/SectionHeader";
@@ -54,7 +55,11 @@ import { PracticeLauncher } from "../components/PracticeLauncher";
 export const FOCUS_TITLE = "Şimdi Ne Yapmalısın?";
 export const TODAY_TITLE = "Bugünün Planı";
 export const UNRESOLVED_TITLE = "Çözemediğim Sorular";
-export const PRACTICE_SECTION_TITLE = "Soruları Filtrele";
+// Phase 117 — the utilities label themselves ("Soruları Filtrele",
+// "Konuları Keşfet"), so the section header above them said the first
+// tile's words a second time and is gone.
+export const PRACTICE_TILE_FILTER = "Soruları Filtrele";
+export const PRACTICE_TILE_EXPLORE = "Konuları Keşfet";
 export const STRUGGLE_TITLE = "Zorlandığın Konular";
 export const STRENGTHS_TITLE = "Güçlü Olduğun Alanlar";
 export const PROGRESS_TITLE = "İlerlemen";
@@ -98,6 +103,15 @@ export function StudyScreen() {
 
   const focus = workspace.focus;
   const openAssignments = useMemo(() => assignmentCards.filter((card) => card.status !== "completed"), [assignmentCards]);
+  // The filter picker starts closed; opening it is one tap and it is the
+  // same PracticeLauncher, with the same feed handoff.
+  const [isPracticeOpen, setIsPracticeOpen] = useState(false);
+  // Counted from the steps this screen already renders — no second source,
+  // no planner call, and it says "tamamlandı" only about completed ones.
+  const planProgressLabel = useMemo(() => {
+    const done = plan.steps.filter((step) => step.state === "completed").length;
+    return `${done} / ${plan.steps.length} tamamlandı`;
+  }, [plan.steps]);
   const goalCaption = summary.dailyGoal > 0 ? `Bugün ${summary.reviewedToday} / ${summary.dailyGoal} soru` : null;
 
   return (
@@ -109,9 +123,21 @@ export function StudyScreen() {
         refreshControl={<RefreshControl refreshing={false} onRefresh={handleRefresh} tintColor={colors.primary} />}
       >
         {/* HEADER */}
-        <View style={styles.identity}>
-          <Text style={styles.title}>Çalış</Text>
-          {goalCaption ? <Text style={styles.moment}>{goalCaption}</Text> : null}
+        <View style={styles.headerRow}>
+          <View style={styles.identity}>
+            <Text style={styles.title}>Çalış</Text>
+            {goalCaption ? <Text style={styles.moment}>{goalCaption}</Text> : null}
+          </View>
+          {/* Phase 117 — the study preferences this screen owns (goal, plan
+              size, focus subjects). NOT the app's Settings: those stay on
+              Profil (Phase 115). Reachable from the top now as well as from
+              "Hedef ve Ayarlar" at the foot of the page. */}
+          <IconButton
+            icon="options-outline"
+            onPress={() => goTo(PLAN_ROUTES.settings)}
+            accessibilityLabel="Çalışma ayarları"
+            color={colors.textSecondary}
+          />
         </View>
 
         {error ? (
@@ -134,6 +160,11 @@ export function StudyScreen() {
             <View style={styles.section}>
               <SectionHeader title={FOCUS_TITLE} />
               <View style={styles.focus}>
+                {/* Phase 117 — the mark that makes this the page's one heavy
+                    object. Decorative: every word beside it is already text. */}
+                <View style={styles.focusMark}>
+                  <Ionicons name="navigate-circle" size={iconSize.lg} color={colors.primary} accessibilityElementsHidden />
+                </View>
                 {focus.kind === "step" ? (
                   <>
                     <Text style={styles.focusEyebrow}>
@@ -175,7 +206,11 @@ export function StudyScreen() {
             {/* TODAY — the plan, inline. */}
             {plan.steps.length > 0 ? (
               <View style={styles.section}>
-                <SectionHeader title={TODAY_TITLE} action={{ label: "Haftaya bak", onPress: () => goTo(PLAN_ROUTES.week) }} />
+                <SectionHeader
+                  title={TODAY_TITLE}
+                  action={{ label: "Haftaya bak", onPress: () => goTo(PLAN_ROUTES.week) }}
+                />
+                <Text style={styles.planProgress}>{planProgressLabel}</Text>
                 <View style={styles.rows}>
                   {plan.steps.map((step, index) => (
                     <PlanStepRow
@@ -229,16 +264,40 @@ export function StudyScreen() {
 
             {/* PRACTICE — filtered questions, launched into the one feed. */}
             <View style={styles.section}>
-              <SectionHeader title={PRACTICE_SECTION_TITLE} />
-              <PracticeLauncher />
+              {/* Phase 117 — the picker used to stand open, so the subject and
+                  topic chip rows were the tallest thing between the plan and
+                  the topics below. It is the same PracticeLauncher, behind a
+                  tile that says what it does; the second tile is Phase 70's
+                  concept map, which was previously reachable only from the
+                  foot of the page. */}
+              <View style={styles.tiles}>
+                <UtilityTile
+                  icon="options-outline"
+                  title={PRACTICE_TILE_FILTER}
+                  detail="Ders, konu, tür seç"
+                  expanded={isPracticeOpen}
+                  onPress={() => setIsPracticeOpen((open) => !open)}
+                />
+                <UtilityTile
+                  icon="map-outline"
+                  title={PRACTICE_TILE_EXPLORE}
+                  detail="Konu haritasına git"
+                  onPress={() => goTo(ROUTES.studentConceptMasteryMap)}
+                />
+              </View>
+              {isPracticeOpen ? <PracticeLauncher /> : null}
             </View>
 
             {/* STRUGGLE — the topics that are waiting. */}
             {workspace.struggleTopics.length > 0 ? (
               <View style={styles.section}>
                 <SectionHeader title={STRUGGLE_TITLE} action={{ label: "Tümünü Gör", onPress: () => goTo(PLAN_ROUTES.gaps) }} />
-                <View style={styles.rows}>
-                  {workspace.struggleTopics.map((topic, index) => (
+                {/* Phase 117 — chips, not full-width rows. These are a place
+                    to go, not work to do: as rows they carried the same
+                    weight as a plan step. The label, the destination and the
+                    spoken sentence are unchanged. */}
+                <View style={styles.chips}>
+                  {workspace.struggleTopics.map((topic) => (
                     <Pressable
                       key={`${topic.subject}|${topic.topic}`}
                       onPress={() =>
@@ -246,18 +305,13 @@ export function StudyScreen() {
                           `${ANALYTICS_ROUTES.archive}?subject=${encodeURIComponent(topic.subject)}&topic=${encodeURIComponent(topic.topic)}`,
                         )
                       }
-                      style={[styles.row, index > 0 ? styles.divided : null]}
+                      style={styles.chip}
                       accessibilityRole="button"
                       accessibilityLabel={`${topic.subject}, ${topic.topic}. ${gapCountLabel(topic)}. ${topic.stateLabel}.`}
                       accessibilityHint="Bu konudaki çözemediğin soruları açar"
                     >
-                      <View style={styles.rowText}>
-                        <Text style={styles.rowTitle}>{topic.topic}</Text>
-                        <Text style={styles.rowDetail}>
-                          {topic.subject} · {gapCountLabel(topic)}
-                        </Text>
-                      </View>
-                      <Ionicons name="chevron-forward" size={iconSize.sm} color={colors.textTertiary} accessibilityElementsHidden />
+                      <Ionicons name="arrow-forward-circle" size={iconSize.sm} color={colors.danger} accessibilityElementsHidden />
+                      <Text style={styles.chipText}>{topic.topic}</Text>
                     </Pressable>
                   ))}
                 </View>
@@ -366,6 +420,35 @@ interface TextActionProps {
   divided?: boolean;
 }
 
+interface UtilityTileProps {
+  icon: keyof typeof Ionicons.glyphMap;
+  title: string;
+  detail: string;
+  onPress: () => void;
+  /** Present only on the tile that discloses something in place. */
+  expanded?: boolean;
+}
+
+/** Phase 117 — a half-width entry: a glyph, what it is, what it does. Two of
+ *  them fit the line the open filter picker used to take on its own. */
+function UtilityTile({ icon, title, detail, onPress, expanded }: UtilityTileProps) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={[styles.tile, expanded ? styles.tileExpanded : null]}
+      accessibilityRole="button"
+      accessibilityLabel={`${title}. ${detail}`}
+      accessibilityState={expanded === undefined ? undefined : { expanded }}
+    >
+      <Ionicons name={icon} size={iconSize.md} color={colors.primary} accessibilityElementsHidden />
+      <View style={styles.tileText}>
+        <Text style={styles.tileTitle}>{title}</Text>
+        <Text style={styles.tileDetail}>{detail}</Text>
+      </View>
+    </Pressable>
+  );
+}
+
 /** A quiet navigation row: words, a glyph, a chevron. Not a button, not a card. */
 function TextAction({ label, icon, onPress, hint, divided }: TextActionProps) {
   return (
@@ -401,7 +484,15 @@ const styles = themedStyles(() => ({
     paddingBottom: spacing.xxl,
     gap: spacing.xl,
   },
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: spacing.sm,
+  },
   identity: {
+    flex: 1,
+    minWidth: 0,
     gap: spacing.xxs,
   },
   title: {
@@ -425,6 +516,9 @@ const styles = themedStyles(() => ({
     padding: spacing.md,
     gap: spacing.xs,
   },
+  focusMark: {
+    alignSelf: "flex-start",
+  },
   focusEyebrow: {
     ...typography.caption,
     fontWeight: "600",
@@ -442,6 +536,68 @@ const styles = themedStyles(() => ({
     ...typography.caption,
     color: colors.textSecondary,
     marginBottom: spacing.xs,
+  },
+  planProgress: {
+    ...typography.caption,
+    color: colors.textTertiary,
+  },
+  tiles: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.xs,
+  },
+  tile: {
+    // Two per line while they fit; one each once the text needs the width.
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 150,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    minHeight: minTouchTarget,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.divider,
+    backgroundColor: colors.surface,
+  },
+  tileExpanded: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primaryMuted,
+  },
+  tileText: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  tileTitle: {
+    ...typography.bodyStrong,
+    color: colors.textPrimary,
+  },
+  tileDetail: {
+    ...typography.caption,
+    color: colors.textTertiary,
+  },
+  chips: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.xs,
+  },
+  chip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    minHeight: minTouchTarget,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceMuted,
+  },
+  chipText: {
+    ...typography.caption,
+    fontWeight: "600",
+    color: colors.textPrimary,
+    flexShrink: 1,
   },
   rows: {
     gap: 0,

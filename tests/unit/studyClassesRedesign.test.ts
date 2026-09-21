@@ -86,7 +86,9 @@ describe("Çalış — action before data", () => {
       "<PlanStepRow",
       "UNRESOLVED_TITLE}",
       "<ArchiveEntryRow",
-      "PRACTICE_SECTION_TITLE}",
+      // Phase 117 — the section header here was the first tile's own
+      // words repeated; the tiles label themselves now.
+      "PRACTICE_TILE_FILTER}",
       "<PracticeLauncher",
       "STRUGGLE_TITLE}",
       "STRENGTHS_TITLE}",

@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { memo } from "react";
-import { Pressable, Text, View } from "react-native";
+import { Pressable, Text, View, useWindowDimensions } from "react-native";
 
 import { Card } from "@components/ui/Card";
 import { StatusLabel } from "@components/ui/StatusLabel";
@@ -46,8 +46,12 @@ function placeLine(entry: ArchiveEntry): string {
   return parts.length > 0 ? parts.join(" · ") : "Konu bilgisi yok";
 }
 
+/** Past this OS text scale the preview stops being capped at two lines. */
+const PREVIEW_UNCAP_FONT_SCALE = 1.3;
+
 // Phase 107 — one archived question on the list.
 export const ArchiveEntryRow = memo(function ArchiveEntryRow({ entry, now, onPress }: ArchiveEntryRowProps) {
+  const { fontScale } = useWindowDimensions();
   useThemeSubscription();
   const place = placeLine(entry);
   const preview = previewLine(entry);
@@ -85,7 +89,10 @@ export const ArchiveEntryRow = memo(function ArchiveEntryRow({ entry, now, onPre
         </View>
         <View style={styles.text}>
           <Text style={styles.place}>{place}</Text>
-          <Text style={styles.preview} numberOfLines={2}>
+          {/* Phase 117 — two lines hold this preview at ordinary sizes and
+              cut it mid-word at the accessibility ones ("Çoktan Seçmeli
+              s…", seen on Çalış). Past a scale it gets the room instead. */}
+          <Text style={styles.preview} numberOfLines={fontScale > PREVIEW_UNCAP_FONT_SCALE ? 4 : 2}>
             {preview}
           </Text>
           <StatusLabel

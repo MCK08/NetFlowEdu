@@ -118,7 +118,9 @@ describe("B2 — grouping rhythm", () => {
       "TODAY_TITLE}",
       "<AssignedWorkSection",
       "UNRESOLVED_TITLE}",
-      "PRACTICE_SECTION_TITLE}",
+      // Phase 117 — the section header here was the first tile's own
+      // words repeated; the tiles label themselves now.
+      "PRACTICE_TILE_FILTER}",
       "STRUGGLE_TITLE}",
       "STRENGTHS_TITLE}",
       "PROGRESS_TITLE}",
