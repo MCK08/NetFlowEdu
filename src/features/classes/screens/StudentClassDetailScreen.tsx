@@ -1,12 +1,12 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
+import type { ReactNode } from "react";
+import { useMemo } from "react";
 import { Alert, ActivityIndicator, FlatList, Text, useWindowDimensions, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AnimatedPressable } from "@components/ui/AnimatedPressable";
 import { AppBackButton } from "@components/ui/AppBackButton";
-import { Avatar } from "@components/ui/Avatar";
-import { Badge } from "@components/ui/Badge";
 import { EmptyState } from "@components/ui/EmptyState";
 import { useAuth } from "@features/authentication";
 import { QuestionMetadataModal } from "@features/questions/components/QuestionMetadataModal";
@@ -20,10 +20,14 @@ import { typography } from "@theme/typography";
 import { getActiveTheme, themedStyles } from "@theme/themeRuntime";
 import { Question } from "@/types/question";
 
+import { ClassAssignmentsSection } from "../components/ClassAssignmentsSection";
+import { ClassIdentityCard } from "../components/ClassIdentityCard";
 import { ClassQuestionTile } from "../components/ClassQuestionTile";
 import { ImageSourcePicker } from "../components/ImageSourcePicker";
 import { ClassSocialSections } from "../components/ClassSocialSections";
+import { selectClassAssignments } from "../services/classSocial";
 import { useClassQuestions } from "../hooks/useClassQuestions";
+import { useClassSocial } from "../hooks/useClassSocial";
 import { useLeaveClass } from "../hooks/useLeaveClass";
 import { useStudentClassInfo } from "../hooks/useStudentClassInfo";
 import { useStudentQuestionUpload } from "../hooks/useStudentQuestionUpload";
@@ -31,6 +35,13 @@ import { useNavigationGuard } from "@hooks/useNavigationGuard";
 
 interface StudentClassDetailScreenProps {
   classId: string;
+  /** Phase 118 — what stands above the class's identity. The Sınıf tab passes
+   *  its own header (the title, notifications, joining a class); the pushed
+   *  /class/[classId] route passes nothing and keeps the back button. */
+  header?: ReactNode;
+  /** Only the tab has somewhere to switch to: the student's other joined
+   *  classes. On the pushed route the identity card is not a control. */
+  onSwitchClass?: () => void;
 }
 
 // Phase 106 — two columns of real question previews (image, role, topic,
@@ -38,11 +49,15 @@ interface StudentClassDetailScreenProps {
 const GRID_COLUMNS = 2;
 const GRID_GAP = spacing.sm;
 
-export function StudentClassDetailScreen({ classId }: StudentClassDetailScreenProps) {
+export function StudentClassDetailScreen({ classId, header, onSwitchClass }: StudentClassDetailScreenProps) {
   const { width, fontScale } = useWindowDimensions();
   const { firebaseUser } = useAuth();
   const { classRoom, isLoading } = useStudentClassInfo(classId);
   const { questions, isLoadingMore, hasMore, loadMore, prepend } = useClassQuestions(classId);
+  // Phase 118 — the class's one social/assignment load, owned here so the
+  // assignments it already fetches can be listed above the sections that
+  // used to hold it. Same hook, same four reads, one call.
+  const social = useClassSocial(classId);
   const { isLeaving, leave } = useLeaveClass();
   const {
     isSourcePickerOpen,
@@ -72,6 +87,21 @@ export function StudentClassDetailScreen({ classId }: StudentClassDetailScreenPr
   // this screen is focused again, not for a fixed cooldown.
   const guardedNavigate = useNavigationGuard();
 
+  // Phase 118 — the class's teacher, read off the roster this screen already
+  // has. The class document names only a teacherId; the members collection is
+  // where the display name lives, and the classmates row below already shows
+  // the same person under the same label. No read is made for this line.
+  const teacherName = useMemo(() => {
+    const teacher = social.members.find((member) => member.role === "teacher");
+    const name = teacher?.displayName?.trim();
+    return name ? name : null;
+  }, [social.members]);
+  // The same selection the activity feed announces — one rule, one source.
+  const classAssignments = useMemo(
+    () => selectClassAssignments(social.assignments, classId),
+    [social.assignments, classId],
+  );
+
   function openFeed() {
     guardedNavigate("feed", () => {
       router.push({ pathname: "/(student)/class/[classId]/feed", params: { classId } });
@@ -100,8 +130,16 @@ export function StudentClassDetailScreen({ classId }: StudentClassDetailScreenPr
 
   if (isLoading || !classRoom) {
     return (
-      <SafeAreaView style={styles.centered}>
-        <ActivityIndicator color={colors.textPrimary} />
+      <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
+        {/* Phase 118 — the header stays put while the class loads. Without it
+            the Sınıf tab drew its title, replaced the whole screen with a
+            centred spinner, then drew the title again. */}
+        <View style={styles.loadingHeader}>
+          {header ?? <AppBackButton fallbackHref="/(student)/(tabs)/classes" style={styles.backButton} />}
+        </View>
+        <View style={styles.centered}>
+          <ActivityIndicator color={colors.textPrimary} />
+        </View>
       </SafeAreaView>
     );
   }
@@ -113,7 +151,6 @@ export function StudentClassDetailScreen({ classId }: StudentClassDetailScreenPr
   // At the accessibility text sizes the two quick actions stack — a half-width
   // tile cannot hold "Sınıf Sohbeti" at ~200% without breaking the word.
   const stackedActions = fontScale >= stackAtFontScale;
-  const isArchived = classRoom.status === "archived";
 
   return (
     <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
@@ -130,23 +167,19 @@ export function StudentClassDetailScreen({ classId }: StudentClassDetailScreenPr
         contentContainerStyle={styles.listContent}
         ListHeaderComponent={
           <View style={styles.header}>
-            {/* Phase 106 — the class's identity as a hero, then its two
-                primary actions as a balanced pair, then the way into the feed
-                as a quieter dark entry, then the questions. Every function
-                the screen had is still here; what changed is the hierarchy:
-                a class page used to be a column of five full-width buttons. */}
-            <AppBackButton fallbackHref="/(student)/(tabs)/classes" style={styles.backButton} />
+            {/* Phase 106 gave this page its hierarchy — identity, then the
+                primary actions, then the way into the feed, then the
+                questions — and Phase 118 keeps every one of them. What
+                changed is the identity: a 96pt avatar, a centred name and a
+                centred count took the top third of the screen to say one
+                line, and an "Aktif" badge on every class said nothing at
+                all. The same facts now read across in one card, and the
+                class's real work — its assignments — comes next. */}
+            {header ?? (
+              <AppBackButton fallbackHref="/(student)/(tabs)/classes" style={styles.backButton} />
+            )}
 
-            <View style={styles.hero}>
-              <Avatar displayName={classRoom.name} size="xl" />
-              <Text style={styles.title}>{classRoom.name}</Text>
-              <View style={styles.heroMeta}>
-                <Text style={styles.memberCount}>{classRoom.memberCount} üye</Text>
-                {/* The class document's own status, as a word: "Aktif" while
-                    it runs, "Arşivlendi" once the teacher closes it. */}
-                <Badge label={isArchived ? "Arşivlendi" : "Aktif"} variant={isArchived ? "neutral" : "primary"} />
-              </View>
-            </View>
+            <ClassIdentityCard classRoom={classRoom} teacherName={teacherName} onPress={onSwitchClass} />
 
             <View style={stackedActions ? styles.actionsStacked : styles.actions}>
               <AnimatedPressable
@@ -195,11 +228,17 @@ export function StudentClassDetailScreen({ classId }: StudentClassDetailScreenPr
               </AnimatedPressable>
             </View>
 
+            {/* Phase 118 — the class's assignments, above the social layer:
+                work someone set, with a deadline, outranks who is in the room
+                and what happened in it. Rendered from the load the sections
+                below already make. */}
+            <ClassAssignmentsSection assignments={classAssignments} now={social.loadedAt} />
+
             {/* Phase 110 — the class, together: who is in it, what the class
                 did this week as a class, and what just happened in it. Between
                 the actions and the questions, so the room reads before its
                 content. No ranking, no counts beside anyone. */}
-            <ClassSocialSections classId={classId} questions={questions} />
+            <ClassSocialSections classId={classId} questions={questions} social={social} />
 
             {questions.length > 0 ? (
               <AnimatedPressable
@@ -300,6 +339,10 @@ const styles = themedStyles(() => ({
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: colors.background,
+  },
+  loadingHeader: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
   },
   listContent: {
     paddingBottom: spacing.xl,

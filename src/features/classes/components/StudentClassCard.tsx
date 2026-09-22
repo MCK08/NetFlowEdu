@@ -17,6 +17,13 @@ import { useThemeSubscription } from "@theme/ThemeProvider";
 
 interface StudentClassCardProps {
   classRoom: ClassRoom;
+  /** Phase 118 — the class switcher picks a class rather than pushing its
+   *  page, so the same row serves both. Absent, the row navigates as it
+   *  always has. */
+  onPress?: () => void;
+  /** Phase 118 — the class currently being viewed, in the switcher. Carried
+   *  by a mark AND the accessibility state, never by colour alone. */
+  selected?: boolean;
 }
 
 // memo'd: rendered from StudentClassesScreen's FlatList — same reasoning
@@ -28,20 +35,31 @@ interface StudentClassCardProps {
 // archived it — that status as a word. No "last active", no teacher name
 // (not on the document; fetching one per row is a read this list does not
 // make today), no activity feed.
-export const StudentClassCard = memo(function StudentClassCard({ classRoom }: StudentClassCardProps) {
+export const StudentClassCard = memo(function StudentClassCard({
+  classRoom,
+  onPress,
+  selected,
+}: StudentClassCardProps) {
   // Phase 49 — memo() blocks prop-driven re-renders, but NOT context
   // updates; without this subscription this component would keep its
   // previous theme's styles after a live theme switch.
   useThemeSubscription();
   const isArchived = classRoom.status === "archived";
   const memberLabel = `${classRoom.memberCount} üye`;
+  const label = onPress
+    ? `${classRoom.name} sınıfına geç. ${memberLabel}${isArchived ? ". Arşivlendi" : ""}`
+    : `${classRoom.name} sınıfını aç. ${memberLabel}${isArchived ? ". Arşivlendi" : ""}`;
 
   return (
     <AnimatedPressable
-      style={[styles.card, isArchived ? styles.cardArchived : null]}
-      onPress={() => router.push({ pathname: "/(student)/class/[classId]", params: { classId: classRoom.id } })}
+      style={[styles.card, isArchived ? styles.cardArchived : null, selected ? styles.cardSelected : null]}
+      onPress={
+        onPress ??
+        (() => router.push({ pathname: "/(student)/class/[classId]", params: { classId: classRoom.id } }))
+      }
       accessibilityRole="button"
-      accessibilityLabel={`${classRoom.name} sınıfını aç. ${memberLabel}${isArchived ? ". Arşivlendi" : ""}`}
+      accessibilityLabel={label}
+      accessibilityState={selected === undefined ? undefined : { selected }}
     >
       <Avatar displayName={classRoom.name} size="lg" />
       <View style={styles.textColumn}>
@@ -55,7 +73,11 @@ export const StudentClassCard = memo(function StudentClassCard({ classRoom }: St
           {isArchived ? <Badge label="Arşivlendi" variant="neutral" /> : null}
         </View>
       </View>
-      <Ionicons name="chevron-forward" size={iconSize.sm} color={colors.textTertiary} accessibilityElementsHidden />
+      {selected ? (
+        <Ionicons name="checkmark-circle" size={iconSize.md} color={colors.primary} accessibilityElementsHidden />
+      ) : (
+        <Ionicons name="chevron-forward" size={iconSize.sm} color={colors.textTertiary} accessibilityElementsHidden />
+      )}
     </AnimatedPressable>
   );
 });
@@ -74,6 +96,9 @@ const styles = themedStyles(() => ({
   },
   cardArchived: {
     opacity: 0.7,
+  },
+  cardSelected: {
+    borderColor: colors.primary,
   },
   textColumn: {
     flex: 1,

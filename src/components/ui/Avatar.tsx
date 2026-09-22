@@ -61,7 +61,15 @@ export const Avatar = memo(function Avatar({ photoURL, displayName, size = "md" 
   return (
     <View style={[styles.placeholder, dimensionStyle]}>
       {initials ? (
-        <Text style={[styles.initials, { fontSize: dimension * 0.4 }]}>{initials}</Text>
+        /* Phase 118 — the initial is a MARK inside a circle whose size is
+           fixed in points, not text the reader is meant to read: the name
+           itself always sits beside it as real, scaling text. Left scaling,
+           the glyph outgrew its circle and was clipped mid-letter at the
+           accessibility sizes (seen on Sınıf's class card at AX5, and true
+           of every initials avatar in the app). */
+        <Text style={[styles.initials, { fontSize: dimension * 0.4 }]} allowFontScaling={false}>
+          {initials}
+        </Text>
       ) : (
         <Ionicons name="person" size={dimension * 0.42} color={colors.textTertiary} />
       )}

@@ -6,7 +6,7 @@ import { themedStyles } from "@theme/themeRuntime";
 import { useThemeSubscription } from "@theme/ThemeProvider";
 import type { Question } from "@/types/question";
 
-import { useClassSocial } from "../hooks/useClassSocial";
+import type { ClassSocial } from "../hooks/useClassSocial";
 import { buildClassActivity, buildClassmates, otherStudentCount } from "../services/classSocial";
 import { ClassActivitySection } from "./ClassActivitySection";
 import { ClassmatesPreview } from "./ClassmatesPreview";
@@ -16,15 +16,22 @@ interface ClassSocialSectionsProps {
   classId: string;
   /** The class questions the screen already loaded — reused, not re-read. */
   questions: readonly Question[];
+  /** Phase 118 — the one load, owned by the screen. It was owned here until
+   *  the class's assignments (which this same load already fetches) needed to
+   *  be listed above these sections rather than only mentioned inside them. */
+  social: ClassSocial;
 }
 
 // Phase 110 — the class screen's social layer, as one insertion: classmates,
 // the week's collective progress, and the class's recent activity. Kept in its
 // own component so the class screen gains a single element rather than a
 // second set of loaders and state.
-export const ClassSocialSections = memo(function ClassSocialSections({ classId, questions }: ClassSocialSectionsProps) {
+export const ClassSocialSections = memo(function ClassSocialSections({
+  classId,
+  questions,
+  social,
+}: ClassSocialSectionsProps) {
   useThemeSubscription();
-  const social = useClassSocial(classId);
 
   const classmates = useMemo(() => buildClassmates(social.members, social.uid), [social.members, social.uid]);
   const now = social.loadedAt;

@@ -62,6 +62,31 @@ export interface BuildClassActivityInput {
   limit?: number;
 }
 
+/** The class assignments a student is shown, by the only rule this feature
+ *  has ever applied to them: this class, actually published, not a Phase 44
+ *  teacher intervention (which is addressed to one student and is not class
+ *  news), with a real creation time and a real title.
+ *
+ *  Phase 118 — extracted so the list of a class's assignments and the
+ *  activity line announcing one can never disagree about which assignments
+ *  exist. Newest first, the same order useClassAssignments already sorts a
+ *  class's assignments into; the activity feed re-sorts by time afterwards. */
+export function selectClassAssignments(
+  assignments: readonly Assignment[],
+  classId: string,
+): Assignment[] {
+  return assignments
+    .filter(
+      (assignment) =>
+        assignment.classId === classId &&
+        assignment.status === "published" &&
+        !assignment.interventionOf &&
+        isFiniteTimestamp(assignment.createdAt) &&
+        Boolean(assignment.title?.trim()),
+    )
+    .sort((a, b) => b.createdAt - a.createdAt);
+}
+
 export function buildClassActivity(input: BuildClassActivityInput): ClassActivityEvent[] {
   const membersById = new Map(input.members.map((member) => [member.uid, member]));
   const events: ClassActivityEvent[] = [];
@@ -87,13 +112,7 @@ export function buildClassActivity(input: BuildClassActivityInput): ClassActivit
     });
   }
 
-  for (const assignment of input.assignments) {
-    if (assignment.classId !== input.classId) continue;
-    if (assignment.status !== "published") continue;
-    if (assignment.interventionOf) continue;
-    if (!isFiniteTimestamp(assignment.createdAt)) continue;
-    const title = assignment.title?.trim();
-    if (!title) continue;
+  for (const assignment of selectClassAssignments(input.assignments, input.classId)) {
     events.push({
       id: `assignment_posted:${assignment.id}`,
       kind: "assignment_posted",
@@ -101,7 +120,7 @@ export function buildClassActivity(input: BuildClassActivityInput): ClassActivit
       actorName: null,
       questionId: null,
       assignmentId: assignment.id,
-      assignmentTitle: title,
+      assignmentTitle: assignment.title.trim(),
       canCongratulate: false,
     });
   }

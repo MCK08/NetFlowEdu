@@ -36,6 +36,8 @@ const ATLAS_TILE = "src/features/study/components/LearningAtlasEntryCard.tsx";
 const CLASSES = "src/features/classes/screens/StudentClassesScreen.tsx";
 const CLASS_CARD = "src/features/classes/components/StudentClassCard.tsx";
 const CLASS_DETAIL = "src/features/classes/screens/StudentClassDetailScreen.tsx";
+const CLASS_SWITCHER = "src/features/classes/components/ClassSwitcherSheet.tsx";
+const CLASS_IDENTITY = "src/features/classes/components/ClassIdentityCard.tsx";
 const QUESTION_TILE = "src/features/classes/components/ClassQuestionTile.tsx";
 
 const STATUS_EMOJI = /[\u{1F534}\u{1F7E0}\u{1F7E1}\u{1F7E2}\u{26AA}\u{1F31F}\u{1F4C8}\u{1F4C9}\u{27A1}\u{26A0}\u{2705}\u{1F525}\u{1F680}\u{1F331}\u{1F499}]/u;
@@ -187,18 +189,28 @@ describe("Çalış — action before data", () => {
   });
 });
 
-describe("Sınıflarım — real sections, real data", () => {
-  it("splits the list by the class document's own status and derives its subtitle from it", () => {
-    const source = code(CLASSES);
+describe("Sınıf — real sections, real data", () => {
+  // Phase 118 — the tab is no longer the list; it is the class. The list it
+  // used to be is the switcher, and this is where its guarantees moved: the
+  // active/archived split is still the class document's own `status`, and
+  // still nothing fabricated beside a class.
+  it("keeps the joined-class split, now in the switcher the list became", () => {
+    const source = code(CLASS_SWITCHER);
     expect(source).toContain('room.status === "archived"');
     expect(source).toContain('"Aktif Sınıflarım"');
     expect(source).toContain('"Geçmiş Sınıflar"');
-    expect(source).toContain("function subtitleFor(");
     // Nothing fabricated: no activity, no last-seen, no invitations.
     expect(source).not.toMatch(/son (aktif|görülme)|davet|Çevrimiçi|etkinlik/i);
-    // The primary action and the notification affordance stay.
+    // Joined classes only — the switcher never discovers a class.
+    expect(source).not.toMatch(/search|ara\(|discover|keşfet|tüm sınıflar/i);
+  });
+
+  it("the tab keeps joining a class and the notification affordance", () => {
+    const source = code(CLASSES);
+    expect(source).toContain('accessibilityLabel="Sınıfa katıl"');
     expect(source).toContain('label="Sınıfa Katıl"');
     expect(source).toContain("<NotificationBellButton");
+    expect(source).toContain("<JoinClassModal");
     // StudentClasses title stays 26pt (Wave A lock).
     expect(styleBlock(read(CLASSES), "title")).toContain("fontSize: 26");
   });
@@ -214,15 +226,18 @@ describe("Sınıflarım — real sections, real data", () => {
 });
 
 describe("class detail — hierarchy from the reference, capabilities from the product", () => {
-  it("hero, balanced pair, feed entry, questions, leave — in that order", () => {
+  // Phase 118 — the centred 96pt hero became a card, and the class's own
+  // assignments were inserted between the actions and the social layer.
+  // Everything else about this order is Phase 106's and is unchanged.
+  it("identity, balanced pair, assignments, social, feed entry, questions, leave — in that order", () => {
     const source = read(CLASS_DETAIL);
     const header = source.slice(source.indexOf("ListHeaderComponent="), source.indexOf("ListFooterComponent="));
     const order = [
-      "<AppBackButton",
-      '<Avatar displayName={classRoom.name} size="xl" />',
-      "{classRoom.memberCount} üye",
+      "<ClassIdentityCard",
       'accessibilityLabel="Sınıf sohbetini aç"',
       'accessibilityLabel="Soru paylaş"',
+      "<ClassAssignmentsSection",
+      "<ClassSocialSections",
       'accessibilityLabel="Soru akışına gir"',
       "Sınıf Soruları",
     ].map((marker) => header.indexOf(marker));
@@ -261,8 +276,14 @@ describe("class detail — hierarchy from the reference, capabilities from the p
     const source = code(CLASS_DETAIL);
     expect(source).not.toMatch(/Üyeler|İstatistikler|Çalışmalar\b|Davet|getClassMembers|ClassMemberRow/);
     expect(source).not.toMatch(/accessibilityRole="tab"/);
-    // The status word comes from the document, both values named.
-    expect(source).toContain('isArchived ? "Arşivlendi" : "Aktif"');
+    // Phase 118 — the status word moved onto the identity card with the rest
+    // of the class's identity. It is still the document's own, and an
+    // archived class is still named as one; the "Aktif" badge every running
+    // class used to carry said nothing and is gone.
+    const identity = code(CLASS_IDENTITY);
+    expect(identity).toContain('classRoom.status === "archived"');
+    expect(identity).toContain('<Badge label="Arşivlendi" variant="neutral" />');
+    expect(identity).toContain("{classRoom.memberCount} üye");
   });
 
   it("question previews show the document's real content and nothing else", () => {

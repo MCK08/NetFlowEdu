@@ -1,10 +1,10 @@
 import { router } from "expo-router";
 import { memo } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { Pressable, ScrollView, Text, useWindowDimensions, View } from "react-native";
 
 import { Avatar } from "@components/ui/Avatar";
 import { colors } from "@theme/colors";
-import { minTouchTarget } from "@theme/sizes";
+import { minTouchTarget, stackAtFontScale } from "@theme/sizes";
 import { spacing } from "@theme/spacing";
 import { themedStyles } from "@theme/themeRuntime";
 import { useThemeSubscription } from "@theme/ThemeProvider";
@@ -14,6 +14,10 @@ import { Classmate, CLASS_ROLE_LABEL } from "../services/classSocial";
 
 const PREVIEW_LIMIT = 8;
 const TILE_WIDTH = 76;
+/** How much wider a tile may get for a scaled name before it stops growing.
+ *  76pt holds a name at the ordinary sizes and cut every one of them to
+ *  "De m…" / "Öğr en…" at the accessibility ones (seen on Sınıf at AX5). */
+const MAX_TILE_GROWTH = 2.5;
 
 interface ClassmatesPreviewProps {
   classId: string;
@@ -35,6 +39,12 @@ export const ClassmatesPreview = memo(function ClassmatesPreview({
   error,
 }: ClassmatesPreviewProps) {
   useThemeSubscription();
+  const { fontScale } = useWindowDimensions();
+  // Past the accessibility sizes the heading and "Tümünü Gör" cannot share a
+  // row: the heading was left breaking mid-word, down the left edge
+  // ("Sını / f / Ark / ada / şlar / ın").
+  const stacked = fontScale >= stackAtFontScale;
+  const tileWidth = Math.round(TILE_WIDTH * Math.min(Math.max(fontScale, 1), MAX_TILE_GROWTH));
   const others = classmates.filter((mate) => !mate.isSelf);
   const shown = others.slice(0, PREVIEW_LIMIT);
   const rest = others.length - shown.length;
@@ -45,7 +55,7 @@ export const ClassmatesPreview = memo(function ClassmatesPreview({
 
   return (
     <View style={styles.section}>
-      <View style={styles.header}>
+      <View style={[styles.header, stacked ? styles.headerStacked : null]}>
         <Text style={styles.title} accessibilityRole="header">
           Sınıf Arkadaşların
         </Text>
@@ -76,9 +86,9 @@ export const ClassmatesPreview = memo(function ClassmatesPreview({
           accessibilityLabel={spoken}
         >
           {shown.map((mate) => (
-            <View key={mate.uid} style={styles.tile}>
+            <View key={mate.uid} style={[styles.tile, { width: tileWidth }]}>
               <Avatar displayName={mate.name} photoURL={mate.photoURL} size="lg" />
-              <Text style={styles.name} numberOfLines={2}>
+              <Text style={styles.name} numberOfLines={stacked ? 3 : 2}>
                 {mate.name}
               </Text>
               {mate.role === "teacher" ? <Text style={styles.role}>{CLASS_ROLE_LABEL.teacher}</Text> : null}
@@ -101,6 +111,11 @@ const styles = themedStyles(() => ({
     gap: spacing.sm,
     marginTop: spacing.xs,
   },
+  headerStacked: {
+    flexDirection: "column",
+    alignItems: "flex-start",
+    gap: spacing.xxs,
+  },
   title: {
     ...typography.subtitle,
     color: colors.textPrimary,
@@ -119,7 +134,6 @@ const styles = themedStyles(() => ({
     gap: spacing.sm,
   },
   tile: {
-    width: TILE_WIDTH,
     alignItems: "center",
     gap: spacing.xxs,
   },

@@ -11,6 +11,11 @@ import { getClassPulse, getCongratulatedQuestionIds, sendClassKudos } from "../s
 
 const KUDOS_ERROR = "Tebrik gönderilemedi. Lütfen tekrar dene.";
 
+/** Phase 118 — named so the screen can hand this one load to the sections
+ *  that read from it (the class's assignments, its classmates, its week and
+ *  its activity) instead of each of them starting a load of its own. */
+export type ClassSocial = ReturnType<typeof useClassSocial>;
+
 // Phase 110 — one bounded load for the class screen's social sections.
 //
 // Four reads in parallel, each allowed to fail ALONE: a missing week, or a
