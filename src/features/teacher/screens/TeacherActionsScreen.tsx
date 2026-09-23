@@ -13,9 +13,11 @@ import { useThemeSubscription } from "@theme/ThemeProvider";
 import { typography } from "@theme/typography";
 
 import { ClassAttentionPanel } from "../components/ClassAttentionPanel";
+import { TeacherActionFilterBar } from "../components/TeacherActionFilterBar";
 import { TeacherClassSwitcher } from "../components/TeacherClassSwitcher";
 import { useTeacherToday } from "../context/TeacherTodayContext";
 import { ACTION_CENTER_FULL_LIST_NOTE, ACTION_CENTER_TITLE } from "../services/teacherActionCenter";
+import { ActionFilter, EMPTY_ACTION_FILTER } from "../services/teacherActionFilter";
 
 // Phase 111 — "Aksiyonlar": the complete Action Center, one tap from anywhere.
 //
@@ -23,12 +25,18 @@ import { ACTION_CENTER_FULL_LIST_NOTE, ACTION_CENTER_TITLE } from "../services/t
 // the same load (TeacherTodayContext) — so the two can never disagree about
 // what exists. The Action Center's semantics are untouched: escalate, then
 // follow-up, then intervention, then student, exactly as the builder orders
-// them. There are no filters here because the list already has the only
-// grouping the evidence supports — its own action kinds, labelled on each row.
+// them.
+//
+// Phase 121 — and one way to find a row in it. The kind chips and the search
+// field are LOCAL: they hide rows, never reorder or re-rank them, and they
+// read nothing. The chips are built from the kinds this class's list actually
+// contains, under the same canonical labels the rows print, so the filter can
+// never name a category the Action Center does not have.
 export function TeacherActionsScreen() {
   useThemeSubscription();
   const { attention, selectedClass, activeClasses, selectClass, refreshClasses } = useTeacherToday();
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [filter, setFilter] = useState<ActionFilter>(EMPTY_ACTION_FILTER);
 
   const refreshAll = useCallback(async () => {
     setIsRefreshing(true);
@@ -67,8 +75,28 @@ export function TeacherActionsScreen() {
               {/* Phase 119 — the switcher NAMES the selected class now, so the
                   caption that used to name it under a row of pills would put
                   the same class name twice in one column. */}
-              <TeacherClassSwitcher classes={activeClasses} selectedClassId={selectedClass.id} onSelect={selectClass} />
-              <ClassAttentionPanel classId={selectedClass.id} attention={attention} mode="full" showHeader={false} />
+              <TeacherClassSwitcher
+                classes={activeClasses}
+                selectedClassId={selectedClass.id}
+                onSelect={(classId) => {
+                  // A filter belongs to the list it was typed against; another
+                  // class has its own kinds and its own students.
+                  setFilter(EMPTY_ACTION_FILTER);
+                  selectClass(classId);
+                }}
+              />
+              {/* Drawn only once there is a list to narrow: while it loads or
+                  fails, a filter bar would be a control over nothing. */}
+              {!attention.isLoadingList && !attention.error && attention.items.length > 0 ? (
+                <TeacherActionFilterBar items={attention.items} filter={filter} onChange={setFilter} />
+              ) : null}
+              <ClassAttentionPanel
+                classId={selectedClass.id}
+                attention={attention}
+                mode="full"
+                showHeader={false}
+                filter={filter}
+              />
             </>
           )}
         </View>

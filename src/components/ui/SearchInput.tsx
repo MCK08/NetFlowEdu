@@ -4,7 +4,7 @@ import { TextInput, TextInputProps, View } from "react-native";
 import { colors } from "@theme/colors";
 import { radius } from "@theme/radius";
 import { spacing } from "@theme/spacing";
-import { iconSize } from "@theme/sizes";
+import { iconSize, minTouchTarget } from "@theme/sizes";
 import { typography } from "@theme/typography";
 import { themedStyles } from "@theme/themeRuntime";
 
@@ -39,10 +39,16 @@ const styles = themedStyles(() => ({
     backgroundColor: colors.surfaceMuted,
     borderRadius: radius.lg,
     paddingHorizontal: spacing.sm,
-    height: 44,
+    // Phase 121 — a FIXED 44 cut the text off at the accessibility sizes
+    // (seen on Aksiyonlar at AX5: the placeholder was a sliver along the
+    // bottom edge). The field still starts at the 44pt target and grows with
+    // whatever is typed into it.
+    minHeight: minTouchTarget,
+    paddingVertical: spacing.xxs,
   },
   input: {
     flex: 1,
+    minWidth: 0,
     ...typography.body,
     color: colors.textPrimary,
   },

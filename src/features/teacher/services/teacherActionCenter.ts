@@ -199,8 +199,18 @@ const KIND_LABEL: Readonly<Record<TeacherActionCenterKind, string>> = {
   review_student: "İzle",
 };
 
+/** Phase 121 — the same label, reachable without an item.
+ *
+ *  A filter chip names a KIND, not an action, and the chip and the row it
+ *  narrows to must read identically: two spellings of "Takip gerekli" would
+ *  be two categories as far as a teacher is concerned. One map, one accessor,
+ *  one set of words. */
+export function actionCenterKindLabel(kind: TeacherActionCenterKind): string {
+  return KIND_LABEL[kind];
+}
+
 export function actionCenterLabel(item: TeacherActionCenterItem): string {
-  return KIND_LABEL[item.kind];
+  return actionCenterKindLabel(item.kind);
 }
 
 /** The Action Center's name, wherever it appears: the embedded section, the

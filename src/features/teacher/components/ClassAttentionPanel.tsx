@@ -21,6 +21,12 @@ import type { ClassAttention } from "../hooks/useClassAttention";
 import { useClassTopicComposer } from "../hooks/useClassTopicComposer";
 import { actionCenterComposerContext, teacherStudentHref } from "../services/actionCenterNavigation";
 import { ACTION_CENTER_OUTCOMES_UNAVAILABLE, TeacherActionCenterItem } from "../services/teacherActionCenter";
+import {
+  ActionFilter,
+  ACTION_FILTER_NO_MATCH,
+  filterActionCenterItems,
+  isActionFilterActive,
+} from "../services/teacherActionFilter";
 import { ClassTopicComposerModals } from "./ClassTopicComposerModals";
 import { TeacherActionCenterSection } from "./TeacherActionCenterSection";
 import { TeacherTodayActions } from "./TeacherTodayActions";
@@ -39,6 +45,10 @@ interface ClassAttentionPanelProps {
   /** The canonical "Bugün Öne Çıkanlar" heading; hidden when the screen
    *  already names the list itself. */
   showHeader?: boolean;
+  /** Phase 121 — a local narrowing of the SAME list, applied only on the full
+   *  route. Never a reorder: filterActionCenterItems returns a subsequence of
+   *  the canonical list in the canonical order. */
+  filter?: ActionFilter;
 }
 
 // Phase 111 — the Action Center's list, placed wherever a teacher needs it.
@@ -48,8 +58,21 @@ interface ClassAttentionPanelProps {
 // error with a retry, an honest "no students yet", the notice when
 // intervention outcomes could not be read, the canonical rows, and the one
 // write path — "Müdahale Hazırla" opens the SAME question composer the Action
-// Center route opens. Nothing here orders, scores or filters the list.
-export function ClassAttentionPanel({ classId, attention, mode, onViewAll, showHeader = true }: ClassAttentionPanelProps) {
+// Center route opens. Nothing here orders or scores the list.
+//
+// Phase 121 — the full route may NARROW it, and that is the only thing a
+// filter is allowed to do: filterActionCenterItems returns a subsequence of
+// the canonical list, in the canonical order, and an active filter that
+// matches nothing says so in its own words rather than borrowing the "this
+// class has no actions" copy.
+export function ClassAttentionPanel({
+  classId,
+  attention,
+  mode,
+  onViewAll,
+  showHeader = true,
+  filter,
+}: ClassAttentionPanelProps) {
   useThemeSubscription();
   const { firebaseUser } = useAuth();
 
@@ -88,7 +111,13 @@ export function ClassAttentionPanel({ classId, attention, mode, onViewAll, showH
     [topicComposer],
   );
 
-  const items = mode === "full" ? attention.items : attention.summary.items;
+  const canonicalItems = mode === "full" ? attention.items : attention.summary.items;
+  // Only the full route narrows, and only ever by hiding rows.
+  const items = filter ? filterActionCenterItems(canonicalItems, filter) : canonicalItems;
+  // "This class has no actions" and "your filter matched none of them" are
+  // different facts; the second must never be reported as the first.
+  const narrowedToNothing =
+    filter !== undefined && isActionFilterActive(filter) && items.length === 0 && canonicalItems.length > 0;
   const viewAll =
     mode !== "full" && attention.summary.hasMore && onViewAll
       ? { totalCount: attention.summary.totalCount, onPress: onViewAll }
@@ -132,7 +161,11 @@ export function ClassAttentionPanel({ classId, attention, mode, onViewAll, showH
               <Text style={styles.noticeText}>{ACTION_CENTER_OUTCOMES_UNAVAILABLE}</Text>
             </View>
           ) : null}
-          {mode === "today" ? (
+          {narrowedToNothing ? (
+            <Text style={styles.noMatch} accessibilityLiveRegion="polite" aria-live="polite">
+              {ACTION_FILTER_NO_MATCH}
+            </Text>
+          ) : mode === "today" ? (
             <TeacherTodayActions
               items={items}
               viewAll={viewAll}
@@ -184,5 +217,10 @@ const styles = themedStyles(() => ({
     ...typography.caption,
     color: colors.textSecondary,
     flex: 1,
+  },
+  noMatch: {
+    ...typography.body,
+    color: colors.textSecondary,
+    paddingVertical: spacing.sm,
   },
 }));

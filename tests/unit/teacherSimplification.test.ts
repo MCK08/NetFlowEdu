@@ -218,16 +218,25 @@ describe("one class at a time — never a fan-out across classes", () => {
     }
   });
 
-  it("keeps Phase 47's order: the list is shown as built, never re-sorted or filtered", () => {
+  // Phase 121 — Aksiyonlar can now NARROW this list (kind chips, local
+  // search), so "never filtered" is no longer the guarantee. The guarantee is
+  // the one that always mattered: whatever is shown is the canonical list in
+  // the canonical order, with rows hidden and nothing else. Narrowing goes
+  // through one order-preserving helper, which teacherActionsPolish proves
+  // returns a subsequence.
+  it("keeps Phase 47's order: the list is shown as built, never re-sorted", () => {
     for (const file of [PANEL, TODAY, ACTIONS]) {
       const code = strip(read(file));
-      expect(code).not.toMatch(/items\s*\.\s*(sort|filter|reverse)\(/);
+      expect(code).not.toMatch(/items\s*\.\s*(sort|reverse)\(/);
+      // No screen narrows by hand, either: the one helper does it.
+      expect(code).not.toMatch(/items\s*\.\s*filter\(/);
     }
     const panel = strip(read(PANEL));
     // Phase 119 — "today" is a third PRESENTATION of the same two lists, not
     // a third list: only "full" takes the complete one, everything else takes
-    // the canonical summary, and neither branch sorts or filters it.
+    // the canonical summary, and neither branch sorts it.
     expect(panel).toContain('mode === "full" ? attention.items : attention.summary.items');
+    expect(panel).toContain("filter ? filterActionCenterItems(canonicalItems, filter) : canonicalItems");
   });
 });
 
