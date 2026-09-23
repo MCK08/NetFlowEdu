@@ -1,13 +1,13 @@
 import { Ionicons } from "@expo/vector-icons";
 import { memo } from "react";
-import { Pressable, Text, View } from "react-native";
+import { Pressable, Text, useWindowDimensions, View } from "react-native";
 
 import { Avatar } from "@components/ui/Avatar";
 import { Card } from "@components/ui/Card";
 import { RoleBadge } from "@components/ui/RoleBadge";
 import { UserRole } from "@/types/user";
 import { colors } from "@theme/colors";
-import { iconSize, minTouchTarget } from "@theme/sizes";
+import { iconSize, minTouchTarget, stackAtFontScale } from "@theme/sizes";
 import { spacing } from "@theme/spacing";
 import { themedStyles } from "@theme/themeRuntime";
 import { useThemeSubscription } from "@theme/ThemeProvider";
@@ -40,6 +40,12 @@ export const ProfileIdentityCard = memo(function ProfileIdentityCard({
   onPress,
 }: ProfileIdentityCardProps) {
   useThemeSubscription();
+  const { fontScale } = useWindowDimensions();
+  // Past the accessibility sizes a name that needs two or three lines cannot
+  // share a row with an avatar and a chevron: the avatar ends up floating
+  // against the middle of the text instead of beside its first line.
+  const stacked = fontScale >= stackAtFontScale;
+
   return (
     <Pressable
       onPress={onPress}
@@ -47,7 +53,9 @@ export const ProfileIdentityCard = memo(function ProfileIdentityCard({
       accessibilityLabel={`${primaryName}${usernameHandle ? `, ${usernameHandle}` : ""}. Hesap ve profil bilgilerini düzenle`}
       style={styles.pressable}
     >
-      <Card style={styles.card}>
+      {/* Card takes one style object, not a list, so the two layouts are two
+          complete styles rather than a base and an override. */}
+      <Card style={stacked ? styles.cardStacked : styles.card}>
         <Avatar photoURL={photoURL} displayName={primaryName} size="lg" />
 
         <View style={styles.identity}>
@@ -57,7 +65,10 @@ export const ProfileIdentityCard = memo(function ProfileIdentityCard({
             {primaryName}
           </Text>
           {usernameHandle ? (
-            <Text style={styles.handle} numberOfLines={1}>
+            /* Phase 122 — a handle wraps rather than truncating. One line cut
+               "@demo_teacher" to "@demo_tea…" at the accessibility sizes, and
+               a half-handle identifies no account. */
+            <Text style={styles.handle} numberOfLines={2}>
               {usernameHandle}
             </Text>
           ) : null}
@@ -66,12 +77,17 @@ export const ProfileIdentityCard = memo(function ProfileIdentityCard({
           </View>
         </View>
 
-        <Ionicons
-          name="chevron-forward"
-          size={iconSize.sm}
-          color={colors.textTertiary}
-          accessibilityElementsHidden
-        />
+        {/* Decorative, and dropped once the card stacks: on its own line at
+            the foot of a column it points at nothing. The card is still a
+            button and still says what it opens. */}
+        {stacked ? null : (
+          <Ionicons
+            name="chevron-forward"
+            size={iconSize.sm}
+            color={colors.textTertiary}
+            accessibilityElementsHidden
+          />
+        )}
       </Card>
     </Pressable>
   );
@@ -86,9 +102,16 @@ const styles = themedStyles(() => ({
     alignItems: "center",
     gap: spacing.md,
   },
+  cardStacked: {
+    flexDirection: "column",
+    alignItems: "flex-start",
+    gap: spacing.sm,
+  } as const,
   identity: {
     flex: 1,
     minWidth: 0,
+    // Stacked, the column is the card's full-width child.
+    alignSelf: "stretch",
     gap: 2,
   },
   name: {

@@ -1,9 +1,12 @@
+import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { router } from "expo-router";
+import { useState } from "react";
 import { Text, View } from "react-native";
 
 import { AnimatedPressable } from "@components/ui/AnimatedPressable";
 import { colors } from "@theme/colors";
+import { iconSize } from "@theme/sizes";
 import { themedStyles } from "@theme/themeRuntime";
 import { roleLabel } from "@utils/roleLabels";
 import { Question } from "@/types/question";
@@ -22,8 +25,18 @@ interface QuestionGridItemProps {
   showPosterRoleBadge?: boolean;
 }
 
+/** What the tile is OF, from the question's own fields. Both are "" on
+ *  questions created before Phase 21, so an empty pair says nothing rather
+ *  than printing a stray separator. */
+function tileSubtitle(question: Question): string | null {
+  const parts = [question.subject, question.topic].map((part) => part.trim()).filter(Boolean);
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
+
 export function QuestionGridItem({ question, size, showPosterRoleBadge = false }: QuestionGridItemProps) {
   const isTeacherPost = question.posterRole === "teacher";
+  const [imageFailed, setImageFailed] = useState(false);
+  const subtitle = tileSubtitle(question);
 
   return (
     <AnimatedPressable
@@ -32,10 +45,34 @@ export function QuestionGridItem({ question, size, showPosterRoleBadge = false }
         router.push({ pathname: "/(student)/question/[questionId]", params: { questionId: question.id } })
       }
       accessibilityRole="button"
-      accessibilityLabel="Soruyu aç"
+      // Phase 122 — every tile used to announce the identical "Soruyu aç", so
+      // a screen reader handed the archive a column of indistinguishable
+      // buttons. The question already carries what tells them apart.
+      accessibilityLabel={subtitle ? `${subtitle} sorusunu aç` : "Soruyu aç"}
       accessibilityHint="Soru detayını açar"
     >
-      <Image source={{ uri: question.imageUrl }} style={styles.image} contentFit="cover" transition={150} />
+      {imageFailed ? (
+        // Phase 122 — a tile whose image cannot load was a bare grey square,
+        // indistinguishable from one still loading and from an empty grid.
+        // The mark says it is a question that has no preview, which is what
+        // is true; tapping it still opens the question.
+        <View style={styles.fallback}>
+          <Ionicons
+            name="image-outline"
+            size={iconSize.md}
+            color={colors.textTertiary}
+            accessibilityElementsHidden
+          />
+        </View>
+      ) : (
+        <Image
+          source={{ uri: question.imageUrl }}
+          style={styles.image}
+          contentFit="cover"
+          transition={150}
+          onError={() => setImageFailed(true)}
+        />
+      )}
       {showPosterRoleBadge ? (
         <View style={[styles.roleBadge, isTeacherPost ? styles.roleBadgeTeacher : styles.roleBadgeStudent]}>
           <Text style={styles.roleBadgeText}>{roleLabel(question.posterRole)}</Text>
@@ -52,6 +89,13 @@ const styles = themedStyles(() => ({
   image: {
     flex: 1,
     borderRadius: 4,
+    backgroundColor: colors.surfaceMuted,
+  },
+  fallback: {
+    flex: 1,
+    borderRadius: 4,
+    alignItems: "center",
+    justifyContent: "center",
     backgroundColor: colors.surfaceMuted,
   },
   roleBadge: {

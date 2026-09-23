@@ -265,8 +265,15 @@ describe("§13 the locks this phase must not break", () => {
     // The summary and the learning group are both student-only.
     expect(source).toMatch(/!isTeacher \? \([\s\S]{0,200}<ProfileLearningSummary/);
     expect(source).toMatch(/!isTeacher \? \([\s\S]{0,200}items=\{learningItems\}/);
-    // The account group is shared, so a teacher still gets the same card.
-    expect(source).toMatch(/<View style=\{styles\.block\}>\s*<ProfileMenuGroup items=\{accountItems\} \/>/);
+    // Phase 122 — the account card is still shared and still there; it is
+    // named now, and a teacher no longer gets the "Hesap ve Profil" row that
+    // repeated the identity card directly above it. The student's Profil is
+    // untouched: that row is still built for them.
+    expect(source).toMatch(
+      /<View style=\{styles\.block\}>\s*<ProfileMenuGroup title=\{ACCOUNT_GROUP_TITLE\} items=\{accountItems\} \/>/,
+    );
+    expect(source).toContain("...(isTeacher");
+    expect(source).toContain('title: "Hesap ve Profil"');
   });
 
   // PHASE 112 LOCK — a peer's profile gains nothing from this redesign.

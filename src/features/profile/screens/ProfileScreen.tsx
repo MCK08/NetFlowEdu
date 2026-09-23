@@ -37,6 +37,9 @@ import { profileRoutesFor } from "../routes";
 
 const GRID_COLUMNS = 3;
 
+export const LEARNING_GROUP_TITLE = "Öğrenme";
+export const ACCOUNT_GROUP_TITLE = "Hesap";
+
 const ARCHIVE_TABS: { key: ArchiveMode; label: string }[] = [
   { key: "own", label: "Sorularım" },
   { key: "saved", label: "Kaydettiklerim" },
@@ -123,13 +126,26 @@ export function ProfileScreen() {
 
   const accountItems = useMemo<ProfileMenuItem[]>(
     () => [
-      {
-        key: "edit-profile",
-        icon: "person-outline",
-        title: "Hesap ve Profil",
-        description: "Ad, kullanıcı adı, profil fotoğrafı",
-        onPress: () => go("edit-profile", routes.editProfile),
-      },
+      // Phase 122 — "Hesap ve Profil" is not offered to a TEACHER, because
+      // the identity card directly above it is already that destination:
+      // same route, and the card's own spoken label ends "Hesap ve profil
+      // bilgilerini düzenle". Two adjacent controls opening one screen is
+      // the redundancy this phase was asked to remove, and Ayarlar keeps a
+      // third way in ("Profil Bilgileri") for anyone who looks there.
+      //
+      // The student keeps it: Phase 114 put it there deliberately and this
+      // phase does not redesign the student's Profil.
+      ...(isTeacher
+        ? []
+        : [
+            {
+              key: "edit-profile",
+              icon: "person-outline" as const,
+              title: "Hesap ve Profil",
+              description: "Ad, kullanıcı adı, profil fotoğrafı",
+              onPress: () => go("edit-profile", routes.editProfile),
+            },
+          ]),
       {
         key: "friends",
         icon: "people-outline",
@@ -153,7 +169,7 @@ export function ProfileScreen() {
       },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [routes.editProfile, routes.friends, routes.findFriends, openAccountSwitcher, friendsDescription],
+    [isTeacher, routes.editProfile, routes.friends, routes.findFriends, openAccountSwitcher, friendsDescription],
   );
 
   const keyExtractor = useCallback((item: Question) => item.id, []);
@@ -229,12 +245,15 @@ export function ProfileScreen() {
 
             {!isTeacher ? (
               <View style={styles.block}>
-                <ProfileMenuGroup items={learningItems} />
+                <ProfileMenuGroup title={LEARNING_GROUP_TITLE} items={learningItems} />
               </View>
             ) : null}
 
+            {/* Phase 122 — the groups are named, the way Ayarlar's already
+                are. Unlabelled, two cards of rows asked the reader to infer
+                what each was for from the rows inside it. */}
             <View style={styles.block}>
-              <ProfileMenuGroup items={accountItems} />
+              <ProfileMenuGroup title={ACCOUNT_GROUP_TITLE} items={accountItems} />
             </View>
 
             <View style={styles.tabRow}>
