@@ -15,6 +15,17 @@ export interface ActionCenterRosterEntry {
   displayName: string;
 }
 
+/** Phase 123 — the ONE student destination, for callers that already know the
+ *  name (the class roster) as well as those that look it up (the Action
+ *  Center). A second spelling of this path is how the roster and the action
+ *  row would start opening different screens. */
+export function teacherStudentRoute(classId: string, studentUid: string, studentName: string) {
+  return {
+    pathname: "/(teacher)/class/[classId]/student/[studentId]" as const,
+    params: { classId, studentId: studentUid, studentName },
+  };
+}
+
 /** The student screen, with the same params Sınıf Performansı has always
  *  sent. The name comes from the roster the screen already holds; an unknown
  *  student sends an empty name rather than a guess. */
@@ -24,10 +35,7 @@ export function teacherStudentHref(
   roster: readonly ActionCenterRosterEntry[],
 ) {
   const entry = roster.find((card) => card.studentUid === studentUid);
-  return {
-    pathname: "/(teacher)/class/[classId]/student/[studentId]" as const,
-    params: { classId, studentId: studentUid, studentName: entry?.displayName ?? "" },
-  };
+  return teacherStudentRoute(classId, studentUid, entry?.displayName ?? "");
 }
 
 /** The complete Action Center for one class. */

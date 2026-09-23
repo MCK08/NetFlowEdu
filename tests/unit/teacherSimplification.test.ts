@@ -241,17 +241,25 @@ describe("one class at a time — never a fan-out across classes", () => {
 });
 
 describe("§35 class detail — attention before the lenses", () => {
-  it("orders hero → actions → attention → lenses → reviews → members → questions", () => {
+  it("orders identity → room actions → attention → class work → students → lenses → questions", () => {
+    // Phase 123 — the same destinations, reordered around the job: the class's
+    // own content (attention, work, roster) comes before the deep readings,
+    // which became compact rows instead of full-width buttons. Attention still
+    // precedes every lens, which is what §35 exists to protect.
     const code = read(CLASS_DETAIL);
     const order = [
-      "<Text style={styles.title}>{classRoom.name}</Text>",
-      "<Text style={styles.chatButtonText}>Sınıf Sohbeti</Text>",
-      '<ClassAttentionPanel classId={classId} attention={attention} mode="summary"',
-      ">Bugün Öne Çıkanlar<",
-      ">Sınıf Performansı<",
-      "Yanıt İncelemeleri",
-      "Üyeler (",
-      "Sınıf Soruları",
+      "<TeacherClassIdentity",
+      ">Sınıf Sohbeti<",
+      "CLASS_ATTENTION_TITLE}",
+      "<ClassAttentionPanel",
+      "CLASS_WORK_TITLE}",
+      '"Yanıt İncelemeleri"',
+      "CLASS_STUDENTS_TITLE}",
+      "<ClassMemberRow",
+      "CLASS_INSIGHT_TITLE}",
+      '"Bugün Öne Çıkanlar"',
+      '"Sınıf Performansı"',
+      "CLASS_QUESTIONS_TITLE}",
     ].map((marker) => code.indexOf(marker));
     expect(order.every((index) => index > -1)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);

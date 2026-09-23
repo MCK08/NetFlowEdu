@@ -22,21 +22,28 @@ function styleBlock(source: string, name: string): string {
 }
 
 const TEACHER_CLASS = "src/features/classes/screens/TeacherClassDetailScreen.tsx";
+const TEACHER_CLASS_IDENTITY = "src/features/classes/components/TeacherClassIdentity.tsx";
 const STUDENT_CLASS = "src/features/classes/screens/StudentClassDetailScreen.tsx";
 const STUDENT_PERF = "src/features/teacher/screens/StudentPerformanceScreen.tsx";
 const STUDY = "src/features/study/screens/StudyScreen.tsx";
 
 describe("B1 — the teacher's class detail speaks the same type roles as the student's", () => {
   it("uses the screen-title, control and section roles instead of private pairs", () => {
+    // Phase 123 — the identity (name, member count, join code) moved into
+    // TeacherClassIdentity and the section headings onto the shared
+    // SectionHeader, so the roles this test protects are read where they now
+    // live. The rule is the same one: named roles, never a hand-written pair.
     const source = code(TEACHER_CLASS);
-    expect(styleBlock(source, "title")).toContain("...typography.screenTitleSm");
-    expect(styleBlock(source, "chatButtonText")).toContain("...typography.button");
-    expect(styleBlock(source, "secondaryButtonText")).toContain("...typography.button");
-    expect(styleBlock(source, "uploadButtonText")).toContain("...typography.button");
-    expect(styleBlock(source, "sectionTitle")).toContain("...typography.subtitle");
-    expect(styleBlock(source, "code")).toContain("...typography.cardTitle");
-    // No hand-written text metrics remain on this screen.
+    const identity = code(TEACHER_CLASS_IDENTITY);
+    expect(styleBlock(identity, "title")).toContain("...typography.screenTitleSm");
+    expect(styleBlock(identity, "code")).toContain("...typography.cardTitle");
+    expect(styleBlock(source, "actionPrimaryText")).toContain("...typography.button");
+    expect(styleBlock(source, "actionSecondaryText")).toContain("...typography.button");
+    expect(source).toContain("<SectionHeader title=");
+    expect(code("src/components/ui/SectionHeader.tsx")).toContain("...typography.subtitle");
+    // No hand-written text metrics remain on either file.
     expect(source).not.toMatch(/fontSize:\s*\d+/);
+    expect(identity).not.toMatch(/fontSize:\s*\d+/);
   });
 
   it("mirrors the student sibling's roles exactly", () => {
@@ -48,24 +55,24 @@ describe("B1 — the teacher's class detail speaks the same type roles as the st
 });
 
 describe("B2 — grouping rhythm", () => {
-  it("groups the teacher's seven class controls: chat, three lenses, two review queues, add", () => {
+  it("groups the teacher's class page into headed blocks, tight inside and a step wider between", () => {
+    // Phase 123 — the two anonymous `styles.group` clusters became named,
+    // headed sections (attention, work, students, lenses, questions). The B2
+    // rhythm rule is unchanged and still checked: tight inside a block, wider
+    // between blocks.
     const source = read(TEACHER_CLASS);
-    const groups = source.split('<View style={styles.group}>');
-    // Two tight groups...
-    expect(groups.length).toBe(3);
-    // ...one holding the three ways of looking at the class,
-    expect(groups[1]).toContain("Bugün Öne Çıkanlar");
-    expect(groups[1]).toContain("Sınıf Performansı");
-    expect(groups[1]).toContain("Sınıfın İlerleme Hikâyesi");
-    expect(groups[1]).not.toContain("İncelemeleri");
-    // ...the other the two review queues.
-    expect(groups[2]).toContain("Yanıt İncelemeleri");
-    expect(groups[2]).toContain("Yorum İncelemeleri");
-    // Inside a group the controls sit a step tighter than between groups.
-    expect(styleBlock(source, "group")).toContain("gap: spacing.xs");
-    expect(styleBlock(source, "header")).toContain("gap: spacing.md");
-    // Nothing was added or lost: still exactly seven navigations/actions.
-    expect(source.match(/accessibilityRole="button"/g)?.length).toBe(8); // 7 + "Kodu yenile"
+    expect(styleBlock(source, "block")).toContain("gap: spacing.sm");
+    expect(styleBlock(source, "header")).toContain("gap: spacing.lg");
+    // Every section names itself, and the lenses stayed together in one.
+    const lenses = source.slice(source.indexOf("CLASS_INSIGHT_TITLE}"), source.indexOf("CLASS_QUESTIONS_TITLE}"));
+    expect(lenses).toContain("Bugün Öne Çıkanlar");
+    expect(lenses).toContain("Sınıf Performansı");
+    expect(lenses).toContain("Sınıfın İlerleme Hikâyesi");
+    expect(lenses).not.toContain("İncelemeleri");
+    // The review queues sit with the work that is waiting, not with the lenses.
+    const work = source.slice(source.indexOf("CLASS_WORK_TITLE}"), source.indexOf("CLASS_STUDENTS_TITLE}"));
+    expect(work).toContain("Yanıt İncelemeleri");
+    expect(work).toContain("Yorum İncelemeleri");
   });
 
   it("puts the student's destructive leave action after the questions, not between the primary tasks", () => {

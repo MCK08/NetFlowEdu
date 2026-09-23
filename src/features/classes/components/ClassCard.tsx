@@ -1,12 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { memo } from "react";
-import { Share, Text, useWindowDimensions, View } from "react-native";
+import { Text, useWindowDimensions, View } from "react-native";
 
 import { AnimatedPressable } from "@components/ui/AnimatedPressable";
 import { Avatar } from "@components/ui/Avatar";
 import { Badge } from "@components/ui/Badge";
-import { IconButton } from "@components/ui/IconButton";
 import { colors } from "@theme/colors";
 import { radius } from "@theme/radius";
 import { shadows } from "@theme/shadows";
@@ -15,17 +14,12 @@ import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
 import { themedStyles } from "@theme/themeRuntime";
 import { ClassRoom } from "@/types/class";
+
+import { ShareCodeButton } from "./ShareCodeButton";
 import { useThemeSubscription } from "@theme/ThemeProvider";
 
 interface ClassCardProps {
   classRoom: ClassRoom;
-}
-
-// expo-clipboard isn't a project dependency — RN's built-in Share sheet
-// covers "copy or share the code" in one action (every platform's share
-// sheet includes a Copy option) without adding a new package for this MVP.
-async function shareCode(name: string, code: string) {
-  await Share.share({ message: `${name} sınıfına katılmak için kod: ${code}` });
 }
 
 // The teacher's own class row. Teacher-only — the student side has its own
@@ -118,13 +112,7 @@ export const ClassCard = memo(function ClassCard({ classRoom }: ClassCardProps) 
         />
         <Text style={styles.codeLabel}>Kod</Text>
         <Text style={[styles.code, stacked ? styles.codeStacked : null]}>{classRoom.joinCode}</Text>
-        <IconButton
-          icon="share-outline"
-          size="sm"
-          color={colors.primary}
-          onPress={() => shareCode(classRoom.name, classRoom.joinCode)}
-          accessibilityLabel={`${classRoom.name} sınıfının katılım kodunu paylaş`}
-        />
+        <ShareCodeButton className={classRoom.name} joinCode={classRoom.joinCode} />
       </View>
     </AnimatedPressable>
   );

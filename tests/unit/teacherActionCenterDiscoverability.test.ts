@@ -464,19 +464,20 @@ describe("one Action Center, two places", () => {
   });
 
   it("the class page links straight to the full route, with no count and no badge", () => {
+    // Phase 123 — the entry is a compact row under "Sınıfı İncele" instead of
+    // a full-width secondary button, and the summary panel's own "Tümünü Gör"
+    // opens the same route. What this test protects is unchanged: the class
+    // page states the destination and never counts, badges or summarises it.
     expect(classPage).toContain('pathname: "/(teacher)/class/[classId]/actions"');
-    expect(classPage).toContain(`>${ACTION_CENTER_TITLE}<`);
+    expect(classPage).toContain(`title="${ACTION_CENTER_TITLE}"`);
     const entry = classPage.slice(
-      classPage.indexOf("onPress={openActionCenter}"),
-      classPage.indexOf("{/* Phase 27 — read-only class performance dashboard. */}"),
+      classPage.indexOf(`title="${ACTION_CENTER_TITLE}"`),
+      classPage.indexOf('title="Sınıf Performansı"'),
     );
     expect(entry.length).toBeGreaterThan(0);
     // A static label: nothing counted, measured or summarised is interpolated
-    // into the entry. (Not a bare digit check — the icon's size={18} is fine.)
+    // into the entry.
     expect(entry).not.toMatch(/totalCount|Badge|badge|\.length|summary|actionCenter\./);
-    // Phase 104 (B1/B2) — the shared secondary-control style; the label is
-    // still static text.
-    expect(entry).toContain("<Text style={styles.secondaryButtonText}>Bugün Öne Çıkanlar</Text>");
   });
 
   it("U20 nothing on the navigation path writes", () => {

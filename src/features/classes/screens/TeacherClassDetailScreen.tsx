@@ -1,23 +1,35 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
+import { useCallback, useMemo } from "react";
 import { ActivityIndicator, FlatList, Text, useWindowDimensions, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AnimatedPressable } from "@components/ui/AnimatedPressable";
 import { AppBackButton } from "@components/ui/AppBackButton";
 import { EmptyState } from "@components/ui/EmptyState";
+import { LoadingSkeleton } from "@components/ui/LoadingSkeleton";
+import { PrimaryButton } from "@components/ui/PrimaryButton";
+import { SectionHeader } from "@components/ui/SectionHeader";
 import { useAuth } from "@features/authentication";
 import { QuestionGridItem } from "@features/profile/components/QuestionGridItem";
 import { ClassAttentionPanel } from "@features/teacher/components/ClassAttentionPanel";
+import { TeacherWorkRow } from "@features/teacher/components/TeacherWorkRow";
 import { useClassAttention } from "@features/teacher/hooks/useClassAttention";
+import { teacherStudentRoute } from "@features/teacher/services/actionCenterNavigation";
+import { upcomingAssignments } from "@features/teacher/services/teacherToday";
 import { useNavigationGuard } from "@hooks/useNavigationGuard";
 import { colors } from "@theme/colors";
+import { radius } from "@theme/radius";
+import { iconSize, minTouchTarget, stackAtFontScale } from "@theme/sizes";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
 import { themedStyles } from "@theme/themeRuntime";
+import { useThemeSubscription } from "@theme/ThemeProvider";
+import { ClassMember } from "@/types/class";
 import { Question } from "@/types/question";
 
 import { ClassMemberRow } from "../components/ClassMemberRow";
+import { TeacherClassIdentity } from "../components/TeacherClassIdentity";
 import { useClassDetail } from "../hooks/useClassDetail";
 import { useClassQuestions } from "../hooks/useClassQuestions";
 import { useClassUpload } from "../hooks/useClassUpload";
@@ -28,9 +40,42 @@ interface TeacherClassDetailScreenProps {
 
 const GRID_COLUMNS = 3;
 
+export const CLASS_ATTENTION_TITLE = "Dikkat Gerektirenler";
+export const CLASS_WORK_TITLE = "Sınıf İşleri";
+export const CLASS_STUDENTS_TITLE = "Öğrenciler";
+export const CLASS_QUESTIONS_TITLE = "Sınıf Soruları";
+export const CLASS_INSIGHT_TITLE = "Sınıfı İncele";
+
+// Phase 123 — the teacher's class page, finally shaped like the job.
+//
+// It used to be identity followed by EIGHT full-width buttons — a menu of
+// other screens, with the class's own content (who needs attention, what work
+// is waiting, who is in the room) either buried under them or absent. The
+// same destinations are all still here, in the order a teacher works in:
+//
+//   identity          which class, how many members, the code — and Share
+//   birincil eylemler the two things done IN the room: sohbet, soru ekle
+//   Dikkat Gerektirenler  the canonical action list's own first five
+//   Sınıf İşleri      the work that is really waiting, and one way to add some
+//   Öğrenciler        the roster, each row into that student's own screen
+//   Sınıfı İncele     the deep readings, as quiet rows
+//   Sınıf Soruları    the class's questions, the list's own body
+//
+// NOTHING NEW IS READ. The attention list (useClassAttention) already fetches
+// this class's assignments for its own escalations, so "Sınıf İşleri" draws
+// upcoming work from that same array through the SAME pure helper Bugün uses
+// (upcomingAssignments). The review queues stay as rows without counts: a
+// count would cost a query per queue on every open, and an invented one is
+// worse than none.
+//
+// Every state on this page is the class document's own. An archived class —
+// a status the type has always allowed and no client write can produce —
+// keeps its readings and loses exactly the controls firestore.rules would
+// refuse anyway.
 export function TeacherClassDetailScreen({ classId }: TeacherClassDetailScreenProps) {
+  useThemeSubscription();
   const { firebaseUser } = useAuth();
-  const { width } = useWindowDimensions();
+  const { width, fontScale } = useWindowDimensions();
   const { classRoom, members, isLoading, isMutating, errorMessage, removeMember, regenerateCode } =
     useClassDetail(classId);
   const { questions, isLoadingMore, hasMore, loadMore, prepend } = useClassQuestions(classId);
@@ -45,69 +90,53 @@ export function TeacherClassDetailScreen({ classId }: TeacherClassDetailScreenPr
     classId,
     onUploaded: prepend,
   });
-  // Prevents a double-tap from pushing the chat screen twice — same guard
+  // Prevents a double-tap from pushing the same screen twice — same guard
   // already used by the student class detail screen's feed button.
   const guardedNavigate = useNavigationGuard();
 
-  function openChat() {
-    guardedNavigate("chat", () => {
-      router.push({ pathname: "/(teacher)/class/[classId]/chat", params: { classId } });
-    });
-  }
+  const go = useCallback(
+    (key: string, href: Parameters<typeof router.push>[0]) => guardedNavigate(key, () => router.push(href)),
+    [guardedNavigate],
+  );
 
-  // Phase 101 — the complete Phase 73 Action Center for this class.
-  function openActionCenter() {
-    guardedNavigate("actions", () => {
-      router.push({ pathname: "/(teacher)/class/[classId]/actions", params: { classId } });
-    });
-  }
+  const openStudent = useCallback(
+    (member: ClassMember) => {
+      guardedNavigate(`student-${member.uid}`, () =>
+        router.push(teacherStudentRoute(classId, member.uid, member.displayName ?? "")),
+      );
+    },
+    [guardedNavigate, classId],
+  );
 
-  function openPerformance() {
-    guardedNavigate("performance", () => {
-      router.push({ pathname: "/(teacher)/class/[classId]/performance", params: { classId } });
-    });
-  }
-
-  function openLearningStory() {
-    guardedNavigate("learning-story", () => {
-      router.push({
-        pathname: "/(teacher)/class/[classId]/learning-story",
-        params: { classId },
-      });
-    });
-  }
-
-  // Phase 97 — the class teacher's review queue for student answers that
-  // automated review could not settle. Same restrained secondary shape as the
-  // two buttons above; the server decides who may actually review.
-  function openAnswerReviews() {
-    guardedNavigate("answer-reviews", () => {
-      router.push({
-        pathname: "/(teacher)/class/[classId]/answer-reviews",
-        params: { classId },
-      });
-    });
-  }
-
-  // Phase 98 — the sibling queue for comments the text layer could not settle.
-  function openCommentReviews() {
-    guardedNavigate("comment-reviews", () => {
-      router.push({
-        pathname: "/(teacher)/class/[classId]/comment-reviews",
-        params: { classId },
-      });
-    });
-  }
+  // The assignments the attention hook ALREADY holds, read through Bugün's
+  // own pure helper. No second query, no second ordering rule.
+  const upcoming = useMemo(
+    () => upcomingAssignments(attention.assignments, Date.now()),
+    [attention.assignments],
+  );
 
   if (isLoading || !classRoom) {
     return (
-      <SafeAreaView style={styles.centered}>
-        <ActivityIndicator color={colors.textPrimary} />
+      <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
+        <View style={styles.loadingHeader}>
+          <AppBackButton fallbackHref="/(teacher)/(tabs)/classes" style={styles.backButton} />
+        </View>
+        <View style={styles.loadingBody} accessible accessibilityLabel="Sınıf yükleniyor" accessibilityLiveRegion="polite">
+          <LoadingSkeleton height={140} borderRadius={radius.xl} />
+          <LoadingSkeleton height={88} borderRadius={radius.lg} />
+          <LoadingSkeleton height={88} borderRadius={radius.lg} />
+        </View>
       </SafeAreaView>
     );
   }
 
   const itemSize = width / GRID_COLUMNS;
+  // No client write is permitted on an archived class, so no control that
+  // would need one is drawn. The readings all stay.
+  const isArchived = classRoom.status !== "active";
+  const canWrite = !isArchived;
+  const stackedActions = fontScale >= stackAtFontScale;
+  const studentMembers = members.filter((member) => member.role !== "teacher");
 
   return (
     <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
@@ -125,165 +154,183 @@ export function TeacherClassDetailScreen({ classId }: TeacherClassDetailScreenPr
         contentContainerStyle={styles.listContent}
         ListHeaderComponent={
           <View style={styles.header}>
-            {/* Phase 104 (B2) — the same seven controls, now in the groups a
-                teacher actually thinks in: the room's conversation, three ways
-                of looking at the class, the two review queues, and adding
-                content. Tight inside a group, a step wider between groups;
-                no new cards, no new headings, nothing renamed or moved
-                between groups. Identity (title, code) sits above them all. */}
-            <View style={styles.identity}>
-              <AppBackButton fallbackHref="/(teacher)/(tabs)/classes" style={styles.backButton} />
+            <AppBackButton fallbackHref="/(teacher)/(tabs)/classes" style={styles.backButton} />
 
-              <Text style={styles.title}>{classRoom.name}</Text>
+            <TeacherClassIdentity
+              classRoom={classRoom}
+              onRegenerateCode={canWrite ? regenerateCode : undefined}
+              isMutating={isMutating}
+            />
 
-              <View style={styles.codeRow}>
-                {/* Phase 104 (B3/Dynamic Type) — one Text with the code nested
-                    in it, so at large text the label wraps at its space and
-                    the code stays one whole token instead of "DE / MO / 01";
-                    the two were separate flex children before. Same read
-                    order, same words. */}
-                <Text style={styles.codeLabel}>
-                  Sınıf Kodu <Text style={styles.code}>{classRoom.joinCode}</Text>
-                </Text>
+            {errorMessage ? (
+              <Text style={styles.error} accessibilityRole="alert">
+                {errorMessage}
+              </Text>
+            ) : null}
+
+            {/* The two things a teacher does IN the room, side by side: the
+                conversation and adding a question to it. Everything else on
+                this page is a reading or a queue. */}
+            {canWrite ? (
+              <View style={[styles.actions, stackedActions ? styles.actionsStacked : null]}>
                 <AnimatedPressable
-                  onPress={regenerateCode}
-                  disabled={isMutating}
-                  style={styles.regenerateButton}
+                  onPress={() => go("chat", { pathname: "/(teacher)/class/[classId]/chat", params: { classId } })}
+                  style={[styles.action, styles.actionPrimary]}
                   accessibilityRole="button"
-                  accessibilityLabel="Kodu yenile"
+                  accessibilityLabel="Sınıf sohbetini aç"
                 >
-                  {/* Phase 104 (H3) — decorative; the button is labelled "Kodu yenile". */}
-                  <Ionicons name="refresh" size={16} color={colors.primary} accessibilityElementsHidden />
-                  <Text style={styles.regenerateText}>Yenile</Text>
+                  {/* Decorative: the control is labelled in words. */}
+                  <Ionicons name="chatbubble-outline" size={iconSize.sm} color={colors.textInverse} accessibilityElementsHidden />
+                  <Text style={styles.actionPrimaryText}>Sınıf Sohbeti</Text>
+                </AnimatedPressable>
+
+                <AnimatedPressable
+                  onPress={capture}
+                  disabled={isUploading}
+                  style={[styles.action, styles.actionSecondary]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Bu sınıfa soru ekle"
+                  accessibilityState={{ busy: isUploading, disabled: isUploading }}
+                >
+                  {isUploading ? (
+                    <ActivityIndicator color={colors.primary} />
+                  ) : (
+                    <>
+                      <Ionicons name="camera-outline" size={iconSize.sm} color={colors.primary} accessibilityElementsHidden />
+                      <Text style={styles.actionSecondaryText}>Soru Ekle</Text>
+                    </>
+                  )}
                 </AnimatedPressable>
               </View>
-
-              {errorMessage ? (
-                <Text style={styles.error} accessibilityRole="alert">
-                  {errorMessage}
-                </Text>
-              ) : null}
-            </View>
-
-            <AnimatedPressable
-              onPress={openChat}
-              style={styles.chatButton}
-              accessibilityRole="button"
-              accessibilityLabel="Sınıf sohbetini aç"
-            >
-              {/* Phase 104 (H3) — decorative; the button is labelled "Sınıf sohbetini aç". */}
-              <Ionicons name="chatbubble-outline" size={18} color={colors.textInverse} accessibilityElementsHidden />
-              <Text style={styles.chatButtonText}>Sınıf Sohbeti</Text>
-            </AnimatedPressable>
+            ) : null}
 
             {/* Phase 111 — who needs attention in this class, before any lens.
                 The Action Center's own first five, rows and wording — "Tümünü
-                Gör" opens the complete list, the same route the button below
-                opens. Nothing counted is added to the class page itself. */}
-            <ClassAttentionPanel classId={classId} attention={attention} mode="summary" onViewAll={openActionCenter} />
-
-            {/* Three ways of looking at the same class: what needs attention
-                today, the numbers, and the story over them. */}
-            <View style={styles.group}>
-              {/* Phase 101 — the Phase 73 Action Center, one tap from the class.
-                  Until now it was reachable only inside "Sınıf Performansı", a
-                  name that reads as analytics rather than "what should I look at
-                  today". Same restrained secondary shape as its neighbours, and
-                  deliberately no count or badge: the class page never shouts
-                  about students. */}
-              <AnimatedPressable
-                onPress={openActionCenter}
-                style={styles.secondaryButton}
-                accessibilityRole="button"
-                accessibilityLabel="Bugün öne çıkanları aç"
-                accessibilityHint="Bu sınıfta şu an öne çıkan takip, müdahale ve öğrenci aksiyonlarını görürsün"
-              >
-                <Ionicons name="today-outline" size={18} color={colors.primary} accessibilityElementsHidden />
-                <Text style={styles.secondaryButtonText}>Bugün Öne Çıkanlar</Text>
-              </AnimatedPressable>
-
-              {/* Phase 27 — read-only class performance dashboard. */}
-              <AnimatedPressable
-                onPress={openPerformance}
-                style={styles.secondaryButton}
-                accessibilityRole="button"
-                accessibilityLabel="Sınıf performansını görüntüle"
-              >
-                <Ionicons name="stats-chart-outline" size={18} color={colors.primary} accessibilityElementsHidden />
-                <Text style={styles.secondaryButtonText}>Sınıf Performansı</Text>
-              </AnimatedPressable>
-
-              {/* Phase 56 — the class story sits next to Class Performance:
-                  performance is the detail, this is the narrative over it. */}
-              <AnimatedPressable
-                onPress={openLearningStory}
-                style={styles.secondaryButton}
-                accessibilityRole="button"
-                accessibilityLabel="Sınıfın ilerleme hikâyesini görüntüle"
-              >
-                <Ionicons name="trail-sign-outline" size={18} color={colors.primary} accessibilityElementsHidden />
-                <Text style={styles.secondaryButtonText}>Sınıfın İlerleme Hikâyesi</Text>
-              </AnimatedPressable>
+                Gör" opens the complete list. Nothing is counted or ordered
+                here. */}
+            <View style={styles.block}>
+              <SectionHeader title={CLASS_ATTENTION_TITLE} />
+              <ClassAttentionPanel
+                classId={classId}
+                attention={attention}
+                mode="summary"
+                showHeader={false}
+                onViewAll={() => go("actions", { pathname: "/(teacher)/class/[classId]/actions", params: { classId } })}
+              />
             </View>
 
-            {/* The two review queues — the same job on two kinds of content. */}
-            <View style={styles.group}>
-              <AnimatedPressable
-                onPress={openAnswerReviews}
-                style={styles.secondaryButton}
-                accessibilityRole="button"
-                accessibilityLabel="Yanıt incelemelerini aç"
-                accessibilityHint="Otomatik incelemenin karar veremediği öğrenci yanıtlarını kontrol edersin"
-              >
-                <Ionicons name="shield-checkmark-outline" size={18} color={colors.primary} accessibilityElementsHidden />
-                <Text style={styles.secondaryButtonText}>Yanıt İncelemeleri</Text>
-              </AnimatedPressable>
-
-              <AnimatedPressable
-                onPress={openCommentReviews}
-                style={styles.secondaryButton}
-                accessibilityRole="button"
-                accessibilityLabel="Yorum incelemelerini aç"
-                accessibilityHint="Otomatik incelemenin karar veremediği öğrenci yorumlarını kontrol edersin"
-              >
-                <Ionicons name="chatbox-ellipses-outline" size={18} color={colors.primary} accessibilityElementsHidden />
-                <Text style={styles.secondaryButtonText}>Yorum İncelemeleri</Text>
-              </AnimatedPressable>
-            </View>
-
-            <AnimatedPressable
-              onPress={capture}
-              disabled={isUploading}
-              style={styles.uploadButton}
-              accessibilityRole="button"
-              accessibilityLabel="Bu sınıfa soru ekle"
-              // Phase 104 (B6) — the spinner alone says nothing to a screen reader.
-              accessibilityState={{ busy: isUploading, disabled: isUploading }}
-            >
-              {isUploading ? (
-                <ActivityIndicator color={colors.textInverse} />
-              ) : (
-                <>
-                  <Ionicons name="camera" size={18} color={colors.textInverse} accessibilityElementsHidden />
-                  <Text style={styles.uploadButtonText}>Sınıfa Soru Ekle</Text>
-                </>
-              )}
-            </AnimatedPressable>
-
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Üyeler ({members.length})</Text>
-              {members.map((member) => (
-                <ClassMemberRow
-                  key={member.uid}
-                  member={member}
-                  canRemove={!isMutating}
-                  onRemove={removeMember}
+            {/* Real work only: assignments that are genuinely still due (from
+                the array the attention hook already read), and the two review
+                queues. A queue row carries no number — see this file's head. */}
+            <View style={styles.block}>
+              <SectionHeader title={CLASS_WORK_TITLE} />
+              <View>
+                {upcoming.map((assignment) => (
+                  <TeacherWorkRow
+                    key={assignment.id}
+                    icon="clipboard-outline"
+                    title={assignment.title}
+                    detail={assignment.dueLabel}
+                    onPress={() =>
+                      go(`assignment-${assignment.id}`, {
+                        pathname: "/(teacher)/class/[classId]/assignment/[assignmentId]",
+                        params: { classId, assignmentId: assignment.id },
+                      })
+                    }
+                    accessibilityHint="Çalışmanın ayrıntısını açar"
+                  />
+                ))}
+                <TeacherWorkRow
+                  icon="shield-checkmark-outline"
+                  title="Yanıt İncelemeleri"
+                  onPress={() =>
+                    go("answer-reviews", {
+                      pathname: "/(teacher)/class/[classId]/answer-reviews",
+                      params: { classId },
+                    })
+                  }
+                  accessibilityHint="Otomatik incelemenin karar veremediği öğrenci yanıtlarını açar"
                 />
-              ))}
+                <TeacherWorkRow
+                  icon="chatbox-ellipses-outline"
+                  title="Yorum İncelemeleri"
+                  onPress={() =>
+                    go("comment-reviews", {
+                      pathname: "/(teacher)/class/[classId]/comment-reviews",
+                      params: { classId },
+                    })
+                  }
+                  accessibilityHint="Otomatik incelemenin karar veremediği öğrenci yorumlarını açar"
+                />
+              </View>
+              {canWrite ? (
+                <PrimaryButton
+                  label="Yeni Çalışma Oluştur"
+                  variant="secondary"
+                  onPress={() =>
+                    go("assignment-create", {
+                      pathname: "/(teacher)/class/[classId]/assignment/create",
+                      params: { classId },
+                    })
+                  }
+                  accessibilityHint="Bu sınıf için yeni bir çalışma hazırlar"
+                />
+              ) : null}
             </View>
 
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Sınıf Soruları</Text>
+            <View style={styles.block}>
+              <SectionHeader title={`${CLASS_STUDENTS_TITLE} (${studentMembers.length})`} />
+              {members.length === 0 ? (
+                <Text style={styles.quiet}>Öğrenciler sınıf koduyla katıldığında burada görünür.</Text>
+              ) : (
+                members.map((member) => (
+                  <ClassMemberRow
+                    key={member.uid}
+                    member={member}
+                    canRemove={canWrite && !isMutating}
+                    onRemove={removeMember}
+                    onOpen={member.role === "teacher" ? undefined : openStudent}
+                  />
+                ))
+              )}
+            </View>
+
+            {/* The deep readings, as rows rather than a wall of buttons. Each
+                one is a screen that already existed. */}
+            <View style={styles.block}>
+              <SectionHeader title={CLASS_INSIGHT_TITLE} />
+              <View>
+                <TeacherWorkRow
+                  icon="today-outline"
+                  title="Bugün Öne Çıkanlar"
+                  detail="Takip, müdahale ve öğrenci aksiyonlarının tamamı"
+                  onPress={() => go("actions", { pathname: "/(teacher)/class/[classId]/actions", params: { classId } })}
+                  accessibilityHint="Bu sınıfın tüm aksiyon listesini açar"
+                />
+                <TeacherWorkRow
+                  icon="stats-chart-outline"
+                  title="Sınıf Performansı"
+                  onPress={() =>
+                    go("performance", { pathname: "/(teacher)/class/[classId]/performance", params: { classId } })
+                  }
+                  accessibilityHint="Sınıf performans ekranını açar"
+                />
+                <TeacherWorkRow
+                  icon="trail-sign-outline"
+                  title="Sınıfın İlerleme Hikâyesi"
+                  onPress={() =>
+                    go("learning-story", {
+                      pathname: "/(teacher)/class/[classId]/learning-story",
+                      params: { classId },
+                    })
+                  }
+                  accessibilityHint="Sınıfın ilerleme hikâyesini açar"
+                />
+              </View>
+            </View>
+
+            <View style={styles.block}>
+              <SectionHeader title={CLASS_QUESTIONS_TITLE} />
               {questions.length === 0 ? (
                 <EmptyState icon="help-circle-outline" title="Henüz bu sınıfa soru eklenmedi" />
               ) : null}
@@ -307,150 +354,80 @@ const styles = themedStyles(() => ({
     flex: 1,
     backgroundColor: colors.background,
   },
-  centered: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: colors.background,
-  },
   listContent: {
     paddingBottom: spacing.xl,
   },
   header: {
     paddingHorizontal: spacing.lg,
-    // Phase 104 (B2) — the gap BETWEEN groups. Inside a group, `group` below
-    // steps down to xs so related controls read as one cluster.
-    gap: spacing.md,
+    // The gap BETWEEN blocks; `block` below steps down so a heading and its
+    // rows read as one thing.
+    gap: spacing.lg,
   },
-  identity: {
+  block: {
     gap: spacing.sm,
   },
-  group: {
-    gap: spacing.xs,
+  loadingHeader: {
+    paddingHorizontal: spacing.lg,
   },
-  section: {
-    gap: spacing.xs,
-    marginTop: spacing.xs,
+  loadingBody: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    gap: spacing.md,
   },
   backButton: {
-    minWidth: 44,
-    minHeight: 44,
+    minWidth: minTouchTarget,
+    minHeight: minTouchTarget,
     justifyContent: "center",
     marginLeft: -12,
     // Phase 103 — this header is a column, which stretches its children, and
-    // IconButton centres its icon; without this the Phase 102 back chevron
-    // sat in the middle of the row instead of at the leading edge.
+    // IconButton centres its icon; without this the back chevron sat in the
+    // middle of the row instead of at the leading edge.
     alignSelf: "flex-start",
   },
-  title: {
-    // Phase 104 (B1) — the role the student sibling already uses (Wave A):
-    // same 22pt, now with the 28pt line box a hand-written pair never had.
-    ...typography.screenTitleSm,
-    color: colors.textPrimary,
-  },
-  codeRow: {
+  actions: {
     flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.xs,
+    gap: spacing.sm,
   },
-  codeLabel: {
-    ...typography.caption,
-    fontWeight: "400",
-    // The nested code is cardTitle-sized; the outer line box must be tall
-    // enough for it (the line box is what iOS clips to — see D11).
-    lineHeight: typography.cardTitle.lineHeight,
-    color: colors.textTertiary,
+  actionsStacked: {
+    flexDirection: "column",
+  },
+  action: {
     flex: 1,
-  },
-  code: {
-    // Phase 104 (B1) — a join code is a short machine token read aloud to a
-    // room, not a heading: cardTitle's size and weight with the tracking kept.
-    ...typography.cardTitle,
-    color: colors.textPrimary,
-    letterSpacing: 2,
-  },
-  regenerateButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.xxs,
-    minHeight: 44,
-    paddingHorizontal: spacing.xxs,
-  },
-  regenerateText: {
-    ...typography.caption,
-    fontWeight: "600",
-    color: colors.primary,
-  },
-  error: {
-    ...typography.caption,
-    fontWeight: "400",
-    color: colors.danger,
-  },
-  chatButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: spacing.xs,
-    // Phase 104 (Dynamic Type) — a wrapped label used to take the whole row
-    // and push the icon onto the border; the inset keeps both inside.
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,
     minHeight: 48,
-    borderRadius: 10,
+    borderRadius: radius.md,
+  },
+  actionPrimary: {
     backgroundColor: colors.primary,
   },
-  chatButtonText: {
-    // Phase 104 (B1) — control label role; 15/600 is what this style already
-    // was, now with a line box and a name (Wave A did the same on the
-    // student's class detail).
+  actionPrimaryText: {
     ...typography.button,
     color: colors.textInverse,
     flexShrink: 1,
     textAlign: "center",
   },
-  secondaryButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: spacing.xs,
-    // Phase 104 (Dynamic Type) — a wrapped label used to take the whole row
-    // and push the icon onto the border; the inset keeps both inside.
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    minHeight: 48,
-    borderRadius: 10,
+  actionSecondary: {
     borderWidth: 1.5,
     borderColor: colors.primary,
   },
-  secondaryButtonText: {
+  actionSecondaryText: {
     ...typography.button,
     color: colors.primary,
     flexShrink: 1,
     textAlign: "center",
   },
-  uploadButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: spacing.xs,
-    // Phase 104 (Dynamic Type) — a wrapped label used to take the whole row
-    // and push the icon onto the border; the inset keeps both inside.
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    minHeight: 48,
-    borderRadius: 10,
-    backgroundColor: colors.primary,
+  error: {
+    ...typography.caption,
+    color: colors.danger,
   },
-  uploadButtonText: {
-    ...typography.button,
-    color: colors.textInverse,
-    flexShrink: 1,
-    textAlign: "center",
-  },
-  sectionTitle: {
-    // Phase 104 (B1) — the same section role the student sibling uses.
-    ...typography.subtitle,
-    color: colors.textPrimary,
+  quiet: {
+    ...typography.body,
+    color: colors.textSecondary,
   },
   loadingMore: {
     paddingVertical: spacing.xl,
