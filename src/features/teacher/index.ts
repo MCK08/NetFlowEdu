@@ -1,4 +1,3 @@
-export { TeacherDashboardHeader } from "./components/TeacherDashboardHeader";
 export {
   deriveTeacherDashboardStats,
   resolveGreeting,

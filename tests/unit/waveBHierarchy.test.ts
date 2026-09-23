@@ -1,4 +1,4 @@
-import { readFileSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 
 // Phase 104 (Wave B) — the structural shape of the hierarchy, identity and
@@ -133,30 +133,23 @@ describe("B2 — grouping rhythm", () => {
 });
 
 describe("B3 — identity resilience", () => {
-  it("moves the utilities to the greeting line and lets the name wrap before it truncates", () => {
-    const source = read("src/features/teacher/components/TeacherDashboardHeader.tsx");
-    expect(source).toMatch(/<Text style=\{styles\.name\} numberOfLines=\{3\}>\s*\{displayName\}/);
-    expect(styleBlock(source, "textColumn")).toContain("minWidth: 0");
-    // The bell and sign-out sit on the greeting row, not in the name's row.
-    const topRow = source.slice(source.indexOf("<View style={styles.topRow}>"), source.indexOf("styles.identityStacked : styles.identityRow"));
-    expect(topRow).toContain("{greeting}");
-    expect(topRow).toContain("<NotificationBellButton");
-    expect(topRow).toContain('icon="log-out-outline"');
-    const identityRow = source.slice(source.indexOf("<View style={stacked ? styles.identityStacked : styles.identityRow}>"));
-    expect(identityRow).toContain("<Avatar");
-    expect(identityRow).toContain("{displayName}");
-    expect(identityRow).not.toContain("<NotificationBellButton");
-    // At the accessibility text sizes the row stacks instead of breaking a
-    // surname mid-word; below them it is the side-by-side row.
-    expect(source).toContain("const STACK_AT_FONT_SCALE = 1.6;");
-    expect(source).toContain("const stacked = fontScale >= STACK_AT_FONT_SCALE;");
-    expect(source).toContain("const { fontScale } = useWindowDimensions();");
-    // Still the same size: no shrinking a person's name to fit chrome.
-    expect(styleBlock(source, "name")).toContain("fontSize: 24");
-    expect(styleBlock(source, "name")).toContain("lineHeight: 30");
-    // The bell and sign-out stay in the row.
-    expect(source).toContain("<NotificationBellButton");
-    expect(source).toContain('icon="log-out-outline"');
+  // Phase 104 fixed a teacher's name truncating beside the avatar in Bugün's
+  // identity header. Phase 119 removed that header: Bugün is about the day's
+  // work, and a teacher's identity is Profil's subject. The guarantee did not
+  // move — it now has only one home, Profil's own hero, whose wrapping is
+  // pinned by the test below and by profilePolish's own suite. What is pinned
+  // here is that the header is really gone and that nothing it carried was
+  // dropped on the way.
+  it("keeps Bugün free of the identity header, with its two utilities still reachable", () => {
+    expect(existsSync(join(ROOT, "src/features/teacher/components/TeacherDashboardHeader.tsx"))).toBe(false);
+    const today = read("src/features/teacher/screens/TeacherTodayScreen.tsx");
+    expect(today).not.toMatch(/TeacherDashboardHeader|resolveGreeting|useSignOut|<Avatar/);
+    // The bell moved to the new header with the same route and subscription.
+    const header = read("src/features/teacher/components/TeacherTodayHeader.tsx");
+    expect(header).toContain("<NotificationBellButton");
+    expect(header).toContain("route={ROUTES.teacherNotifications}");
+    // Sign-out keeps the home Phase 115 gave it, on Profil → Ayarlar.
+    expect(read("src/features/profile/screens/SettingsScreen.tsx")).toContain('title: "Çıkış Yap"');
   });
 
   it("centres the role badge under the profile hero's centred identity", () => {

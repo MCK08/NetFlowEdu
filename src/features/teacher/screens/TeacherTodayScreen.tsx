@@ -8,7 +8,6 @@ import { LoadingSkeleton } from "@components/ui/LoadingSkeleton";
 import { PrimaryButton } from "@components/ui/PrimaryButton";
 import { SectionHeader } from "@components/ui/SectionHeader";
 import { useAuth } from "@features/authentication";
-import { useSignOut } from "@features/authentication/hooks/useSignOut";
 import { colors } from "@theme/colors";
 import { contentWidth } from "@theme/layout";
 import { radius } from "@theme/radius";
@@ -16,16 +15,14 @@ import { spacing } from "@theme/spacing";
 import { themedStyles } from "@theme/themeRuntime";
 import { useThemeSubscription } from "@theme/ThemeProvider";
 import { typography } from "@theme/typography";
-import { resolvePublicIdentity } from "@utils/publicIdentity";
 
 import { ClassAttentionPanel } from "../components/ClassAttentionPanel";
 import { TeacherClassSwitcher } from "../components/TeacherClassSwitcher";
-import { TeacherDashboardHeader } from "../components/TeacherDashboardHeader";
+import { TeacherTodayHeader } from "../components/TeacherTodayHeader";
 import { TeacherWorkRow } from "../components/TeacherWorkRow";
 import { useTeacherToday } from "../context/TeacherTodayContext";
 import { useAnswerReviewQueue } from "../hooks/useAnswerReviewQueue";
 import { useCommentReviewQueue } from "../hooks/useCommentReviewQueue";
-import { resolveGreeting } from "../services/teacherDashboardStats";
 import { buildTodaySummary, reviewPendingLabel, upcomingAssignments } from "../services/teacherToday";
 
 // Phase 111 — "Bugün", the teacher's home.
@@ -33,20 +30,26 @@ import { buildTodaySummary, reviewPendingLabel, upcomingAssignments } from "../s
 // It answers one question — what needs me today — and then gets out of the
 // way. No metric grid, no chart above the actions:
 //
-//   who you are        the existing greeting header (bell, sign-out)
-//   which class        a switcher, only when there is a choice
-//   one sentence       counted from the canonical action list, never filler
-//   Bugün Öne Çıkanlar the Action Center's first five, with its own rows
-//   Sınıf İşleri       reviews and due work that are REALLY waiting, and the
-//                      one way to create new work
-//   Soru Akışı         the discovery feed, one quiet row away
+//   Bugün             the day, named once — identity lives on Profil
+//   Seçili sınıf      the class being acted on, and the way to change it
+//   one sentence      counted from the canonical action list, never filler
+//   Bugünün Önceliği  the canonical list's leading item, drawn as the answer
+//   Bekleyen Aksiyonlar the rest of that same list, compact
+//   Sınıf İşleri      reviews and due work that are REALLY waiting, and the
+//                     one way to create new work
+//   Soru Akışı        the discovery feed, one quiet row away
 //
 // Every row leads into a screen that already existed. Nothing here writes,
 // scores or re-ranks: the list is the Action Center's, in its own order.
+//
+// Phase 119 — the mockup's "Hızlı Erişim" tiles for Sınıflar and Aksiyonlar
+// are deliberately absent: those are the second and third bottom tabs, on
+// screen at all times, and a tile that duplicates a tab is a row of chrome
+// rather than a way in. "Tümünü Gör" already carries the one case where
+// Aksiyonlar continues something started here.
 export function TeacherTodayScreen() {
   useThemeSubscription();
-  const { firebaseUser, profile } = useAuth();
-  const { signOut, isSigningOut } = useSignOut();
+  const { firebaseUser } = useAuth();
   const today = useTeacherToday();
   const { attention, selectedClass, activeClasses } = today;
   const classId = selectedClass?.id;
@@ -54,8 +57,6 @@ export function TeacherTodayScreen() {
   const answers = useAnswerReviewQueue(classId);
   const comments = useCommentReviewQueue(classId);
 
-  const greeting = useMemo(() => resolveGreeting(new Date()), []);
-  const identity = resolvePublicIdentity(profile);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   // The class list is one cheap query: re-read it whenever the tab comes back
@@ -95,14 +96,7 @@ export function TeacherTodayScreen() {
         refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={refreshAll} tintColor={colors.primary} />}
       >
         <View style={styles.column}>
-          <TeacherDashboardHeader
-            greeting={greeting}
-            displayName={identity.primaryName}
-            photoURL={profile?.photoURL ?? null}
-            onSignOut={signOut}
-            isSigningOut={isSigningOut}
-            notificationUid={firebaseUser?.uid}
-          />
+          <TeacherTodayHeader notificationUid={firebaseUser?.uid} />
 
           {today.isLoadingClasses && activeClasses.length === 0 ? (
             <LoadingSkeleton height={120} borderRadius={radius.xl} />
@@ -123,12 +117,13 @@ export function TeacherTodayScreen() {
                 onSelect={today.selectClass}
               />
 
-              <View style={styles.summary}>
-                <Text style={styles.className}>{selectedClass.name}</Text>
-                {showSummary ? <Text style={styles.sentence}>{summary.sentence}</Text> : null}
-              </View>
+              {/* The mockup's "Sınıf Özeti" card, as the one line the data can
+                  truthfully fill: a count of the very list below it, from
+                  buildTodaySummary. Drawn here rather than as a card under
+                  the actions, where it would state the same fact twice. */}
+              {showSummary ? <Text style={styles.sentence}>{summary.sentence}</Text> : null}
 
-              <ClassAttentionPanel classId={selectedClass.id} attention={attention} mode="summary" onViewAll={openActions} />
+              <ClassAttentionPanel classId={selectedClass.id} attention={attention} mode="today" onViewAll={openActions} />
 
               <View style={styles.block}>
                 <SectionHeader title="Sınıf İşleri" />
@@ -223,16 +218,8 @@ const styles = themedStyles(() => ({
   block: {
     gap: spacing.sm,
   },
-  summary: {
-    gap: spacing.xxs,
-  },
-  className: {
-    ...typography.caption,
-    fontWeight: "600",
-    color: colors.primary,
-  },
   sentence: {
-    ...typography.title,
-    color: colors.textPrimary,
+    ...typography.body,
+    color: colors.textSecondary,
   },
 }));

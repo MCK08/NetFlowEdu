@@ -23,13 +23,17 @@ import { actionCenterComposerContext, teacherStudentHref } from "../services/act
 import { ACTION_CENTER_OUTCOMES_UNAVAILABLE, TeacherActionCenterItem } from "../services/teacherActionCenter";
 import { ClassTopicComposerModals } from "./ClassTopicComposerModals";
 import { TeacherActionCenterSection } from "./TeacherActionCenterSection";
+import { TeacherTodayActions } from "./TeacherTodayActions";
 
 interface ClassAttentionPanelProps {
   classId: string;
   attention: ClassAttention;
   /** "summary": the first five, with "Tümünü Gör" when more exist.
-   *  "full": the complete list, in the same order. */
-  mode: "summary" | "full";
+   *  "full": the complete list, in the same order.
+   *  "today": the same first five, drawn as Bugün draws them — the leading
+   *  item as the day's priority card, the rest as compact rows. Same list,
+   *  same order, one presentation. */
+  mode: "summary" | "full" | "today";
   /** Where "Tümünü Gör" leads — only used in summary mode. */
   onViewAll?: () => void;
   /** The canonical "Bugün Öne Çıkanlar" heading; hidden when the screen
@@ -84,9 +88,9 @@ export function ClassAttentionPanel({ classId, attention, mode, onViewAll, showH
     [topicComposer],
   );
 
-  const items = mode === "summary" ? attention.summary.items : attention.items;
+  const items = mode === "full" ? attention.items : attention.summary.items;
   const viewAll =
-    mode === "summary" && attention.summary.hasMore && onViewAll
+    mode !== "full" && attention.summary.hasMore && onViewAll
       ? { totalCount: attention.summary.totalCount, onPress: onViewAll }
       : null;
 
@@ -128,13 +132,22 @@ export function ClassAttentionPanel({ classId, attention, mode, onViewAll, showH
               <Text style={styles.noticeText}>{ACTION_CENTER_OUTCOMES_UNAVAILABLE}</Text>
             </View>
           ) : null}
-          <TeacherActionCenterSection
-            items={items}
-            showHeader={showHeader}
-            viewAll={viewAll}
-            onOpenStudent={openStudent}
-            onPrepareIntervention={prepareIntervention}
-          />
+          {mode === "today" ? (
+            <TeacherTodayActions
+              items={items}
+              viewAll={viewAll}
+              onOpenStudent={openStudent}
+              onPrepareIntervention={prepareIntervention}
+            />
+          ) : (
+            <TeacherActionCenterSection
+              items={items}
+              showHeader={showHeader}
+              viewAll={viewAll}
+              onOpenStudent={openStudent}
+              onPrepareIntervention={prepareIntervention}
+            />
+          )}
         </>
       )}
 

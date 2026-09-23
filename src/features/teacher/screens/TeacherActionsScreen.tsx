@@ -64,8 +64,10 @@ export function TeacherActionsScreen() {
             </View>
           ) : (
             <>
+              {/* Phase 119 — the switcher NAMES the selected class now, so the
+                  caption that used to name it under a row of pills would put
+                  the same class name twice in one column. */}
               <TeacherClassSwitcher classes={activeClasses} selectedClassId={selectedClass.id} onSelect={selectClass} />
-              <Text style={styles.className}>{selectedClass.name}</Text>
               <ClassAttentionPanel classId={selectedClass.id} attention={attention} mode="full" showHeader={false} />
             </>
           )}
@@ -104,10 +106,5 @@ const styles = themedStyles(() => ({
   },
   block: {
     gap: spacing.sm,
-  },
-  className: {
-    ...typography.caption,
-    fontWeight: "600",
-    color: colors.primary,
   },
 }));

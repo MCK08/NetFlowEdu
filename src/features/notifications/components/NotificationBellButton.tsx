@@ -20,7 +20,7 @@ interface NotificationBellButtonProps {
   route: string;
 }
 
-// Placed in TeacherDashboardHeader and StudentClassesScreen's header row
+// Placed in TeacherTodayHeader and StudentClassesScreen's header row
 // (see Phase 15 report — the two existing header surfaces this was added
 // to without altering either tab bar's structure). Reuses IconButton's own
 // >=44pt hit target; the badge is a purely visual overlay on top of it.

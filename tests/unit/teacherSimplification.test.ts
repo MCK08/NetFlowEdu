@@ -159,13 +159,17 @@ describe("§34 Bugün", () => {
     expect(resolveSelectedClassId([], "old")).toBeNull();
   });
 
+  // Phase 119 — the identity header is gone (Bugün is about the day, not
+  // about who the teacher is) and the action list is drawn in "today" mode:
+  // its leading item as the day's priority, the rest as rows. Everything
+  // else about this order is Phase 111's and is unchanged.
   it("is composed in the intended order, from the Action Center itself", () => {
     const code = strip(read(TODAY));
     const order = [
-      "<TeacherDashboardHeader",
+      "<TeacherTodayHeader",
       "<TeacherClassSwitcher",
       "summary.sentence",
-      '<ClassAttentionPanel classId={selectedClass.id} attention={attention} mode="summary"',
+      '<ClassAttentionPanel classId={selectedClass.id} attention={attention} mode="today"',
       '<SectionHeader title="Sınıf İşleri"',
       'title="Soru Akışı"',
     ].map((marker) => code.indexOf(marker));
@@ -220,7 +224,10 @@ describe("one class at a time — never a fan-out across classes", () => {
       expect(code).not.toMatch(/items\s*\.\s*(sort|filter|reverse)\(/);
     }
     const panel = strip(read(PANEL));
-    expect(panel).toContain('mode === "summary" ? attention.summary.items : attention.items');
+    // Phase 119 — "today" is a third PRESENTATION of the same two lists, not
+    // a third list: only "full" takes the complete one, everything else takes
+    // the canonical summary, and neither branch sorts or filters it.
+    expect(panel).toContain('mode === "full" ? attention.items : attention.summary.items');
   });
 });
 
