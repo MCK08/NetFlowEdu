@@ -271,6 +271,36 @@ describe("§41 accessibility", () => {
     expect(screen).toContain("minHeight: minTouchTarget");
   });
 
+  // Phase 123 completion QA — found on the simulator at the largest
+  // accessibility size. Uncapping the name and handle was necessary but not
+  // sufficient: the role label kept its place on the same line, leaving the
+  // name column about half the row, so the words broke INSIDE themselves
+  // ("Demo Öğret / men", "@demo / _teache / r"). With the remove control
+  // still held beside the column, a student's handle broke too
+  // ("@demo_student_ / a").
+  it("stacks a roster row so no name, handle or code breaks mid-word", () => {
+    const row = read(MEMBER_ROW);
+    expect(row).toContain("const stacked = fontScale >= stackAtFontScale;");
+    // Both levels stack: the person block, and the row that holds it beside
+    // the remove control.
+    expect(row).toContain("style={[styles.row, stacked ? styles.rowStacked : null]}");
+    expect(row).toContain("stacked ? styles.personStacked : null");
+    expect(row).toContain("stacked ? styles.nameColumnStacked : null");
+    expect(row).toMatch(/rowStacked:\s*\{[\s\S]*?flexDirection: "column",/);
+    expect(row).toMatch(/personStacked:\s*\{[\s\S]*?flexDirection: "column",/);
+    expect(row).toMatch(/personStacked:\s*\{[\s\S]*?alignSelf: "stretch",/);
+    // And nothing is capped, so the wrapping actually happens.
+    expect(row).not.toMatch(/numberOfLines/);
+  });
+
+  it("drops the roster chevron when the row stacks, rather than stranding it", () => {
+    const row = read(MEMBER_ROW);
+    expect(row).toContain("{stacked ? null : (");
+    expect(row).toContain('name="chevron-forward"');
+    // The row still says what it opens, stacked or not.
+    expect(row).toContain('accessibilityHint="Öğrencinin performans ekranını açar"');
+  });
+
   it("labels its controls and hides its decoration", () => {
     for (const file of [SCREEN, IDENTITY, MEMBER_ROW]) {
       const source = code(file);

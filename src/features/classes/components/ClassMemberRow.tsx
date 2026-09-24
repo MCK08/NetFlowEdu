@@ -1,11 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
 import { memo } from "react";
-import { Alert, Text, View } from "react-native";
+import { Alert, Text, useWindowDimensions, View } from "react-native";
 
 import { AnimatedPressable } from "@components/ui/AnimatedPressable";
 import { Avatar } from "@components/ui/Avatar";
 import { colors } from "@theme/colors";
-import { iconSize, minTouchTarget } from "@theme/sizes";
+import { iconSize, minTouchTarget, stackAtFontScale } from "@theme/sizes";
 import { spacing } from "@theme/spacing";
 import { themedStyles } from "@theme/themeRuntime";
 import { useThemeSubscription } from "@theme/ThemeProvider";
@@ -34,6 +34,15 @@ interface ClassMemberRowProps {
 // the accessibility text sizes a real Turkish name was cut mid-word; they
 // wrap now. The row is also the way into the student screen, which the roster
 // previously dead-ended before.
+//
+// Phase 123 (runtime QA) — uncapping was not enough on its own. The role
+// label kept its place on the SAME line, so the name column was left about
+// half the row and the words broke inside themselves anyway ("Demo Öğret /
+// men", "@demo / _teache / r"). Past the accessibility sizes the row is a
+// column: the name takes the width, the role follows it, and nothing has to
+// break mid-word. The remove control comes down with it — held beside the
+// column it took 44pt off the width and broke the handle instead
+// ("@demo_student_ / a").
 export const ClassMemberRow = memo(function ClassMemberRow({
   member,
   canRemove,
@@ -41,6 +50,8 @@ export const ClassMemberRow = memo(function ClassMemberRow({
   onOpen,
 }: ClassMemberRowProps) {
   useThemeSubscription();
+  const { fontScale } = useWindowDimensions();
+  const stacked = fontScale >= stackAtFontScale;
   const identity = resolvePublicIdentity(member);
   const spoken = `${identity.primaryName}${identity.usernameHandle ? `, ${identity.usernameHandle}` : ""}. ${roleLabel(member.role)}`;
 
@@ -58,7 +69,7 @@ export const ClassMemberRow = memo(function ClassMemberRow({
   const body = (
     <>
       <Avatar photoURL={member.photoURL} displayName={identity.primaryName} size="sm" />
-      <View style={styles.nameColumn}>
+      <View style={[styles.nameColumn, stacked ? styles.nameColumnStacked : null]}>
         <Text style={styles.name}>{identity.primaryName}</Text>
         {identity.usernameHandle ? <Text style={styles.handle}>{identity.usernameHandle}</Text> : null}
       </View>
@@ -67,21 +78,24 @@ export const ClassMemberRow = memo(function ClassMemberRow({
   );
 
   return (
-    <View style={styles.row}>
+    <View style={[styles.row, stacked ? styles.rowStacked : null]}>
       {onOpen ? (
         <AnimatedPressable
           onPress={() => onOpen(member)}
-          style={styles.person}
+          style={[styles.person, stacked ? styles.personStacked : null]}
           accessibilityRole="button"
           accessibilityLabel={spoken}
           accessibilityHint="Öğrencinin performans ekranını açar"
         >
           {body}
-          {/* Decorative: the row's own hint says what it opens. */}
-          <Ionicons name="chevron-forward" size={iconSize.sm} color={colors.textTertiary} accessibilityElementsHidden />
+          {/* Decorative: the row's own hint says what it opens. Dropped once
+              the row stacks, where it would sit alone under the role. */}
+          {stacked ? null : (
+            <Ionicons name="chevron-forward" size={iconSize.sm} color={colors.textTertiary} accessibilityElementsHidden />
+          )}
         </AnimatedPressable>
       ) : (
-        <View style={styles.person} accessible accessibilityLabel={spoken}>
+        <View style={[styles.person, stacked ? styles.personStacked : null]} accessible accessibilityLabel={spoken}>
           {body}
         </View>
       )}
@@ -118,9 +132,26 @@ const styles = themedStyles(() => ({
     minHeight: minTouchTarget,
     paddingVertical: spacing.sm,
   },
+  rowStacked: {
+    flexDirection: "column",
+    alignItems: "flex-start",
+    paddingBottom: spacing.xs,
+  },
+  personStacked: {
+    flexDirection: "column",
+    alignItems: "flex-start",
+    gap: spacing.xxs,
+    // Stacked, the person block is the row's full-width child.
+    alignSelf: "stretch",
+  },
   nameColumn: {
     flex: 1,
     minWidth: 0,
+  },
+  // Stacked, the column is the row's full-width child rather than one of
+  // three things sharing a line.
+  nameColumnStacked: {
+    alignSelf: "stretch",
   },
   name: {
     ...typography.bodyStrong,
