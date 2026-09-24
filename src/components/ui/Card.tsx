@@ -1,5 +1,5 @@
 import { memo, ReactNode } from "react";
-import { View, ViewStyle } from "react-native";
+import { StyleProp, View, ViewStyle } from "react-native";
 
 import { colors } from "@theme/colors";
 import { radius } from "@theme/radius";
@@ -10,7 +10,10 @@ import { useThemeSubscription } from "@theme/ThemeProvider";
 
 interface CardProps {
   children: ReactNode;
-  style?: ViewStyle;
+  // Phase 124 — RN's own contract, so a caller can compose a per-render value
+  // (an accent colour) with its static style the way every View already can.
+  // The array below already handled it at runtime.
+  style?: StyleProp<ViewStyle>;
   // "flat" matches the existing borderless `#F7F7F8` panel style already
   // used by ProfileScreen's info card; "elevated" adds a soft shadow for
   // surfaces that need to visually float (e.g. a modal's content).

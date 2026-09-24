@@ -43,7 +43,7 @@ import { useClassSemanticCohorts } from "../hooks/useClassSemanticCohorts";
 import { useClassTopicComposer } from "../hooks/useClassTopicComposer";
 import { ClassSemanticCohort } from "../services/classSemanticCohorts";
 import { ClassTopicHotspot } from "../services/classTopicInsights";
-import { attentionCategoryGlyph, learningTrendGlyph } from "../services/statusGlyphs";
+import { attentionCategoryGlyph, attentionCategoryLabel, learningTrendGlyph } from "../services/statusGlyphs";
 import {
   AttentionCategory,
   StudentAttentionCard,
@@ -61,29 +61,25 @@ interface ClassPerformanceScreenProps {
 
 type FilterValue = AttentionCategory | "all";
 
-const FILTERS: { value: FilterValue; label: string }[] = [
-  { value: "all", label: "Tümü" },
-  { value: "needs_attention", label: "Dikkat gereken" },
-  { value: "watch", label: "İzlemede" },
-  { value: "progressing", label: "İlerliyor" },
-  { value: "strong", label: "Güçlü" },
-  { value: "insufficient_data", label: "Yetersiz veri" },
+// The order the chips have always appeared in — worst first, unknown last.
+const ATTENTION_FILTER_ORDER: readonly AttentionCategory[] = [
+  "needs_attention",
+  "watch",
+  "progressing",
+  "strong",
+  "insufficient_data",
 ];
 
-function categoryLabel(category: AttentionCategory): string {
-  switch (category) {
-    case "needs_attention":
-      return "Dikkat gereken";
-    case "watch":
-      return "İzlemede";
-    case "progressing":
-      return "İlerliyor";
-    case "strong":
-      return "Güçlü";
-    case "insufficient_data":
-      return "Yetersiz veri";
-  }
-}
+// Phase 124 — the chips read their words from attentionCategoryLabel too, so
+// the filter, the row it filters and the student's own screen cannot name a
+// category three different ways. Same chips, same order, same words.
+const FILTERS: { value: FilterValue; label: string }[] = [
+  { value: "all", label: "Tümü" },
+  ...ATTENTION_FILTER_ORDER.map((category) => ({
+    value: category,
+    label: attentionCategoryLabel(category),
+  })),
+];
 
 // Phase 104 — the words only; the mark comes from learningTrendGlyph so the
 // class line and the student line draw the same trend the same way.
@@ -536,7 +532,7 @@ export function ClassPerformanceScreen({ classId }: ClassPerformanceScreenProps)
                       // Phase 104 (B6) — one spoken unit per chip, count and
                       // category together, instead of two loose text nodes.
                       accessible
-                      accessibilityLabel={`${categoryCounts[category]} ${categoryLabel(category)}`}
+                      accessibilityLabel={`${categoryCounts[category]} ${attentionCategoryLabel(category)}`}
                     >
                       <StatusLabel
                         icon={attentionCategoryGlyph(category).icon}
@@ -545,7 +541,7 @@ export function ClassPerformanceScreen({ classId }: ClassPerformanceScreenProps)
                       >
                         {String(categoryCounts[category])}
                       </StatusLabel>
-                      <Text style={styles.healthChipLabel}>{categoryLabel(category)}</Text>
+                      <Text style={styles.healthChipLabel}>{attentionCategoryLabel(category)}</Text>
                     </View>
                   ))}
               </View>
@@ -651,7 +647,7 @@ export function ClassPerformanceScreen({ classId }: ClassPerformanceScreenProps)
                         accessibilityRole="button"
                         // Phase 104 (B6) — the category used to be conveyed
                         // by the emoji alone; the spoken row now names it.
-                        accessibilityLabel={`${student.displayName}. ${categoryLabel(student.insight.category)}. ${student.insight.reasons[0] ?? ""}`}
+                        accessibilityLabel={`${student.displayName}. ${attentionCategoryLabel(student.insight.category)}. ${student.insight.reasons[0] ?? ""}`}
                       >
                         <StatusLabel
                           icon={attentionCategoryGlyph(student.insight.category).icon}

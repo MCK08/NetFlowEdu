@@ -130,7 +130,7 @@ describe("text line box integrity", () => {
     // Guard against the walk silently matching nothing (a refactor of the
     // style syntax would otherwise make this whole suite vacuously pass).
     expect(styles.length).toBeGreaterThanOrEqual(20);
-    expect(styles.some((style) => style.name === "bigValue")).toBe(true);
+    expect(styles.some((style) => style.name === "bigValueSmall")).toBe(true);
   });
 
   it("never leaves a resized style with a line box too short for its glyphs", () => {
@@ -145,12 +145,17 @@ describe("text line box integrity", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("pins the Student Performance hero values that D11 clipped", () => {
+  it("pins the Student Performance value that D11 clipped", () => {
+    // Phase 124 retired the 40/50 hero this used to pin alongside: the success
+    // rate is no longer drawn as a giant centred figure, so there is no 40pt
+    // style left on that screen to hold to its line box. Nothing about the
+    // GUARD changed — the ratio rule above still walks every resized style in
+    // src, which is what actually catches a recurrence; only the named example
+    // moved to the one that survived.
     const styles = stylesThatResizeAToken();
-    const hero = styles.find((style) => style.name === "bigValue");
     const secondary = styles.find((style) => style.name === "bigValueSmall");
 
-    expect(hero).toMatchObject({ fontSize: 40, lineHeight: 50 });
+    expect(styles.some((style) => style.name === "bigValue")).toBe(false);
     expect(secondary).toMatchObject({ fontSize: 24, lineHeight: 30 });
   });
 });

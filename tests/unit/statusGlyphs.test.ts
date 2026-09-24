@@ -89,7 +89,10 @@ describe("the former emoji sites", () => {
       .filter((line) => !line.trim().startsWith("//"))
       .join("\n");
     expect(code).not.toMatch(STATUS_EMOJI);
-    expect(code).toContain('import { StatusLabel } from "@components/ui/StatusLabel";');
+    // The named-import list is not the point — that the screen draws its state
+    // with the shared StatusLabel is (Phase 124 added statusToneColor beside it
+    // so the attention card's accent bar reads from the same tone map).
+    expect(code).toMatch(/import \{[^}]*\bStatusLabel\b[^}]*\} from "@components\/ui\/StatusLabel";/);
     expect(code).toContain("Glyph(");
   });
 
@@ -107,12 +110,12 @@ describe("the former emoji sites", () => {
   it("speaks the category on a priority row and the Turkish status on an assignment row", () => {
     const screen = read("src/features/teacher/screens/ClassPerformanceScreen.tsx");
     expect(screen).toContain(
-      "accessibilityLabel={`${student.displayName}. ${categoryLabel(student.insight.category)}. ${student.insight.reasons[0] ?? \"\"}`}",
+      "accessibilityLabel={`${student.displayName}. ${attentionCategoryLabel(student.insight.category)}. ${student.insight.reasons[0] ?? \"\"}`}",
     );
     expect(screen).toContain("accessibilityLabel={`${assignmentItem.title}. ${assignmentStatusLabel(displayStatus)}`}");
     expect(screen).not.toContain("${assignmentItem.title}. ${displayStatus}");
     // The summary chip is one spoken unit: count and category together.
-    expect(screen).toContain("accessibilityLabel={`${categoryCounts[category]} ${categoryLabel(category)}`}");
+    expect(screen).toContain("accessibilityLabel={`${categoryCounts[category]} ${attentionCategoryLabel(category)}`}");
     // A hotspot row says whether its student chips are open.
     expect(screen).toContain("accessibilityState={{ expanded }}");
   });

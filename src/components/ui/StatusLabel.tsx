@@ -37,7 +37,10 @@ interface StatusLabelProps {
 // The words carry the meaning and the colour never does alone: the glyph is
 // hidden from assistive technology and the caller's text remains the single
 // accessible node, exactly as before.
-function toneColor(tone: StatusTone): string {
+/** The palette colour one tone resolves to. Exported for the rare caller that
+ *  needs the tone on something other than the words — an accent bar drawn
+ *  beside them — so a second mapping can never disagree with this one. */
+export function statusToneColor(tone: StatusTone): string {
   switch (tone) {
     case "danger":
       return colors.danger;
@@ -66,7 +69,7 @@ export const StatusLabel = memo(function StatusLabel({
   useThemeSubscription();
   return (
     <View style={[styles.row, style]}>
-      <Ionicons name={icon} size={size} color={toneColor(tone)} accessibilityElementsHidden />
+      <Ionicons name={icon} size={size} color={statusToneColor(tone)} accessibilityElementsHidden />
       <Text style={[styles.text, textStyle]}>{children}</Text>
     </View>
   );

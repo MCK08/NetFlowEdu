@@ -1,11 +1,11 @@
 
 import { router } from "expo-router";
 import { useMemo } from "react";
-import { ScrollView, Text, View } from "react-native";
+import { ScrollView, Text, useWindowDimensions, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { Card } from "@components/ui/Card";
-import { StatusLabel } from "@components/ui/StatusLabel";
+import { StatusLabel, statusToneColor } from "@components/ui/StatusLabel";
 import { Chip } from "@components/ui/Chip";
 import { EmptyState } from "@components/ui/EmptyState";
 import { LoadingSkeleton } from "@components/ui/LoadingSkeleton";
@@ -13,24 +13,38 @@ import { PrimaryButton } from "@components/ui/PrimaryButton";
 import { AppBackButton } from "@components/ui/AppBackButton";
 import { TeacherLearningTimeline } from "@features/learningStory/components/TeacherLearningTimeline";
 import { useTeacherLearningTimeline } from "@features/learningStory/hooks/useTeacherLearningTimeline";
-import { buildTeacherLearningTimeline } from "@features/learningStory/services/teacherLearningTimeline";
+import {
+  buildTeacherLearningTimeline,
+  formatRelativeDayLabel,
+} from "@features/learningStory/services/teacherLearningTimeline";
 import { VerifiedChoicePatternSection } from "@features/study/components/VerifiedChoicePatternSection";
 import { buildVerifiedChoicePatterns } from "@features/study/services/verifiedChoicePatterns";
 import { TopicInsight } from "@features/study/services/learningInsights";
 import { LearningTrend } from "@features/study/services/learningTrend";
 import { colors } from "@theme/colors";
 import { contentWidth } from "@theme/layout";
+import { stackAtFontScale } from "@theme/sizes";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
 import { themedStyles } from "@theme/themeRuntime";
 
 import { InterventionOutcomeCard } from "../components/InterventionOutcomeCard";
+import { StudentIdentityCard } from "../components/StudentIdentityCard";
 import { useInterventionEffectiveness } from "../hooks/useInterventionEffectiveness";
 import { useStudentPerformanceDetail } from "../hooks/useStudentPerformanceDetail";
 import { resolvePostInterventionAction } from "../services/postInterventionAction";
-import { learningTrendGlyph } from "../services/statusGlyphs";
+import {
+  attentionCategoryGlyph,
+  attentionCategoryLabel,
+  learningTrendGlyph,
+} from "../services/statusGlyphs";
 import { buildStudentAttentionInsight } from "../services/studentAttention";
 import { resolveStudentInterventionTopic } from "../services/teacherIntervention";
+
+/** The screen's own name, constant. Phase 124 — the header used to print the
+ *  student's name here; it is the identity card's job now, and this can never
+ *  be blank or truncated. */
+export const STUDENT_DETAIL_TITLE = "Öğrenci Performansı";
 
 interface StudentPerformanceScreenProps {
   classId: string;
@@ -67,17 +81,16 @@ function topicChipLabel(topic: TopicInsight): string {
   return `${base} · ${topic.struggledAttemptCount} kez`;
 }
 
+// Phase 124 — the day comes from formatRelativeDayLabel, the SAME calendar-day
+// formatter the learning flow above already prints its events with, so one
+// screen cannot say "Dün" in one card and a bare date in another. Every label
+// it produces is backed by this student's real lastStudiedAt; nothing is
+// inferred from ordering, and past a week it falls back to the date rather
+// than counting ever upwards.
 function formatLastStudied(timestampMs: number | null): string {
   if (!timestampMs) return "Henüz çalışılmadı";
-  const date = new Date(timestampMs);
-  const now = new Date();
-  const isToday =
-    date.getFullYear() === now.getFullYear() &&
-    date.getMonth() === now.getMonth() &&
-    date.getDate() === now.getDate();
-  const time = date.toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
-  if (isToday) return `Bugün ${time}`;
-  return `${date.toLocaleDateString("tr-TR")} ${time}`;
+  const time = new Date(timestampMs).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
+  return `${formatRelativeDayLabel(timestampMs)} · ${time}`;
 }
 
 // Phase 27 — no outcome controls, no editable fields: every number on this
@@ -92,6 +105,10 @@ function formatLastStudied(timestampMs: number | null): string {
 // create path the follow-up flow has always used.
 export function StudentPerformanceScreen({ classId, studentId, studentName }: StudentPerformanceScreenProps) {
   const { snapshot, items, isLoading, error, refresh } = useStudentPerformanceDetail(classId, studentId);
+  // Phase 124 — past the accessibility sizes a pair of half-width tiles stops
+  // holding a Turkish word without breaking it in half ("bekleye/n tekrar").
+  const { fontScale } = useWindowDimensions();
+  const stacked = fontScale >= stackAtFontScale;
 
   // Phase 60 — ONE bounded query, mounted only here. Keyed by BOTH ids so a
   // slow response for the previous student can never paint over the one the
@@ -123,6 +140,10 @@ export function StudentPerformanceScreen({ classId, studentId, studentName }: St
     () => (snapshot ? buildStudentAttentionInsight(snapshot, Date.now()) : null),
     [snapshot],
   );
+  // Phase 124 — presentation only: the mark and tone the class list already
+  // draws this exact category with (statusGlyphs.ts). Never a severity of
+  // this screen's own.
+  const attentionGlyph = attentionCategoryGlyph(attention?.category ?? "insufficient_data");
 
   // Phase 44 — whether the last assignment actually delivered to this
   // student moved anything. Reads `items` (the SAME study items the snapshot
@@ -185,10 +206,16 @@ export function StudentPerformanceScreen({ classId, studentId, studentName }: St
 
   return (
     <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
-      <View style={styles.header}>
+      {/* Phase 124 — the title is the SCREEN's name, not the student's. It
+          used to be the name, capped at one line, so a real Turkish name was
+          truncated mid-name and a caller that could not resolve one at all
+          left the header blank (teacherStudentHref sends "" by design, and
+          `"" ?? fallback` keeps the empty string). The student is named in
+          full, and wrapping, in the identity card below. */}
+      <View style={[styles.header, stacked ? styles.headerStacked : null]}>
         <AppBackButton fallbackHref={{ pathname: "/(teacher)/class/[classId]", params: { classId } }} style={styles.backButton} />
-        <Text style={styles.title} numberOfLines={1}>
-          {studentName ?? "Öğrenci Performansı"}
+        <Text style={styles.title} accessibilityRole="header">
+          {STUDENT_DETAIL_TITLE}
         </Text>
       </View>
 
@@ -224,14 +251,37 @@ export function StudentPerformanceScreen({ classId, studentId, studentName }: St
               topics, and the record. Tight inside a group, a step wider between
               groups; no card added, removed, renamed or reordered. */}
           <View style={styles.group}>
-            {/* Phase 111 — WHY this student is here comes first. A teacher
-                arrives from an attention row asking "what is going on"; the
-                evidence-based note answers that, and the overall rate is
-                context for it rather than the headline above it. Same two
-                cards, same group, same styles — only their order changed. */}
+            {/* Phase 124 — WHO, before why. The name the entry point already
+                knew; no lookup, no second read. */}
+            <StudentIdentityCard studentName={studentName} />
+
+            {/* Phase 111 — WHY this student is here comes before any number. A
+                teacher arrives from an attention row asking "what is going
+                on"; the evidence-based note answers that, and the overall rate
+                is context for it rather than the headline above it. That
+                ordering is the lock; Phase 124 only put the student's name
+                above it and took the rate's hero styling away. */}
             {attention ? (
-              <Card style={styles.attentionCard}>
+              <Card
+                style={[
+                  styles.attentionCard,
+                  // Phase 124 — the accent bar states the same thing the word
+                  // beside the mark does; the colour is never alone in saying
+                  // it, and it is a thin edge rather than a filled red block.
+                  { borderLeftColor: statusToneColor(attentionGlyph.tone) },
+                ]}
+              >
                 <Text style={styles.sectionLabel}>Öğretmen notu</Text>
+                {/* The canonical category, in the canonical words and mark —
+                    attentionCategoryLabel/Glyph, the ones Sınıf Performansı
+                    prints. No second vocabulary, no new severity. */}
+                <StatusLabel
+                  icon={attentionGlyph.icon}
+                  tone={attentionGlyph.tone}
+                  textStyle={styles.attentionState}
+                >
+                  {attentionCategoryLabel(attention.category)}
+                </StatusLabel>
                 {attention.reasons.map((reason) => (
                   <Text key={reason} style={styles.bodyText}>
                     {reason}
@@ -240,10 +290,22 @@ export function StudentPerformanceScreen({ classId, studentId, studentName }: St
               </Card>
             ) : null}
 
-            <Card style={styles.summaryCard}>
+            {/* Phase 124 — the rate is a fact among the others now, not the
+                screen's hero. It kept its exact meaning (solved outcomes over
+                every recorded outcome — see studentPerformance.ts), its label
+                and its honest "—" for a student with no trustworthy history;
+                what it lost is the 40pt centred card that made "how good is
+                this student" the loudest question on a screen whose job is
+                what the evidence actually says. */}
+            <Card style={styles.card}>
               <Text style={styles.sectionLabel}>Genel başarı</Text>
-              <Text style={styles.bigValue}>
+              <Text style={styles.bigValueSmall}>
                 {snapshot.successRatePercent === null ? "—" : `%${snapshot.successRatePercent}`}
+              </Text>
+              <Text style={styles.bodyTextMuted}>
+                {snapshot.successRatePercent === null
+                  ? "Henüz yeterli veri yok"
+                  : "kaydedilen sonuçlara göre"}
               </Text>
             </Card>
           </View>
@@ -281,7 +343,7 @@ export function StudentPerformanceScreen({ classId, studentId, studentName }: St
               ) : null}
             </Card>
 
-            <View style={styles.row}>
+            <View style={[styles.row, stacked ? styles.rowStacked : null]}>
               <Card style={styles.halfCard}>
                 <Text style={styles.sectionLabel}>Tekrar durumu</Text>
                 <Text style={styles.bigValueSmall}>{snapshot.dueCount}</Text>
@@ -480,6 +542,11 @@ const styles = themedStyles(() => ({
     justifyContent: "center",
     marginLeft: -spacing.sm,
   },
+  // Stacked, the 44pt chevron tops-align with a title that now wraps rather
+  // than centring against two or three lines of it.
+  headerStacked: {
+    alignItems: "flex-start",
+  },
   title: {
     ...typography.title,
     color: colors.textPrimary,
@@ -513,21 +580,29 @@ const styles = themedStyles(() => ({
   group: {
     gap: spacing.sm,
   },
-  summaryCard: {
-    alignItems: "center",
-    gap: spacing.xs,
-    paddingVertical: spacing.xl,
-  },
   card: {
     gap: spacing.xxs,
   },
   attentionCard: {
     gap: spacing.xxs,
     backgroundColor: colors.surfaceMuted,
+    // The tone is supplied per render; only the edge itself lives here. It
+    // follows the card's own corner radius rather than squaring it off, so the
+    // note still reads as one of the page's cards.
+    borderLeftWidth: 3,
+  },
+  attentionState: {
+    ...typography.bodyStrong,
+    color: colors.textPrimary,
   },
   row: {
     flexDirection: "row",
     gap: spacing.sm,
+  },
+  // Past the accessibility sizes the two tiles take the width one after the
+  // other instead of splitting it and breaking their words in half.
+  rowStacked: {
+    flexDirection: "column",
   },
   halfCard: {
     flex: 1,
@@ -538,23 +613,16 @@ const styles = themedStyles(() => ({
     color: colors.textTertiary,
     textTransform: "uppercase",
   },
-  bigValue: {
-    ...typography.displayLg,
-    // Phase 103 (D11) — displayLg's 34pt line box belongs to its own 28pt
-    // size. Raising fontSize without raising lineHeight left a 40/34 box, and
-    // iOS clamps the line to that height: the ascender was trimmed and the
-    // top of the "%" glyph — the tallest thing on the line — was sliced off
-    // on device and in the simulator. The line box stays proportional to the
-    // size it is actually drawn at.
-    fontSize: 40,
-    lineHeight: 50,
-    color: colors.primary,
-  },
+  // Phase 103 (D11) — a style that spreads a typography token and then raises
+  // `fontSize` keeps the token's ORIGINAL `lineHeight` unless it raises that
+  // too, and iOS clamps the line to it: title's 24pt box exactly equalled this
+  // 24pt size, leaving no ascender room at all. It escaped notice only because
+  // the call sites render plain digits — a "%" or a "Ş" would have been sliced
+  // off, which is exactly what happened to the 40pt hero this screen used to
+  // draw the success rate with (Phase 124 retired it; see the card above).
+  // The line box stays proportional to the size it is actually drawn at.
   bigValueSmall: {
     ...typography.title,
-    // Same mismatch, less visible: title's 24pt line box exactly equalled this
-    // 24pt size, leaving no ascender room at all. It only escaped notice
-    // because both call sites render plain digits.
     fontSize: 24,
     lineHeight: 30,
     color: colors.textPrimary,

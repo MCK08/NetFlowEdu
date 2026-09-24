@@ -44,6 +44,27 @@ export function attentionCategoryGlyph(category: AttentionCategory): StatusGlyph
   }
 }
 
+/** The teacher-facing WORD for an attention category, for the mark above to
+ *  sit beside. Phase 124 — lifted out of Sınıf Performansı, which owned the
+ *  only copy: one student's own screen now names their state too, and two
+ *  private switch statements are how the class list and the student screen
+ *  would start calling the same category different things. The words are
+ *  unchanged, and none of them is a score or a rank. */
+export function attentionCategoryLabel(category: AttentionCategory): string {
+  switch (category) {
+    case "needs_attention":
+      return "Dikkat gereken";
+    case "watch":
+      return "İzlemede";
+    case "progressing":
+      return "İlerliyor";
+    case "strong":
+      return "Güçlü";
+    case "insufficient_data":
+      return "Yetersiz veri";
+  }
+}
+
 /** A learning trend, for the class as a whole and for one student. Null when
  *  there is no trend to draw — the caller shows its "not enough data" sentence
  *  with no mark, exactly as before. */
