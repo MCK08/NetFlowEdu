@@ -60,17 +60,16 @@ export const StudentPerformanceCard = memo(function StudentPerformanceCard({
       <Card style={styles.card}>
         <View style={styles.headerRow}>
           <Avatar photoURL={card.photoURL} displayName={card.displayName} size="md" />
+          {/* Phase 125 — all three lines used to be capped at one line, so a
+              real Turkish name was truncated mid-name and the stats line lost
+              its last fact at the accessibility sizes. The row is the whole
+              card and grows with its text; nothing here has a fixed height. */}
           <View style={styles.textColumn}>
-            <Text style={styles.name} numberOfLines={1}>
-              {card.displayName}
-            </Text>
-            <Text style={styles.statsLine} numberOfLines={1}>
+            <Text style={styles.name}>{card.displayName}</Text>
+            <Text style={styles.statsLine}>
               {successLabel} · {snapshot.dueCount} tekrar · {snapshot.weakTopics.length} zayıf konu
             </Text>
-            <Text
-              style={[styles.statsLine, snapshot.thisWeek.studiedThisWeek ? null : styles.inactiveWeek]}
-              numberOfLines={1}
-            >
+            <Text style={[styles.statsLine, snapshot.thisWeek.studiedThisWeek ? null : styles.inactiveWeek]}>
               {weekLabel}
             </Text>
           </View>
@@ -96,7 +95,9 @@ const styles = themedStyles(() => ({
   },
   headerRow: {
     flexDirection: "row",
-    alignItems: "center",
+    // Phase 125 — the name and its two stat lines wrap now; centring a 48pt
+    // avatar against a four-line column floats it in the middle of nothing.
+    alignItems: "flex-start",
     gap: spacing.sm,
   },
   textColumn: {

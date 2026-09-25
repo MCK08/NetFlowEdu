@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
-import { FlatList, Pressable, Text, View } from "react-native";
+import { FlatList, Pressable, Text, useWindowDimensions, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { Card } from "@components/ui/Card";
@@ -22,11 +22,13 @@ import { LearningTrend } from "@features/study/services/learningTrend";
 import { colors } from "@theme/colors";
 import { contentWidth } from "@theme/layout";
 import { radius } from "@theme/radius";
+import { iconSize, minTouchTarget, stackAtFontScale } from "@theme/sizes";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
 import { themedStyles } from "@theme/themeRuntime";
 
 import { ClassConceptHeatmapSection } from "../components/ClassConceptHeatmapSection";
+import { ClassPerformanceIdentity } from "../components/ClassPerformanceIdentity";
 import { ClassSemanticCohortSection } from "../components/ClassSemanticCohortSection";
 import { ClassTopicComposerModals } from "../components/ClassTopicComposerModals";
 import { StudentPerformanceCard } from "../components/StudentPerformanceCard";
@@ -60,6 +62,13 @@ interface ClassPerformanceScreenProps {
 }
 
 type FilterValue = AttentionCategory | "all";
+
+// Phase 125 — the headings this screen's own sections carry. The class's
+// attention list keeps the Action Center's canonical title
+// (ACTION_CENTER_TITLE); these name the readings around it.
+export const CLASS_STATE_TITLE = "Sınıf Durumu";
+export const TOPIC_VIEW_TITLE = "Konu Görünümü";
+export const STUDENT_STATES_TITLE = "Öğrenci Durumları";
 
 // The order the chips have always appeared in — worst first, unknown last.
 const ATTENTION_FILTER_ORDER: readonly AttentionCategory[] = [
@@ -140,6 +149,12 @@ export function ClassPerformanceScreen({ classId }: ClassPerformanceScreenProps)
     refresh,
   } = useClassPerformance(classId);
   const summary = buildClassPerformanceSummary(cards);
+  // Phase 125 — past the accessibility sizes a row of three Turkish stat
+  // labels ("desteğe ihtiyacı olan") and a pair of inline topic actions stop
+  // fitting without breaking words in half; both take the width one after
+  // the other instead. Same fix Phase 124 made for the student screen's pair.
+  const { fontScale } = useWindowDimensions();
+  const stacked = fontScale >= stackAtFontScale;
   const [filter, setFilter] = useState<FilterValue>("all");
   const [expandedHotspot, setExpandedHotspot] = useState<string | null>(null);
 
@@ -458,12 +473,19 @@ export function ClassPerformanceScreen({ classId }: ClassPerformanceScreenProps)
           }
           ListHeaderComponent={
             <View style={styles.headerSections}>
+              {/* WHICH CLASS — Phase 125. The screen's title is its own name;
+                  the class is named here, from the document useClassTopicComposer
+                  already read for its organizationId. */}
+              <ClassPerformanceIdentity classRoom={topicComposer.classRoom} />
+
               {/* Phase 73 — the Action Center supersedes the Phase 27 action
                   summary block that stood here: it renders those SAME hotspot
                   and student actions plus Phase 47's post-intervention
                   follow-ups and escalations, which previously only existed on
                   each student's own screen. Rendering both would have shown
-                  the same hotspot twice. */}
+                  the same hotspot twice.
+                  Phase 125 — it stays first among the readings: what needs the
+                  teacher now, before any count of how the class is doing. */}
               <TeacherActionCenterSection
                 items={actionCenter.summary.items}
                 onOpenStudent={openStudent}
@@ -475,81 +497,111 @@ export function ClassPerformanceScreen({ classId }: ClassPerformanceScreenProps)
                 }
               />
 
-              {/* Phase 73 — where the class's signals concentrate, by topic.
-                  Derived from evidence useClassPerformance already loaded;
-                  detail opens on tap so the scan surface stays scannable. */}
-              <ClassConceptHeatmapSection
-                heatmap={conceptHeatmap}
-                onOpenStudent={openStudent}
-              />
-
-              {/* Phase 81 — where SEVERAL students independently met the same
-                  shared authored meaning. A third, distinct question from the
-                  two above it: the Action Center says what needs attention now,
-                  the heatmap says how concept states are distributed, and this
-                  says where a single shared instructional focus would reach
-                  more than one person at once. */}
-              <ClassSemanticCohortSection
-                summary={semanticCohorts}
-                isLoading={isLoadingCohorts}
-                hasError={cohortsFailed}
-                onOpenStudent={openStudent}
-                onDraftSmallGroup={openSmallGroupDraft}
-                onManageVocabulary={openSemanticVocabulary}
-              />
-
-              {/* CLASS HEALTH */}
-              <View style={styles.summaryCard}>
-                <Text style={styles.summaryStudentCount}>{summary.studentCount} öğrenci</Text>
-                <View style={styles.summaryRow}>
-                  <SummaryStat
-                    value={summary.averageSuccessRatePercent === null ? "—" : `%${summary.averageSuccessRatePercent}`}
-                    label="ortalama başarı"
-                  />
-                  <SummaryStat value={String(summary.totalDueCount)} label="bekleyen tekrar" />
-                  <SummaryStat
-                    value={String(summary.needsSupportCount)}
-                    label="desteğe ihtiyacı olan"
-                    tone={summary.needsSupportCount > 0 ? "danger" : "neutral"}
-                  />
-                </View>
-                {trendGlyph ? (
-                  <StatusLabel icon={trendGlyph.icon} tone={trendGlyph.tone} textStyle={styles.trendLine}>
-                    {classTrendLabel(trend)}
-                  </StatusLabel>
-                ) : (
-                  <Text style={styles.trendLine}>{classTrendLabel(trend)}</Text>
-                )}
-              </View>
-
-              <View style={styles.healthRow}>
-                {(Object.keys(categoryCounts) as AttentionCategory[])
-                  .filter((category) => category !== "insufficient_data" || categoryCounts[category] > 0)
-                  .map((category) => (
-                    <View
-                      key={category}
-                      style={styles.healthChip}
-                      // Phase 104 (B6) — one spoken unit per chip, count and
-                      // category together, instead of two loose text nodes.
-                      accessible
-                      accessibilityLabel={`${categoryCounts[category]} ${attentionCategoryLabel(category)}`}
-                    >
-                      <StatusLabel
-                        icon={attentionCategoryGlyph(category).icon}
-                        tone={attentionCategoryGlyph(category).tone}
-                        textStyle={styles.healthChipValue}
+              {/* CLASS HEALTH — Phase 125: the canonical categories first, the
+                  numbers after them. The three figures are unchanged
+                  (buildClassPerformanceSummary), and the average keeps its
+                  honest "—"; what changed is that a count of how many students
+                  need attention now reads before "ortalama başarı", and the
+                  row stacks instead of breaking its Turkish labels in half at
+                  the accessibility sizes. */}
+              <View style={styles.section}>
+                <SectionHeader title={CLASS_STATE_TITLE} />
+                <View style={styles.healthRow}>
+                  {(Object.keys(categoryCounts) as AttentionCategory[])
+                    .filter((category) => category !== "insufficient_data" || categoryCounts[category] > 0)
+                    .map((category) => (
+                      <View
+                        key={category}
+                        style={styles.healthChip}
+                        // Phase 104 (B6) — one spoken unit per chip, count and
+                        // category together, instead of two loose text nodes.
+                        accessible
+                        accessibilityLabel={`${categoryCounts[category]} ${attentionCategoryLabel(category)}`}
                       >
-                        {String(categoryCounts[category])}
-                      </StatusLabel>
-                      <Text style={styles.healthChipLabel}>{attentionCategoryLabel(category)}</Text>
-                    </View>
-                  ))}
+                        <StatusLabel
+                          icon={attentionCategoryGlyph(category).icon}
+                          tone={attentionCategoryGlyph(category).tone}
+                          textStyle={styles.healthChipValue}
+                        >
+                          {String(categoryCounts[category])}
+                        </StatusLabel>
+                        <Text style={styles.healthChipLabel}>{attentionCategoryLabel(category)}</Text>
+                      </View>
+                    ))}
+                </View>
+
+                <View style={styles.summaryCard}>
+                  <Text style={styles.summaryStudentCount}>{summary.studentCount} öğrenci</Text>
+                  <View style={[styles.summaryRow, stacked ? styles.summaryRowStacked : null]}>
+                    <SummaryStat value={String(summary.totalDueCount)} label="bekleyen tekrar" />
+                    <SummaryStat
+                      value={String(summary.needsSupportCount)}
+                      label="desteğe ihtiyacı olan"
+                      tone={summary.needsSupportCount > 0 ? "danger" : "neutral"}
+                    />
+                    <SummaryStat
+                      value={summary.averageSuccessRatePercent === null ? "—" : `%${summary.averageSuccessRatePercent}`}
+                      label="ortalama başarı"
+                    />
+                  </View>
+                  {trendGlyph ? (
+                    <StatusLabel icon={trendGlyph.icon} tone={trendGlyph.tone} textStyle={styles.trendLine}>
+                      {classTrendLabel(trend)}
+                    </StatusLabel>
+                  ) : (
+                    <Text style={styles.trendLine}>{classTrendLabel(trend)}</Text>
+                  )}
+                </View>
               </View>
 
-              {/* TOPIC HOTSPOTS */}
-              {topicHotspots.length > 0 ? (
+              {/* STUDENT ATTENTION */}
+              {priorityStudents.length > 0 ? (
                 <View style={styles.section}>
-                  <SectionHeader title="Konu Sıcak Noktaları" />
+                  <SectionHeader title="Öncelikli Öğrenciler" />
+                  <View style={styles.priorityList}>
+                    {priorityStudents.map((student) => (
+                      <Pressable
+                        key={student.studentUid}
+                        onPress={() => openStudent(student.studentUid)}
+                        style={styles.priorityRow}
+                        accessibilityRole="button"
+                        // Phase 104 (B6) — the category used to be conveyed
+                        // by the emoji alone; the spoken row now names it.
+                        accessibilityLabel={`${student.displayName}. ${attentionCategoryLabel(student.insight.category)}. ${student.insight.reasons[0] ?? ""}`}
+                      >
+                        <StatusLabel
+                          icon={attentionCategoryGlyph(student.insight.category).icon}
+                          tone={attentionCategoryGlyph(student.insight.category).tone}
+                          textStyle={styles.priorityName}
+                        >
+                          {student.displayName}
+                        </StatusLabel>
+                        <Text style={styles.priorityReason}>{student.insight.reasons[0]}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                </View>
+              ) : null}
+
+              {/* KONU GÖRÜNÜMÜ — Phase 125. Three canonical readings of the
+                  class's topics, which used to sit apart with nothing saying
+                  they answered the same question: how concept states are
+                  distributed (Phase 70), where the signals concentrate
+                  (hotspots), and where one shared authored meaning would reach
+                  several students at once (Phase 81). Same sources, same
+                  order, one heading. */}
+              <View style={styles.section}>
+                <SectionHeader title={TOPIC_VIEW_TITLE} />
+
+                {/* Phase 73 — where the class's signals concentrate, by topic.
+                    Derived from evidence useClassPerformance already loaded;
+                    detail opens on tap so the scan surface stays scannable. */}
+                <ClassConceptHeatmapSection
+                  heatmap={conceptHeatmap}
+                  onOpenStudent={openStudent}
+                />
+
+                {topicHotspots.length > 0 ? (
                   <View style={styles.hotspotList}>
                     {topicHotspots.map((hotspot) => {
                       const key = topicKey(hotspot.subject, hotspot.topic);
@@ -596,14 +648,15 @@ export function ClassPerformanceScreen({ classId }: ClassPerformanceScreenProps)
                               </Text>
                             ) : null}
                           </Pressable>
-                          <View style={styles.hotspotActionRow}>
+                          <View style={[styles.hotspotActionRow, stacked ? styles.hotspotActionRowStacked : null]}>
                             <Pressable
                               onPress={() => openComposerForTopic(hotspot.subject, hotspot.topic, hotspot.gradeLevel)}
                               style={styles.hotspotCreateButton}
                               accessibilityRole="button"
                               accessibilityLabel={`${hotspot.topic} konusundan soru oluştur`}
                             >
-                              <Ionicons name="add-circle-outline" size={16} color={colors.primary} />
+                              {/* Decorative: the control is labelled in words. */}
+                              <Ionicons name="add-circle-outline" size={iconSize.sm} color={colors.primary} accessibilityElementsHidden />
                               <Text style={styles.hotspotCreateButtonText}>Soru Oluştur</Text>
                             </Pressable>
                             <Pressable
@@ -612,7 +665,7 @@ export function ClassPerformanceScreen({ classId }: ClassPerformanceScreenProps)
                               accessibilityRole="button"
                               accessibilityLabel={`${hotspot.topic} konusunda ödev oluştur`}
                             >
-                              <Ionicons name="clipboard-outline" size={16} color={colors.primary} />
+                              <Ionicons name="clipboard-outline" size={iconSize.sm} color={colors.primary} accessibilityElementsHidden />
                               <Text style={styles.hotspotCreateButtonText}>Ödev Oluştur</Text>
                             </Pressable>
                           </View>
@@ -631,37 +684,23 @@ export function ClassPerformanceScreen({ classId }: ClassPerformanceScreenProps)
                       );
                     })}
                   </View>
-                </View>
-              ) : null}
+                ) : null}
 
-              {/* STUDENT ATTENTION */}
-              {priorityStudents.length > 0 ? (
-                <View style={styles.section}>
-                  <SectionHeader title="Öncelikli Öğrenciler" />
-                  <View style={styles.priorityList}>
-                    {priorityStudents.map((student) => (
-                      <Pressable
-                        key={student.studentUid}
-                        onPress={() => openStudent(student.studentUid)}
-                        style={styles.priorityRow}
-                        accessibilityRole="button"
-                        // Phase 104 (B6) — the category used to be conveyed
-                        // by the emoji alone; the spoken row now names it.
-                        accessibilityLabel={`${student.displayName}. ${attentionCategoryLabel(student.insight.category)}. ${student.insight.reasons[0] ?? ""}`}
-                      >
-                        <StatusLabel
-                          icon={attentionCategoryGlyph(student.insight.category).icon}
-                          tone={attentionCategoryGlyph(student.insight.category).tone}
-                          textStyle={styles.priorityName}
-                        >
-                          {student.displayName}
-                        </StatusLabel>
-                        <Text style={styles.priorityReason}>{student.insight.reasons[0]}</Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                </View>
-              ) : null}
+                {/* Phase 81 — where SEVERAL students independently met the same
+                    shared authored meaning. A third, distinct question from the
+                    two above it: the Action Center says what needs attention now,
+                    the heatmap says how concept states are distributed, and this
+                    says where a single shared instructional focus would reach
+                    more than one person at once. */}
+                <ClassSemanticCohortSection
+                  summary={semanticCohorts}
+                  isLoading={isLoadingCohorts}
+                  hasError={cohortsFailed}
+                  onOpenStudent={openStudent}
+                  onDraftSmallGroup={openSmallGroupDraft}
+                  onManageVocabulary={openSemanticVocabulary}
+                />
+              </View>
 
               {/* ASSIGNMENTS (§11) */}
               <View style={styles.section}>
@@ -699,16 +738,24 @@ export function ClassPerformanceScreen({ classId }: ClassPerformanceScreenProps)
                 )}
               </View>
 
-              {/* FILTERS */}
-              <View style={styles.filterRow}>
-                {FILTERS.map((option) => (
-                  <Chip
-                    key={option.value}
-                    label={option.label}
-                    selected={filter === option.value}
-                    onPress={() => setFilter(option.value)}
-                  />
-                ))}
+              {/* ÖĞRENCİ DURUMLARI — Phase 125. The filter chips belonged to
+                  the list they narrow but sat under "Ödevler" with nothing
+                  naming them; the heading says what the rest of this screen
+                  is now, and the chips sit directly above their own list.
+                  Filtering is unchanged: a subsequence of the canonical
+                  order, chosen locally from already-loaded cards. */}
+              <View style={styles.section}>
+                <SectionHeader title={STUDENT_STATES_TITLE} />
+                <View style={styles.filterRow}>
+                  {FILTERS.map((option) => (
+                    <Chip
+                      key={option.value}
+                      label={option.label}
+                      selected={filter === option.value}
+                      onPress={() => setFilter(option.value)}
+                    />
+                  ))}
+                </View>
               </View>
             </View>
           }
@@ -819,6 +866,12 @@ const styles = themedStyles(() => ({
   summaryRow: {
     flexDirection: "row",
     justifyContent: "space-between",
+    gap: spacing.sm,
+  },
+  summaryRowStacked: {
+    flexDirection: "column",
+    justifyContent: "flex-start",
+    gap: spacing.xs,
   },
   summaryStat: {
     alignItems: "flex-start",
@@ -868,11 +921,19 @@ const styles = themedStyles(() => ({
     gap: spacing.md,
     marginTop: spacing.xxs,
   },
+  hotspotActionRowStacked: {
+    flexDirection: "column",
+    gap: spacing.xxs,
+    alignItems: "flex-start",
+  },
   hotspotCreateButton: {
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.xxs,
     alignSelf: "flex-start",
+    // Phase 125 — these were icon-and-caption rows with no height of their
+    // own: a real control under the 44pt floor.
+    minHeight: minTouchTarget,
   },
   hotspotCreateButtonText: {
     ...typography.caption,

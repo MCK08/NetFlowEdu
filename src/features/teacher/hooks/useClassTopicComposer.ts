@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { getClassById } from "@services/firebase/classes";
+import type { ClassRoom } from "@/types/class";
 import { Question } from "@/types/question";
 
 import { ActionCenterComposerContext } from "../services/actionCenterNavigation";
@@ -25,6 +26,10 @@ import { useTeacherQuestionComposer } from "./useTeacherQuestionComposer";
 
 export interface ClassTopicComposer {
   composer: ReturnType<typeof useTeacherQuestionComposer>;
+  /** Phase 125 — the class document this hook already reads for its
+   *  organizationId, kept whole so a screen can name the class without a
+   *  second fetch. Null until that one read resolves. */
+  classRoom: ClassRoom | null;
   /** What the metadata sheet is prefilled with. Null for an unprefilled open. */
   topicContext: ActionCenterComposerContext | null;
   /** Prefill and open. Phase 43: gradeLevel is null when the topic's own
@@ -41,7 +46,7 @@ export function useClassTopicComposer(params: {
 }): ClassTopicComposer {
   const { classId, uid, onUploaded } = params;
 
-  // ONE read: the class doc's own organizationId, needed to satisfy
+  // ONE read: the class document, for the organizationId that satisfies
   // uploadClassQuestionImage's existing required parameter (the exact same
   // field useClassUpload/useStudentQuestionUpload already require).
   // useClassPerformance's own `getClassMembers` read doesn't carry
@@ -49,16 +54,24 @@ export function useClassTopicComposer(params: {
   // already-loaded value to reuse — a single classes/{classId} get() is the
   // smallest correct source. Read once per screen mount, not per composer
   // open, because openComposer refuses to start without it.
-  const [organizationId, setOrganizationId] = useState<string | null>(null);
+  //
+  // Phase 125 — the WHOLE document is kept now rather than one field of it.
+  // Sınıf Performansı has no class identity at all, and the smallest honest
+  // way to give it one is the read this hook was already paying for: a
+  // second getClassById for the name would be the duplicate class fetch the
+  // phase forbids. Still one read, still on mount; `classRoom` is null until
+  // it resolves, so nothing draws a placeholder name.
+  const [classRoom, setClassRoom] = useState<ClassRoom | null>(null);
   useEffect(() => {
     let cancelled = false;
     getClassById(classId).then((room) => {
-      if (!cancelled) setOrganizationId(room?.organizationId ?? null);
+      if (!cancelled) setClassRoom(room);
     });
     return () => {
       cancelled = true;
     };
   }, [classId]);
+  const organizationId = classRoom?.organizationId ?? null;
 
   const [topicContext, setTopicContext] = useState<ActionCenterComposerContext | null>(null);
 
@@ -76,6 +89,7 @@ export function useClassTopicComposer(params: {
 
   return {
     composer,
+    classRoom,
     topicContext,
     openForTopic,
     isOpen: composer.isSourcePickerOpen || composer.pickedImageUri !== null,
