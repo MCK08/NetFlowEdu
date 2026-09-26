@@ -18,7 +18,6 @@ import { resolveAssignmentDisplayStatus } from "@features/assignments/services/a
 import { selectRecentTopicAssignments } from "@features/assignments/services/assignmentHistorySignals";
 import { useClassSemanticDefinitions } from "@features/questions/hooks/useClassSemanticDefinitions";
 import type { SemanticDefinitionInput } from "@features/questions/services/semanticDefinition";
-import { LearningTrend } from "@features/study/services/learningTrend";
 import { colors } from "@theme/colors";
 import { contentWidth } from "@theme/layout";
 import { radius } from "@theme/radius";
@@ -45,7 +44,12 @@ import { useClassSemanticCohorts } from "../hooks/useClassSemanticCohorts";
 import { useClassTopicComposer } from "../hooks/useClassTopicComposer";
 import { ClassSemanticCohort } from "../services/classSemanticCohorts";
 import { ClassTopicHotspot } from "../services/classTopicInsights";
-import { attentionCategoryGlyph, attentionCategoryLabel, learningTrendGlyph } from "../services/statusGlyphs";
+import {
+  attentionCategoryGlyph,
+  attentionCategoryLabel,
+  classTrendLabel,
+  learningTrendGlyph,
+} from "../services/statusGlyphs";
 import {
   AttentionCategory,
   StudentAttentionCard,
@@ -89,21 +93,6 @@ const FILTERS: { value: FilterValue; label: string }[] = [
     label: attentionCategoryLabel(category),
   })),
 ];
-
-// Phase 104 — the words only; the mark comes from learningTrendGlyph so the
-// class line and the student line draw the same trend the same way.
-function classTrendLabel(trend: LearningTrend): string {
-  switch (trend) {
-    case "improving":
-      return "Sınıf geneli gelişiyor";
-    case "declining":
-      return "Sınıf geneli geriliyor";
-    case "stable":
-      return "Sınıf geneli sabit";
-    case "insufficient_data":
-      return "Sınıf trendi için henüz yeterli veri yok";
-  }
-}
 
 // Phase 104 (B6) — the status word an assignment row shows AND speaks. The
 // accessibility label used to read the raw enum ("past_due", "draft") to a

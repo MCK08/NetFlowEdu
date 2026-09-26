@@ -81,6 +81,25 @@ export function learningTrendGlyph(trend: LearningTrend): StatusGlyph | null {
   }
 }
 
+/** The teacher-facing WORD for a class-wide trend, for learningTrendGlyph's
+ *  mark to sit beside. Phase 126 — lifted out of Sınıf Performansı, which
+ *  owned the only copy: the class's progress story states the same trend, and
+ *  two private switch statements are how the two screens would start
+ *  describing the same class differently. The words are unchanged, and every
+ *  one of them reports what was observed — never why it happened. */
+export function classTrendLabel(trend: LearningTrend): string {
+  switch (trend) {
+    case "improving":
+      return "Sınıf geneli gelişiyor";
+    case "declining":
+      return "Sınıf geneli geriliyor";
+    case "stable":
+      return "Sınıf geneli sabit";
+    case "insufficient_data":
+      return "Sınıf trendi için henüz yeterli veri yok";
+  }
+}
+
 /** The verdict on the last intervention (Phase 44). */
 export function interventionEffectivenessGlyph(effectiveness: InterventionEffectiveness): StatusGlyph | null {
   switch (effectiveness) {
