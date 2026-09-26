@@ -28,6 +28,7 @@ const SCREEN = "src/features/teacher/screens/ClassPerformanceScreen.tsx";
 const IDENTITY = "src/features/teacher/components/ClassPerformanceIdentity.tsx";
 const STUDENT_ROW = "src/features/teacher/components/StudentPerformanceCard.tsx";
 const COMPOSER = "src/features/teacher/hooks/useClassTopicComposer.ts";
+const CHIP = "src/components/ui/Chip.tsx";
 const PHASE_125_UI = [SCREEN, IDENTITY, STUDENT_ROW];
 
 function styleBlock(source: string, name: string): string {
@@ -280,6 +281,32 @@ describe("§45 accessibility: nothing clips, nothing is colour-only", () => {
   it("keeps every control at the 44pt floor", () => {
     expect(styleBlock(code(SCREEN), "hotspotCreateButton")).toContain("minHeight: minTouchTarget");
     expect(styleBlock(code(SCREEN), "backButton")).toContain("minHeight: 44");
+  });
+
+  it("gives the filter chips a real 44pt target, without growing the pill", () => {
+    // Phase 125 completion QA — the filter row is the one control this screen
+    // draws with the shared Chip, and a selectable chip was a 24pt target
+    // (caption's 16pt line inside 4pt of padding): reproducibly missed on
+    // device at the text sizes most people use, where the pill does not grow
+    // on its own. The floor is met with slop, so the eight screens that draw
+    // this pill keep its exact size.
+    const chip = code(CHIP);
+    const padding = Number(styleBlock(chip, "container").match(/paddingVertical:\s*spacing\.(\w+)/)?.[1] === "xxs" ? 4 : NaN);
+    expect(padding).toBe(4);
+    const slop = chip.match(/const INTERACTIVE_HIT_SLOP = \{([^}]*)\}/)?.[1] ?? "";
+    const top = Number(slop.match(/top:\s*(\d+)/)?.[1]);
+    const bottom = Number(slop.match(/bottom:\s*(\d+)/)?.[1]);
+    // caption line box (16) + padding both sides + slop both sides.
+    expect(16 + padding * 2 + top + bottom).toBeGreaterThanOrEqual(44);
+    // Only the pressable form is a target; a static tag gets no slop.
+    expect(chip).toContain("hitSlop={INTERACTIVE_HIT_SLOP}");
+    const staticBranch = chip.slice(chip.indexOf("if (!onPress)"), chip.indexOf("return ("));
+    expect(staticBranch).not.toContain("hitSlop");
+    // The pill itself did not move.
+    expect(styleBlock(chip, "container")).not.toMatch(/minHeight|height:/);
+    // And the screen still renders its filters through that shared primitive.
+    expect(code(SCREEN)).toContain("<Chip");
+    expect(code(SCREEN)).toContain("onPress={() => setFilter(option.value)}");
   });
 
   it("states every status in words as well as tone, and hides its decoration", () => {
