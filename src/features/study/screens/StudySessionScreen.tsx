@@ -59,6 +59,11 @@ interface StudySessionScreenProps {
   assignmentId?: string;
 }
 
+// Phase 129 — the two assignment states a student can reach from a stale
+// link. Exported so the copy is pinned in one place.
+export const ASSIGNMENT_UNAVAILABLE_TITLE = "Bu çalışma şu an açık değil";
+export const ASSIGNMENT_GONE_TITLE = "Bu çalışma artık mevcut değil";
+
 // Module-level: the platform cannot change while the app is running, so this
 // is a constant, not per-render state. See shouldAnimateSessionScroll for the
 // measured reason web opts out of the animated scroll.
@@ -307,6 +312,11 @@ export function StudySessionScreen({ mode, assignmentId }: StudySessionScreenPro
     !assignmentSession.isLoading &&
     assignmentSession.questions.length === 0 &&
     !isAssignmentComplete;
+  // Phase 129 — an assignment that was deleted, or that this student was never
+  // sent (a draft) or that was withdrawn (archived), opened from a stale link.
+  // Neither is "no valid questions", and neither is an error worth retrying.
+  const isAssignmentGone = isAssignmentMode && assignmentSession.notFound;
+  const isAssignmentUnavailable = isAssignmentMode && assignmentSession.unavailable;
 
   const header = (
     <View style={[styles.header, { paddingTop: insets.top + spacing.xs }]}>
@@ -325,7 +335,12 @@ export function StudySessionScreen({ mode, assignmentId }: StudySessionScreenPro
         <Text style={styles.headerProgress}>
           {adaptive.completion.confirmedCount} / {adaptive.completion.answerableCount}
         </Text>
-      ) : isAssignmentMode && assignmentProgress && !isAssignmentComplete && !isAssignmentEmpty ? (
+      ) : isAssignmentMode &&
+        assignmentProgress &&
+        !isAssignmentComplete &&
+        !isAssignmentEmpty &&
+        !isAssignmentGone &&
+        !isAssignmentUnavailable ? (
         <Text style={styles.headerProgress}>
           {assignmentProgress.completedCount} / {assignmentProgress.targetCount}
         </Text>
@@ -450,6 +465,33 @@ export function StudySessionScreen({ mode, assignmentId }: StudySessionScreenPro
         {header}
         <View style={styles.centered}>
           <ActivityIndicator color={colors.textPrimary} />
+        </View>
+      </View>
+    );
+  }
+
+  // Phase 129 — permanent: no retry, only the way back.
+  if (isAssignmentGone) {
+    return (
+      <View style={styles.flex}>
+        {header}
+        <View style={styles.centered}>
+          <EmptyState icon="document-outline" title={ASSIGNMENT_GONE_TITLE} />
+          <PrimaryButton label="Geri Dön" onPress={goBack} />
+        </View>
+      </View>
+    );
+  }
+
+  // Phase 129 — not this student's to solve: no card, no submission, no
+  // progress. The teacher has not sent it, or has withdrawn it.
+  if (isAssignmentUnavailable) {
+    return (
+      <View style={styles.flex}>
+        {header}
+        <View style={styles.centered}>
+          <EmptyState icon="lock-closed-outline" title={ASSIGNMENT_UNAVAILABLE_TITLE} />
+          <PrimaryButton label="Geri Dön" onPress={goBack} />
         </View>
       </View>
     );

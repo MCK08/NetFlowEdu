@@ -17,6 +17,7 @@ import { TeacherWorkRow } from "@features/teacher/components/TeacherWorkRow";
 import { useClassAttention } from "@features/teacher/hooks/useClassAttention";
 import { teacherStudentRoute } from "@features/teacher/services/actionCenterNavigation";
 import { upcomingAssignments } from "@features/teacher/services/teacherToday";
+import { selectDraftAssignments } from "@features/assignments/services/assignmentStatus";
 import { useNavigationGuard } from "@hooks/useNavigationGuard";
 import { colors } from "@theme/colors";
 import { radius } from "@theme/radius";
@@ -42,6 +43,7 @@ const GRID_COLUMNS = 3;
 
 export const CLASS_ATTENTION_TITLE = "Dikkat Gerektirenler";
 export const CLASS_WORK_TITLE = "Sınıf İşleri";
+export const CLASS_DRAFTS_TITLE = "Taslaklar";
 export const CLASS_STUDENTS_TITLE = "Öğrenciler";
 export const CLASS_QUESTIONS_TITLE = "Sınıf Soruları";
 export const CLASS_INSIGHT_TITLE = "Sınıfı İncele";
@@ -114,6 +116,10 @@ export function TeacherClassDetailScreen({ classId }: TeacherClassDetailScreenPr
     () => upcomingAssignments(attention.assignments, Date.now()),
     [attention.assignments],
   );
+  // Phase 129 — the class's saved drafts, from the same array (zero reads).
+  // The work list above is published-only on purpose; without this a draft
+  // could not be found again once the composer closed.
+  const drafts = useMemo(() => selectDraftAssignments(attention.assignments), [attention.assignments]);
 
   if (isLoading || !classRoom) {
     return (
@@ -263,6 +269,28 @@ export function TeacherClassDetailScreen({ classId }: TeacherClassDetailScreenPr
                   accessibilityHint="Otomatik incelemenin karar veremediği öğrenci yorumlarını açar"
                 />
               </View>
+              {drafts.length > 0 ? (
+                <View>
+                  <Text style={styles.subheading} accessibilityRole="header">
+                    {CLASS_DRAFTS_TITLE}
+                  </Text>
+                  {drafts.map((draft) => (
+                    <TeacherWorkRow
+                      key={draft.id}
+                      icon="document-outline"
+                      title={draft.title}
+                      detail={`Taslak · ${draft.targetCount} soru`}
+                      onPress={() =>
+                        go(`assignment-${draft.id}`, {
+                          pathname: "/(teacher)/class/[classId]/assignment/[assignmentId]",
+                          params: { classId, assignmentId: draft.id },
+                        })
+                      }
+                      accessibilityHint="Taslak çalışmanın ayrıntısını açar"
+                    />
+                  ))}
+                </View>
+              ) : null}
               {canWrite ? (
                 <PrimaryButton
                   label="Yeni Çalışma Oluştur"
@@ -365,6 +393,15 @@ const styles = themedStyles(() => ({
   },
   block: {
     gap: spacing.sm,
+  },
+  // Phase 129 — names the drafts group inside Sınıf İşleri; a caption-sized
+  // label, not a second section heading.
+  subheading: {
+    ...typography.caption,
+    fontWeight: "600",
+    color: colors.textTertiary,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.xxs,
   },
   loadingHeader: {
     paddingHorizontal: spacing.lg,

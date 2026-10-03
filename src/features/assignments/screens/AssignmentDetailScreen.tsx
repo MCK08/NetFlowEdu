@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useRef, useState } from "react";
-import { ScrollView, Text, useWindowDimensions, View } from "react-native";
+import { Alert, ScrollView, Text, useWindowDimensions, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AppBackButton } from "@components/ui/AppBackButton";
@@ -28,8 +28,11 @@ import { AssignmentResponseSummary } from "../components/AssignmentResponseSumma
 import { AssignmentStudentRow } from "../components/AssignmentStudentRow";
 import { useAssignmentDetail } from "../hooks/useAssignmentDetail";
 import { useAssignmentQuestions } from "../hooks/useAssignmentQuestions";
+import { usePublishAssignment } from "../hooks/usePublishAssignment";
+import { isPastDue } from "../services/assignmentDueDate";
 import { AssignmentFollowUpEntry, FollowUpReason } from "../services/assignmentFollowUp";
 import { AssignmentEffectiveness } from "../services/assignmentOutcomeInsights";
+import { buildPublishConfirmation } from "../services/assignmentPublishMessages";
 import {
   AssignmentDisplayStatus,
   assignmentStatusLabel,
@@ -46,6 +49,9 @@ interface AssignmentDetailScreenProps {
  *  the title now lives in the identity card, in full. */
 export const ASSIGNMENT_DETAIL_TITLE = "Çalışma Detayı";
 export const REVIEW_RESPONSES_LABEL = "Yanıtları İncele";
+/** Phase 129 — a draft's state and its one action. */
+export const DRAFT_NOTICE = "Bu çalışma henüz yayınlanmadı. Öğrenciler göremez.";
+export const PUBLISH_LABEL = "Yayınla";
 
 // Phase 104 — the words only; the mark comes from assignmentEffectivenessGlyph,
 // the same vocabulary the teacher's other verdict lines use.
@@ -121,6 +127,9 @@ export function AssignmentDetailScreen({ assignmentId }: AssignmentDetailScreenP
   const { fontScale } = useWindowDimensions();
   const stacked = fontScale >= stackAtFontScale;
   const outcomeGlyph = outcomeInsights ? assignmentEffectivenessGlyph(outcomeInsights.effectiveness) : null;
+  // Phase 129 — sending a saved draft. On success the detail re-reads the
+  // document, so what follows is the stored state, not a guess.
+  const publishing = usePublishAssignment(refresh);
 
   function selectTab(next: AssignmentDetailTab) {
     setTab(next);
@@ -134,6 +143,23 @@ export function AssignmentDetailScreen({ assignmentId }: AssignmentDetailScreenP
     // The ONE student destination (Phase 123/124), with the name this row
     // already resolved from the class roster.
     router.push(teacherStudentRoute(assignment.classId, row.studentUid, row.displayName));
+  }
+
+  // Phase 129 — never one tap: the teacher sees how many students this goes
+  // to and, when the stored deadline has already passed, that they will see
+  // it as late. Only "Yayınla" in the alert writes anything.
+  function confirmPublish() {
+    if (!assignment || publishing.isPublishing) return;
+    const confirmation = buildPublishConfirmation({
+      targetStudentCount: assignment.targetStudentIds.length,
+      isPastDue: isPastDue(assignment.dueAt, Date.now()),
+      dueDateLabel: formatDueDate(assignment.dueAt),
+    });
+    const id = assignment.id;
+    Alert.alert(confirmation.title, confirmation.message, [
+      { text: "Vazgeç", style: "cancel" },
+      { text: PUBLISH_LABEL, onPress: () => void publishing.publish(id) },
+    ]);
   }
 
   // System only ever SUGGESTS a follow-up (§12 "DO NOT AUTO-PUBLISH") — this
@@ -231,6 +257,10 @@ export function AssignmentDetailScreen({ assignmentId }: AssignmentDetailScreenP
   // No client write is permitted in an archived class, so the one action that
   // would end in one is not offered there.
   const canCreateFollowUp = followUp.length > 0 && classRoom?.status !== "archived";
+  // Phase 129 — a draft has not reached anyone: there are no responses to
+  // summarise, review or follow up, only an assignment to send.
+  const isDraft = assignment.status === "draft";
+  const isClassArchived = classRoom?.status === "archived";
 
   return (
     <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
@@ -253,6 +283,14 @@ export function AssignmentDetailScreen({ assignmentId }: AssignmentDetailScreenP
           {context ? <Text style={styles.context}>{context}</Text> : null}
         </View>
 
+        {isDraft ? (
+          <View style={styles.notice} accessible accessibilityLabel={DRAFT_NOTICE}>
+            {/* Decorative: the sentence says it. */}
+            <Ionicons name="eye-off-outline" size={iconSize.sm} color={colors.textSecondary} accessibilityElementsHidden />
+            <Text style={styles.noticeText}>{DRAFT_NOTICE}</Text>
+          </View>
+        ) : null}
+
         <AssignmentDetailTabs selected={tab} onSelect={selectTab} />
 
         {tab === "overview" ? (
@@ -267,6 +305,27 @@ export function AssignmentDetailScreen({ assignmentId }: AssignmentDetailScreenP
               ) : null}
             </View>
 
+            {isDraft ? (
+              <View style={styles.section}>
+                {isClassArchived ? (
+                  <Text style={styles.muted}>Bu sınıf arşivlendiği için çalışma yayınlanamaz.</Text>
+                ) : (
+                  <PrimaryButton
+                    label={PUBLISH_LABEL}
+                    onPress={confirmPublish}
+                    isLoading={publishing.isPublishing}
+                    accessibilityHint="Çalışmayı hedef öğrencilere gönderir"
+                  />
+                )}
+                {publishing.error ? (
+                  <Text style={styles.errorText} accessibilityRole="alert" accessibilityLiveRegion="polite">
+                    {publishing.error}
+                  </Text>
+                ) : null}
+              </View>
+            ) : null}
+
+            {isDraft ? null : (
             <View style={styles.section}>
               <SectionHeader title="Yanıt Durumu" />
               {hasStudents ? (
@@ -286,8 +345,9 @@ export function AssignmentDetailScreen({ assignmentId }: AssignmentDetailScreenP
                 <Text style={styles.muted}>Bu çalışma henüz bir öğrenciye atanmadı.</Text>
               )}
             </View>
+            )}
 
-            {outcomeInsights && outcomeInsights.effectiveness !== "insufficient_data" ? (
+            {!isDraft && outcomeInsights && outcomeInsights.effectiveness !== "insufficient_data" ? (
               <View style={styles.section}>
                 <SectionHeader title="Bu Çalışmada Ne Oldu?" />
                 <View style={styles.card}>
@@ -307,7 +367,7 @@ export function AssignmentDetailScreen({ assignmentId }: AssignmentDetailScreenP
               </View>
             ) : null}
 
-            {followUp.length > 0 ? (
+            {!isDraft && followUp.length > 0 ? (
               <View style={styles.section}>
                 <SectionHeader title="Takip Gerekenler" />
                 <View style={styles.card}>
@@ -332,7 +392,25 @@ export function AssignmentDetailScreen({ assignmentId }: AssignmentDetailScreenP
           </>
         ) : null}
 
-        {tab === "students" ? (
+        {tab === "students" && isDraft ? (
+          // Phase 129 — a draft has no responses: who it is for, and nothing
+          // that could read as progress on work nobody has been sent.
+          <View style={styles.section}>
+            <SectionHeader title={`Hedef Öğrenciler (${progress.totalStudents})`} />
+            <Text style={styles.muted}>Yayınlandığında öğrencilerin yanıtları burada görünür.</Text>
+            {hasStudents ? (
+              <View style={styles.card}>
+                {progress.rows.map((row) => (
+                  <Text key={row.studentUid} style={styles.targetName}>
+                    {row.displayName}
+                  </Text>
+                ))}
+              </View>
+            ) : null}
+          </View>
+        ) : null}
+
+        {tab === "students" && !isDraft ? (
           <View style={styles.section}>
             <SectionHeader title={`Öğrenci Yanıtları (${progress.totalStudents})`} />
             {hasStudents ? (
@@ -519,5 +597,29 @@ const styles = themedStyles(() => ({
   muted: {
     ...typography.body,
     color: colors.textTertiary,
+  },
+  // Phase 129 — the draft notice: calm, never a warning colour. Top-aligned so
+  // the mark stays beside the first line when the sentence wraps.
+  notice: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: spacing.xs,
+    padding: spacing.md,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surfaceMuted,
+  },
+  noticeText: {
+    ...typography.body,
+    color: colors.textSecondary,
+    flex: 1,
+    minWidth: 0,
+  },
+  errorText: {
+    ...typography.caption,
+    color: colors.danger,
+  },
+  targetName: {
+    ...typography.body,
+    color: colors.textPrimary,
   },
 }));

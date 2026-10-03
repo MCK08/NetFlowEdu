@@ -159,7 +159,9 @@ describe("§24 assignments are the assignment model's, not a second one", () => 
     const service = code("src/features/classes/services/classSocial.ts");
     // One rule, used by both the list and the line announcing one.
     expect(service).toContain("for (const assignment of selectClassAssignments(input.assignments, input.classId))");
-    expect(service).toContain('assignment.status === "published"');
+    // Phase 129 — the published rule now lives in ONE predicate every student
+    // surface shares; it is pinned behaviourally in assignmentDraftLifecycle.
+    expect(service).toContain("isAssignmentDeliveredToStudents(assignment)");
     expect(service).toContain("!assignment.interventionOf");
   });
 

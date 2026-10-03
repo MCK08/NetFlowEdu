@@ -1,4 +1,7 @@
 import type { Assignment } from "@features/assignments/domain/assignmentTypes";
+// Phase 129 — the class page's "published only" rule, now the same function
+// every other student surface asks.
+import { isAssignmentDeliveredToStudents } from "@features/assignments/services/assignmentStatus";
 import type { ClassMember } from "@/types/class";
 import type { Question } from "@/types/question";
 
@@ -79,7 +82,7 @@ export function selectClassAssignments(
     .filter(
       (assignment) =>
         assignment.classId === classId &&
-        assignment.status === "published" &&
+        isAssignmentDeliveredToStudents(assignment) &&
         !assignment.interventionOf &&
         isFiniteTimestamp(assignment.createdAt) &&
         Boolean(assignment.title?.trim()),

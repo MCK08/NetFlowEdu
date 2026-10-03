@@ -7,6 +7,7 @@ import { Question } from "@/types/question";
 
 import { AssignmentSubmission } from "../domain/assignmentTypes";
 import { getAssignmentById, getMySubmission, recordAssignmentProgress } from "../services/assignmentService";
+import { resolveAssignmentSessionAccess } from "../services/assignmentStatus";
 
 // Resolves one assignment's questionIds into real Question objects (via
 // the SAME shared studyMetadataCache the Learning Hub/Feed already warm —
@@ -21,6 +22,16 @@ export function useAssignmentSession(assignmentId: string | undefined, uid: stri
   const [submission, setSubmission] = useState<AssignmentSubmission | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Phase 129 — three answers that used to be one error string with a
+  // "Tekrar Dene" under it. A deleted assignment is permanent (retrying cannot
+  // bring it back); one that exists but was never sent, or was withdrawn, is
+  // not this student's to solve; only a failed load is worth retrying.
+  const [notFound, setNotFound] = useState(false);
+  const [unavailable, setUnavailable] = useState(false);
+  // Read by recordProgress, which must never write to an assignment this
+  // session has not confirmed is delivered — even if a stale card were to
+  // fire an outcome after the state changed.
+  const deliveredRef = useRef(false);
   const requestIdRef = useRef(0);
 
   const load = useCallback(async () => {
@@ -32,18 +43,31 @@ export function useAssignmentSession(assignmentId: string | undefined, uid: stri
     const requestId = ++requestIdRef.current;
     setIsLoading(true);
     setError(null);
+    setNotFound(false);
+    setUnavailable(false);
+    deliveredRef.current = false;
     try {
-      const [assignment, mySubmission] = await Promise.all([
-        getAssignmentById(assignmentId),
-        getMySubmission(assignmentId, uid),
-      ]);
+      // Phase 129 — availability FIRST. The submission and the questions are
+      // only read once the assignment is known to be one this student was
+      // sent, so opening a draft or an archived assignment from a stale link
+      // reads no submission, resolves no question and can write nothing. It
+      // costs the happy path nothing: the questions already had to wait for
+      // this document, and the submission now loads alongside them.
+      const assignment = await getAssignmentById(assignmentId);
       if (!shouldApplyStaleResponse(requestId, requestIdRef.current)) return;
-      if (!assignment) {
-        setError("Bu ödev artık mevcut değil.");
+      const access = resolveAssignmentSessionAccess(assignment);
+      if (access !== "open" || !assignment) {
+        setQuestions([]);
+        setSubmission(null);
+        if (access === "not_found") setNotFound(true);
+        else setUnavailable(true);
         return;
       }
 
-      const metadata = await resolveQuestionMetadata(assignment.questionIds);
+      const [mySubmission, metadata] = await Promise.all([
+        getMySubmission(assignmentId, uid),
+        resolveQuestionMetadata(assignment.questionIds),
+      ]);
       if (!shouldApplyStaleResponse(requestId, requestIdRef.current)) return;
 
       const completedSet = new Set(mySubmission?.completedQuestionIds ?? []);
@@ -65,9 +89,10 @@ export function useAssignmentSession(assignmentId: string | undefined, uid: stri
       setQuestions(ordered);
       setTargetCount(assignment.targetCount);
       setSubmission(mySubmission);
+      deliveredRef.current = true;
     } catch {
       if (!shouldApplyStaleResponse(requestId, requestIdRef.current)) return;
-      setError("Ödev yüklenemedi.");
+      setError("Çalışma yüklenemedi.");
     } finally {
       if (shouldApplyStaleResponse(requestId, requestIdRef.current)) setIsLoading(false);
     }
@@ -86,6 +111,9 @@ export function useAssignmentSession(assignmentId: string | undefined, uid: stri
   const recordProgress = useCallback(
     async (questionId: string, outcome?: StudyOutcome) => {
       if (!assignmentId || !uid) return;
+      // Phase 129 — never write progress to an assignment this session has
+      // not confirmed was sent to this student.
+      if (!deliveredRef.current) return;
       // Phase 38 — ONE bounded retry rather than a bare `catch {}`. The
       // write is idempotent by construction (applyAssignmentCompletion
       // returns the previous submission unchanged for an already-completed
@@ -115,5 +143,5 @@ export function useAssignmentSession(assignmentId: string | undefined, uid: stri
     [assignmentId, uid, targetCount],
   );
 
-  return { questions, targetCount, submission, isLoading, error, refresh: load, recordProgress };
+  return { questions, targetCount, submission, isLoading, error, notFound, unavailable, refresh: load, recordProgress };
 }

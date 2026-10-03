@@ -57,3 +57,27 @@ export function logAssignmentError(scope: "prepare" | "publish", error: unknown)
   // eslint-disable-next-line no-console
   console.log(`[assignment ${scope}] message=${e?.message ?? String(error)}`);
 }
+
+// Phase 129 — what publishing a saved draft will actually do, said before it
+// is done. The count is the assignment's own target list, never a guess; the
+// deadline line appears only when the stored deadline has already passed,
+// because publishing then hands students something they will see as late.
+// The date arrives already formatted by the screen's canonical formatter.
+export interface PublishConfirmation {
+  title: string;
+  message: string;
+}
+
+export function buildPublishConfirmation(params: {
+  targetStudentCount: number;
+  isPastDue: boolean;
+  dueDateLabel: string | null;
+}): PublishConfirmation {
+  const lines = [`${params.targetStudentCount} öğrenciye gönderilecek ve Çalış ekranlarında görünecek.`];
+  if (params.isPastDue && params.dueDateLabel) {
+    lines.push(`Son tarihi geçmiş (${params.dueDateLabel}). Öğrenciler bunu "Süresi geçti" olarak görecek.`);
+  }
+  return { title: "Çalışma yayınlansın mı?", message: lines.join("\n\n") };
+}
+
+export const PUBLISH_FAILED_MESSAGE = "Yayınlanamadı. Tekrar dene.";

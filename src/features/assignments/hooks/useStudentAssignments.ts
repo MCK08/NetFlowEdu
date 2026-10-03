@@ -4,6 +4,7 @@ import { shouldApplyStaleResponse } from "@features/study/services/staleResponse
 
 import { Assignment, AssignmentSubmission } from "../domain/assignmentTypes";
 import { getMySubmission, getStudentAssignments } from "../services/assignmentService";
+import { isAssignmentDeliveredToStudents } from "../services/assignmentStatus";
 import { resolveStudentAssignmentStatus, StudentAssignmentStatus } from "../services/assignmentProgress";
 
 export interface StudentAssignmentCard {
@@ -51,7 +52,11 @@ export function useStudentAssignments(uid: string | undefined) {
     setIsLoading(true);
     setError(null);
     try {
-      const assignments = await getStudentAssignments(uid);
+      // Phase 129 — only what has actually been SENT reaches a student, and
+      // the filter runs BEFORE the per-assignment submission reads: a draft
+      // or an archived assignment costs this student nothing, not even the
+      // read of a submission they should never have had a chance to write.
+      const assignments = (await getStudentAssignments(uid)).filter(isAssignmentDeliveredToStudents);
       if (!shouldApplyStaleResponse(requestId, requestIdRef.current)) return;
 
       const submissions = await Promise.all(
