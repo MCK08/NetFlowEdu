@@ -111,6 +111,14 @@
       ]
     },
     {
+      "collectionGroup": "assignments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "targetStudentIds", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "moderationSubmissions",
       "queryScope": "COLLECTION",
       "fields": [

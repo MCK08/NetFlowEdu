@@ -46,9 +46,15 @@ export function assignmentStatusLabel(status: AssignmentDisplayStatus): string {
 // function, so Çalış, Akış, the daily plan, the atlas, the class page and the
 // solving session can never again disagree about whether a draft exists.
 //
-// This is product behaviour, not a security boundary: firestore.rules still
-// let a targeted student read a draft. Enforcing "published only" there is a
-// separate, explicitly-scoped hardening task (rules + query + index).
+// Phase 131 — this is no longer the only thing standing between a student
+// and a draft. firestore.rules now deny a targeted student an assignment
+// that is not published (and its submissions with it), and
+// getStudentAssignments carries the matching status constraint, without
+// which the query is no longer legal at all. The three layers say the same
+// sentence on purpose: the rule is the boundary, the query is what makes
+// the rule's shape provable, and this predicate stays as the vocabulary
+// every student surface reads — and as the layer that still holds if a
+// future query is written without it.
 export function isAssignmentDeliveredToStudents(assignment: Pick<Assignment, "status">): boolean {
   return assignment.status === "published";
 }

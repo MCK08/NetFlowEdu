@@ -98,8 +98,26 @@ export function useAssignmentSession(assignmentId: string | undefined, uid: stri
       setDeliveredAssignment(assignment);
       setSubmission(mySubmission);
       deliveredRef.current = true;
-    } catch {
+    } catch (cause) {
       if (!shouldApplyStaleResponse(requestId, requestIdRef.current)) return;
+      // Phase 131 — "you may not read this" is an ANSWER, not a failure.
+      // Before this phase a draft or archived assignment was readable and
+      // resolveAssignmentSessionAccess classified it; now firestore.rules
+      // deny the document outright, so the same stale link arrives here as a
+      // permission-denied instead. Mapping it to the generic retryable error
+      // would show "Çalışma yüklenemedi." with a "Tekrar Dene" that can only
+      // ever fail again — the student's answer is the one Phase 129 already
+      // wrote for exactly this case. Rules cannot distinguish "denied" from
+      // "never existed" without leaking existence (same reasoning as
+      // questionDetailService's own permission-denied branch), and for a
+      // student those are the same answer anyway.
+      const code = (cause as { code?: string }).code;
+      if (code === "permission-denied") {
+        setQuestions([]);
+        setSubmission(null);
+        setUnavailable(true);
+        return;
+      }
       setError("Çalışma yüklenemedi.");
     } finally {
       if (shouldApplyStaleResponse(requestId, requestIdRef.current)) setIsLoading(false);

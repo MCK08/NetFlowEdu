@@ -134,13 +134,25 @@ export async function getClassAssignments(classId: string): Promise<Assignment[]
   return snapshot.docs.map((docSnap) => toAssignment(docSnap.id, docSnap.data()));
 }
 
-// array-contains alone (no orderBy paired with it) — same "no composite
-// index" reasoning as getClassAssignments above. Spans every class the
-// student is in, matching how their Daily Plan already aggregates across
-// classes via studyItems.
+// Spans every class the student is in, matching how their Daily Plan
+// already aggregates across classes via studyItems.
+//
+// Phase 131 — the status constraint is not an optimisation, it is what
+// makes this query legal. firestore.rules now let a student read an
+// assignment naming them only while it is published, and Firestore rules
+// are not a post-filter: a query is allowed only if every document it
+// COULD return is provably readable. array-contains alone could return a
+// draft, so after Phase 131 it is denied outright — this pair is the only
+// shape that proves itself. It also means the server now returns what the
+// student may see, instead of returning drafts for the client to hide.
+// Matches the targetStudentIds(array-contains)+status composite index.
 export async function getStudentAssignments(uid: string): Promise<Assignment[]> {
   const snapshot = await getDocs(
-    query(collection(db, "assignments"), where("targetStudentIds", "array-contains", uid)),
+    query(
+      collection(db, "assignments"),
+      where("targetStudentIds", "array-contains", uid),
+      where("status", "==", "published"),
+    ),
   );
   return snapshot.docs.map((docSnap) => toAssignment(docSnap.id, docSnap.data()));
 }

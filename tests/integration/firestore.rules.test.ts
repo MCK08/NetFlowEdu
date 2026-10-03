@@ -4669,14 +4669,23 @@ describe("firestore.rules — assignments/{assignmentId} and submissions (Phase 
     expect(snap.docs).toHaveLength(2);
   });
 
-  it("lets a targeted student LIST their own assignments (the real array-contains query shape)", async () => {
+  // Phase 131 — the production query shape changed with the rule. Rules are
+  // not a post-filter: array-contains ALONE could return a draft, which the
+  // student branch no longer allows, so that query is now denied outright
+  // (proved by the next test). Pairing it with the status equality is what
+  // makes every document it could return provably readable.
+  it("lets a targeted student LIST their own assignments (the real array-contains + published query shape)", async () => {
     await seedClass("class-1", "teacher-1");
     await seedAssignment("a1");
     await seedAssignment("a2", { targetStudentIds: ["student-9"] }); // not targeting student-1
     const student = studentCtx("student-1");
     const snap = await assertSucceeds(
       getDocs(
-        query(collection(student.firestore(), "assignments"), where("targetStudentIds", "array-contains", "student-1")),
+        query(
+          collection(student.firestore(), "assignments"),
+          where("targetStudentIds", "array-contains", "student-1"),
+          where("status", "==", "published"),
+        ),
       ),
     );
     expect(snap.docs.map((d) => d.id)).toEqual(["a1"]);
@@ -4986,6 +4995,296 @@ describe("firestore.rules — assignments/{assignmentId} and submissions (Phase 
     await assertFails(
       deleteDoc(doc(student.firestore(), "assignments", "a1", "submissions", "student-1")),
     );
+  });
+
+  // ---- Phase 131 — STUDENT ACCESS = PUBLISHED ONLY ------------------------
+  //
+  // Phase 129 made the app show a student only what had been published.
+  // These prove the same sentence where it is actually enforced: a targeted
+  // student could, until now, read their teacher's unfinished draft — and an
+  // assignment that had been withdrawn by archiving — directly out of
+  // Firestore, and write progress against both, whatever the app rendered.
+  //
+  // Every test here keeps the authorization that already existed and only
+  // adds the published condition, so the teacher's own draft lifecycle
+  // (compose → Taslaklar → publish → archive) has to keep working untouched.
+
+  it("[Phase 131] denies a TARGETED student reading a DRAFT assignment", async () => {
+    await seedClass("class-1", "teacher-1");
+    await seedAssignment("a1", { status: "draft" });
+    const student = studentCtx("student-1");
+    await assertFails(getDoc(doc(student.firestore(), "assignments", "a1")));
+  });
+
+  it("[Phase 131] denies a TARGETED student reading an ARCHIVED assignment", async () => {
+    await seedClass("class-1", "teacher-1");
+    await seedAssignment("a1", { status: "archived" });
+    const student = studentCtx("student-1");
+    await assertFails(getDoc(doc(student.firestore(), "assignments", "a1")));
+  });
+
+  it("[Phase 131] still lets a TARGETED student read a PUBLISHED assignment", async () => {
+    await seedClass("class-1", "teacher-1");
+    await seedAssignment("a1", { status: "published" });
+    const student = studentCtx("student-1");
+    await assertSucceeds(getDoc(doc(student.firestore(), "assignments", "a1")));
+  });
+
+  it("[Phase 131] denies a NON-targeted student a published assignment (membership still required)", async () => {
+    await seedClass("class-1", "teacher-1");
+    await seedAssignment("a1", { status: "published" });
+    const outsider = studentCtx("student-9");
+    await assertFails(getDoc(doc(outsider.firestore(), "assignments", "a1")));
+  });
+
+  // The teacher branch is evaluated first and is deliberately untouched:
+  // the draft lifecycle is the teacher's, and Phase 128/129 depend on it.
+  it("[Phase 131] still lets the owning teacher read a DRAFT assignment", async () => {
+    await seedClass("class-1", "teacher-1");
+    await seedAssignment("a1", { status: "draft" });
+    const teacher = teacherCtx("teacher-1");
+    await assertSucceeds(getDoc(doc(teacher.firestore(), "assignments", "a1")));
+  });
+
+  it("[Phase 131] still lets the owning teacher read an ARCHIVED assignment", async () => {
+    await seedClass("class-1", "teacher-1");
+    await seedAssignment("a1", { status: "archived" });
+    const teacher = teacherCtx("teacher-1");
+    await assertSucceeds(getDoc(doc(teacher.firestore(), "assignments", "a1")));
+  });
+
+  it("[Phase 131] still lets the owning teacher LIST drafts and published together (the teacher query shape)", async () => {
+    await seedClass("class-1", "teacher-1");
+    await seedAssignment("a1", { status: "draft" });
+    await seedAssignment("a2", { status: "published" });
+    await seedAssignment("a3", { status: "archived" });
+    const teacher = teacherCtx("teacher-1");
+    const snap = await assertSucceeds(
+      getDocs(query(collection(teacher.firestore(), "assignments"), where("classId", "==", "class-1"))),
+    );
+    expect(snap.docs).toHaveLength(3);
+  });
+
+  // Rules are not a post-filter. The pre-Phase-131 query could return a
+  // draft, which the student branch no longer allows, so the QUERY itself is
+  // rejected — not silently filtered. This is why getStudentAssignments had
+  // to gain the status constraint rather than keep relying on the client.
+  it("[Phase 131] denies the OLD broad student query that carries no status constraint", async () => {
+    await seedClass("class-1", "teacher-1");
+    await seedAssignment("a1", { status: "published" });
+    const student = studentCtx("student-1");
+    await assertFails(
+      getDocs(
+        query(
+          collection(student.firestore(), "assignments"),
+          where("targetStudentIds", "array-contains", "student-1"),
+        ),
+      ),
+    );
+  });
+
+  it("[Phase 131] the production student query returns ONLY published, with drafts and archives present", async () => {
+    await seedClass("class-1", "teacher-1");
+    await seedAssignment("pub", { status: "published" });
+    await seedAssignment("draft", { status: "draft" });
+    await seedAssignment("arc", { status: "archived" });
+    const student = studentCtx("student-1");
+    const snap = await assertSucceeds(
+      getDocs(
+        query(
+          collection(student.firestore(), "assignments"),
+          where("targetStudentIds", "array-contains", "student-1"),
+          where("status", "==", "published"),
+        ),
+      ),
+    );
+    expect(snap.docs.map((d) => d.id)).toEqual(["pub"]);
+  });
+
+  // ---- Phase 131 — submissions follow their parent -----------------------
+
+  it("[Phase 131] denies a student READING their own submission under a DRAFT assignment", async () => {
+    await seedClass("class-1", "teacher-1");
+    await seedAssignment("a1", { status: "draft" });
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(
+        doc(context.firestore(), "assignments", "a1", "submissions", "student-1"),
+        submissionDoc("student-1"),
+      );
+    });
+    const student = studentCtx("student-1");
+    await assertFails(getDoc(doc(student.firestore(), "assignments", "a1", "submissions", "student-1")));
+  });
+
+  it("[Phase 131] denies a student READING their own submission under an ARCHIVED assignment", async () => {
+    await seedClass("class-1", "teacher-1");
+    await seedAssignment("a1", { status: "archived" });
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(
+        doc(context.firestore(), "assignments", "a1", "submissions", "student-1"),
+        submissionDoc("student-1"),
+      );
+    });
+    const student = studentCtx("student-1");
+    await assertFails(getDoc(doc(student.firestore(), "assignments", "a1", "submissions", "student-1")));
+  });
+
+  it("[Phase 131] still lets a student READ their own submission under a PUBLISHED assignment", async () => {
+    await seedClass("class-1", "teacher-1");
+    await seedAssignment("a1", { status: "published" });
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(
+        doc(context.firestore(), "assignments", "a1", "submissions", "student-1"),
+        submissionDoc("student-1"),
+      );
+    });
+    const student = studentCtx("student-1");
+    await assertSucceeds(getDoc(doc(student.firestore(), "assignments", "a1", "submissions", "student-1")));
+  });
+
+  it("[Phase 131] denies a student CREATING a submission under a DRAFT assignment", async () => {
+    await seedClass("class-1", "teacher-1");
+    await seedAssignment("a1", { status: "draft" });
+    const student = studentCtx("student-1");
+    await assertFails(
+      setDoc(
+        doc(student.firestore(), "assignments", "a1", "submissions", "student-1"),
+        submissionDoc("student-1"),
+      ),
+    );
+  });
+
+  it("[Phase 131] denies a student CREATING a submission under an ARCHIVED assignment", async () => {
+    await seedClass("class-1", "teacher-1");
+    await seedAssignment("a1", { status: "archived" });
+    const student = studentCtx("student-1");
+    await assertFails(
+      setDoc(
+        doc(student.firestore(), "assignments", "a1", "submissions", "student-1"),
+        submissionDoc("student-1"),
+      ),
+    );
+  });
+
+  // An UPDATE, not a first write: progress that was legitimately recorded
+  // while the assignment was open must stop being writable once it is
+  // withdrawn — this is the case a pure create-time check would miss.
+  it("[Phase 131] denies a student UPDATING an existing submission after the assignment is ARCHIVED", async () => {
+    await seedClass("class-1", "teacher-1");
+    await seedAssignment("a1", { status: "archived" });
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(
+        doc(context.firestore(), "assignments", "a1", "submissions", "student-1"),
+        submissionDoc("student-1"),
+      );
+    });
+    const student = studentCtx("student-1");
+    await assertFails(
+      setDoc(
+        doc(student.firestore(), "assignments", "a1", "submissions", "student-1"),
+        submissionDoc("student-1", { completedQuestionIds: ["q1", "q2"], completedCount: 2 }),
+      ),
+    );
+  });
+
+  it("[Phase 131] still lets a student UPDATE their submission while the assignment is PUBLISHED", async () => {
+    await seedClass("class-1", "teacher-1");
+    await seedAssignment("a1", { status: "published" });
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(
+        doc(context.firestore(), "assignments", "a1", "submissions", "student-1"),
+        submissionDoc("student-1"),
+      );
+    });
+    const student = studentCtx("student-1");
+    await assertSucceeds(
+      setDoc(
+        doc(student.firestore(), "assignments", "a1", "submissions", "student-1"),
+        submissionDoc("student-1", { completedQuestionIds: ["q1", "q2"], completedCount: 2 }),
+      ),
+    );
+  });
+
+  // The parent get() resolves to null; reading .status off it must fail
+  // closed, exactly as reading .targetStudentIds off it already did.
+  it("[Phase 131] denies a submission write when the parent assignment does not exist", async () => {
+    await seedClass("class-1", "teacher-1");
+    const student = studentCtx("student-1");
+    await assertFails(
+      setDoc(
+        doc(student.firestore(), "assignments", "missing", "submissions", "student-1"),
+        submissionDoc("student-1"),
+      ),
+    );
+  });
+
+  // Published does not weaken UID isolation: the new condition is ANDed onto
+  // the ownership test, never substituted for it.
+  it("[Phase 131] still denies cross-student submission access under a PUBLISHED assignment", async () => {
+    await seedClass("class-1", "teacher-1");
+    await seedAssignment("a1", { status: "published" });
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(
+        doc(context.firestore(), "assignments", "a1", "submissions", "student-1"),
+        submissionDoc("student-1"),
+      );
+    });
+    const attacker = studentCtx("student-2");
+    await assertFails(
+      getDoc(doc(attacker.firestore(), "assignments", "a1", "submissions", "student-1")),
+    );
+    await assertFails(
+      setDoc(
+        doc(attacker.firestore(), "assignments", "a1", "submissions", "student-1"),
+        submissionDoc("student-1"),
+      ),
+    );
+  });
+
+  // Teacher progress screens (Phase 124/128) read submissions whatever the
+  // assignment's status is — the student condition must not reach them.
+  it("[Phase 131] still lets the owning teacher read submissions under a DRAFT and an ARCHIVED assignment", async () => {
+    await seedClass("class-1", "teacher-1");
+    await seedAssignment("draft-a", { status: "draft" });
+    await seedAssignment("arc-a", { status: "archived" });
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(
+        doc(context.firestore(), "assignments", "draft-a", "submissions", "student-1"),
+        submissionDoc("student-1"),
+      );
+      await setDoc(
+        doc(context.firestore(), "assignments", "arc-a", "submissions", "student-1"),
+        submissionDoc("student-1"),
+      );
+    });
+    const teacher = teacherCtx("teacher-1");
+    await assertSucceeds(getDoc(doc(teacher.firestore(), "assignments", "draft-a", "submissions", "student-1")));
+    await assertSucceeds(getDoc(doc(teacher.firestore(), "assignments", "arc-a", "submissions", "student-1")));
+  });
+
+  // The lifecycle end to end: what the student's own production query
+  // returns before and after the teacher presses Yayınla, and after they
+  // archive. Nothing about the document changes except its status.
+  it("[Phase 131] a draft becomes visible to the student only once the teacher publishes it, and disappears when archived", async () => {
+    await seedClass("class-1", "teacher-1");
+    await seedAssignment("a1", { status: "draft" });
+    const student = studentCtx("student-1");
+    const teacher = teacherCtx("teacher-1");
+    const studentQuery = query(
+      collection(student.firestore(), "assignments"),
+      where("targetStudentIds", "array-contains", "student-1"),
+      where("status", "==", "published"),
+    );
+
+    expect((await assertSucceeds(getDocs(studentQuery))).docs).toHaveLength(0);
+
+    await assertSucceeds(updateDoc(doc(teacher.firestore(), "assignments", "a1"), { status: "published" }));
+    expect((await assertSucceeds(getDocs(studentQuery))).docs.map((d) => d.id)).toEqual(["a1"]);
+    await assertSucceeds(getDoc(doc(student.firestore(), "assignments", "a1")));
+
+    await assertSucceeds(updateDoc(doc(teacher.firestore(), "assignments", "a1"), { status: "archived" }));
+    expect((await assertSucceeds(getDocs(studentQuery))).docs).toHaveLength(0);
+    await assertFails(getDoc(doc(student.firestore(), "assignments", "a1")));
   });
 });
 

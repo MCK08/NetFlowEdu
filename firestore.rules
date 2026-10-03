@@ -1141,10 +1141,28 @@ service cloud.firestore {
       // equally well-defined for every document either query could ever
       // return; array-contains membership provability is the same
       // established pattern.
+      //
+      // Phase 131 — and, for a student, ONLY once it has been published.
+      // Being named in targetStudentIds was the whole student test before,
+      // so a targeted student could read their teacher's unfinished draft —
+      // and an assignment withdrawn by archiving — straight out of
+      // Firestore, whatever the app chose to render. isAssignmentDelivered-
+      // ToStudents said "published only" in the client; this is the same
+      // sentence where it is actually enforced. The teacher branch is
+      // deliberately untouched and evaluates FIRST: a teacher owns the draft
+      // lifecycle (compose → Taslaklar → publish → archive) and must keep
+      // reading all three statuses.
+      //
+      // status is a required field on create and is constrained on every
+      // update, so plain dot access is as well-defined here as classId and
+      // targetStudentIds already are. A pre-status legacy document (if one
+      // exists) errors, which denies — the same answer toAssignment's own
+      // `: "draft"` fallback already gives such a document in the client.
       allow read: if isSignedIn()
                   && (
                        (isTeacher() && classData(resource.data.classId).teacherId == uid())
-                       || uid() in resource.data.targetStudentIds
+                       || (uid() in resource.data.targetStudentIds
+                           && resource.data.status == 'published')
                      );
 
       allow create: if isSignedIn() && isTeacher()
@@ -1238,9 +1256,19 @@ service cloud.firestore {
     // recordStudyOutcome's alone); this only records which of the
     // assignment's OWN questionIds the student has answered.
     match /assignments/{assignmentId}/submissions/{studentId} {
+      // Phase 131 — a student's own progress is readable only while the
+      // assignment it belongs to is published. Without this, archiving an
+      // assignment (or never publishing it) still left its submissions open
+      // to the student, which is the same leak the parent document had.
+      // The teacher branch keeps its existing authorization unchanged, and
+      // still reads every status: Phase 124/128's progress screens are built
+      // on it. Both branches resolve the parent through the SAME
+      // assignmentData(assignmentId) helper, and Firestore caches a get()
+      // per document path per request, so this adds no document access the
+      // teacher branch was not already making.
       allow read: if isSignedIn()
                   && (
-                       isOwner(studentId)
+                       (isOwner(studentId) && assignmentData(assignmentId).status == 'published')
                        || (isTeacher() && classData(assignmentData(assignmentId).classId).teacherId == uid())
                      );
 
@@ -1253,9 +1281,18 @@ service cloud.firestore {
       // above) but, when present, its keys must be a real subset of THIS
       // assignment's own questionIds — same hasOnly() containment check
       // completedQuestionIds already uses, applied to the map's keys.
+      // Phase 131 — and only against a PUBLISHED assignment. Target
+      // membership alone let a student write progress against a draft their
+      // teacher had not sent yet, or against one already withdrawn; the
+      // solving session the client allows is exactly the published one, so
+      // this is the same boundary, enforced. Reuses the already-resolved
+      // parent (see the read rule above) rather than resolving a second
+      // document, and a DELETED parent still denies: get() returns null and
+      // reading .status off it fails closed, as targetStudentIds already did.
       allow create, update: if isSignedIn()
                     && studentId == uid()
                     && studentId in assignmentData(assignmentId).targetStudentIds
+                    && assignmentData(assignmentId).status == 'published'
                     && request.resource.data.studentId == studentId
                     && request.resource.data.completedQuestionIds is list
                     && request.resource.data.completedQuestionIds
