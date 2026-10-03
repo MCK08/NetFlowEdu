@@ -5,7 +5,7 @@ import { shouldApplyStaleResponse } from "@features/study/services/staleResponse
 import { StudyOutcome } from "@features/study/domain/studyTypes";
 import { Question } from "@/types/question";
 
-import { AssignmentSubmission } from "../domain/assignmentTypes";
+import { Assignment, AssignmentSubmission } from "../domain/assignmentTypes";
 import { getAssignmentById, getMySubmission, recordAssignmentProgress } from "../services/assignmentService";
 import { resolveAssignmentSessionAccess } from "../services/assignmentStatus";
 
@@ -19,6 +19,12 @@ import { resolveAssignmentSessionAccess } from "../services/assignmentStatus";
 export function useAssignmentSession(assignmentId: string | undefined, uid: string | undefined) {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [targetCount, setTargetCount] = useState(0);
+  // Phase 130 — the document itself, kept rather than discarded once its
+  // questionIds are resolved: its title, subject, deadline and the teacher's
+  // description are what tell the student which assignment this is. Only ever
+  // set for an assignment confirmed delivered to this student, so nothing a
+  // draft or an archived assignment holds can reach the screen.
+  const [deliveredAssignment, setDeliveredAssignment] = useState<Assignment | null>(null);
   const [submission, setSubmission] = useState<AssignmentSubmission | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -45,6 +51,7 @@ export function useAssignmentSession(assignmentId: string | undefined, uid: stri
     setError(null);
     setNotFound(false);
     setUnavailable(false);
+    setDeliveredAssignment(null);
     deliveredRef.current = false;
     try {
       // Phase 129 — availability FIRST. The submission and the questions are
@@ -88,6 +95,7 @@ export function useAssignmentSession(assignmentId: string | undefined, uid: stri
 
       setQuestions(ordered);
       setTargetCount(assignment.targetCount);
+      setDeliveredAssignment(assignment);
       setSubmission(mySubmission);
       deliveredRef.current = true;
     } catch {
@@ -143,5 +151,16 @@ export function useAssignmentSession(assignmentId: string | undefined, uid: stri
     [assignmentId, uid, targetCount],
   );
 
-  return { questions, targetCount, submission, isLoading, error, notFound, unavailable, refresh: load, recordProgress };
+  return {
+    assignment: deliveredAssignment,
+    questions,
+    targetCount,
+    submission,
+    isLoading,
+    error,
+    notFound,
+    unavailable,
+    refresh: load,
+    recordProgress,
+  };
 }

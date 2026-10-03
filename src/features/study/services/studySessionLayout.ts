@@ -34,6 +34,40 @@ export function computeSessionCardHeight(input: SessionCardHeightInput): number 
 }
 
 /**
+ * Phase 130 — the header height the cards are laid out against, grown by
+ * exactly as much as the header itself has grown past its designed size.
+ *
+ * The floating header has always been given a fixed reservation (`reserved`,
+ * 48pt below the safe-area inset) while it actually draws its 44pt back
+ * button inside 8pt of padding on each side (`designed`, 60pt). That 12pt
+ * overlap is by design and lands inside the card's own top padding, so at the
+ * default text size nothing changes here.
+ *
+ * What the fixed number could not follow is Dynamic Type: the header's title
+ * and progress grow with the OS text size while the reservation did not, so at
+ * the accessibility sizes the opaque header covered the top of every card —
+ * the top of the question image — and the card's own scroll cannot reveal it
+ * (it is already at offset 0). Measuring the header and adding only the growth
+ * keeps the default geometry byte-for-byte and gives the card back whatever
+ * the larger text took.
+ */
+export function resolveSessionHeaderHeight(input: {
+  insetsTop: number;
+  /** The fixed reservation below the inset (StudySessionScreen's HEADER_HEIGHT). */
+  reservedHeight: number;
+  /** The header's own height below the inset at the default text size. */
+  designedHeight: number;
+  /** The header's measured height, inset included; null until it has laid out. */
+  measuredHeight: number | null;
+}): number {
+  const reserved = input.insetsTop + input.reservedHeight;
+  if (input.measuredHeight === null || !Number.isFinite(input.measuredHeight)) return reserved;
+  const growth = input.measuredHeight - (input.insetsTop + input.designedHeight);
+  // Sub-point differences are layout rounding, not growth.
+  return growth >= 1 ? reserved + Math.ceil(growth) : reserved;
+}
+
+/**
  * Where item `index` actually SITS inside the list's content, measured from
  * the very top of the content (the header spacer's own top). This is what
  * FlatList's `getItemLayout` describes — a statement about layout, not a

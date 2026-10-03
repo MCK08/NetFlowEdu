@@ -1,26 +1,54 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router, useNavigation } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Alert, FlatList, Platform, Text, useWindowDimensions, View } from "react-native";
+import {
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  LayoutChangeEvent,
+  Platform,
+  ScrollView,
+  Text,
+  useWindowDimensions,
+  View,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { BottomActionSheet } from "@components/ui/BottomActionSheet";
 import { EmptyState } from "@components/ui/EmptyState";
+import { IconButton } from "@components/ui/IconButton";
 import { PrimaryButton } from "@components/ui/PrimaryButton";
 import { AppBackButton } from "@components/ui/AppBackButton";
 import { ROUTES } from "@constants/routes";
 import { useBackNavigation } from "@hooks/useBackNavigation";
+import { useClassRoom } from "@features/classes/hooks/useClassRoom";
 import { formatFeedPosition } from "@features/classes/services/classFeedPagination";
 import { useAuth } from "@features/authentication";
 import { colors } from "@theme/colors";
+import { contentWidth } from "@theme/layout";
 import { radius } from "@theme/radius";
+import { minTouchTarget, stackAtFontScale } from "@theme/sizes";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
 import { themedStyles } from "@theme/themeRuntime";
 import { Question } from "@/types/question";
 
+import { AssignmentSessionContext } from "@features/assignments/components/AssignmentSessionContext";
 import { useAssignmentSession } from "@features/assignments/hooks/useAssignmentSession";
 import { computeAssignmentProgress } from "@features/assignments/services/assignmentProgress";
 import { resolveAssignmentSessionCompletion } from "@features/assignments/services/assignmentSessionCompletion";
+import {
+  ASSIGNMENT_COMPLETE_TITLE,
+  ASSIGNMENT_EMPTY_TITLE,
+  ASSIGNMENT_INFO_LABEL,
+  ASSIGNMENT_START_LABEL,
+  assignmentCompletionLine,
+  assignmentProgressAccessibilityLabel,
+  assignmentSessionProgressLabel,
+  buildAssignmentSessionIdentity,
+  RETURN_TO_STUDY_LABEL,
+  shouldOpenOnAssignmentIntro,
+} from "@features/assignments/services/assignmentSessionPresentation";
 
 import { StudySessionAdaptiveCard } from "../components/StudySessionAdaptiveCard";
 import { StudySessionMandatoryCard } from "../components/StudySessionMandatoryCard";
@@ -36,6 +64,7 @@ import {
   computeSessionItemContentOffset,
   computeSessionScrollOffset,
   computeSessionSnapOffsets,
+  resolveSessionHeaderHeight,
   resolveSessionInitialNumToRender,
   shouldAnimateSessionScroll,
 } from "../services/studySessionLayout";
@@ -117,7 +146,19 @@ export function StudySessionScreen({ mode, assignmentId }: StudySessionScreenPro
   const swipeRefresh = isAssignmentMode ? assignmentSession.refresh : adaptive.refresh;
 
   const listRef = useRef<FlatList<ResolvedQueueEntry | Question>>(null);
-  const { height: windowHeight } = useWindowDimensions();
+  const { height: windowHeight, fontScale } = useWindowDimensions();
+  // Phase 130 — at the accessibility text sizes the header's title moves onto
+  // its own line (the app's one stacking threshold), and the header's real
+  // height is measured so the cards below can follow it. See
+  // resolveSessionHeaderHeight for why the default size is left exactly as it was.
+  const isHeaderStacked = fontScale >= stackAtFontScale;
+  const [measuredHeaderHeight, setMeasuredHeaderHeight] = useState<number | null>(null);
+  const handleHeaderLayout = useCallback((event: LayoutChangeEvent) => {
+    const next = event.nativeEvent.layout.height;
+    setMeasuredHeaderHeight((previous) =>
+      previous !== null && Math.abs(previous - next) < 0.5 ? previous : next,
+    );
+  }, []);
   // Phase 35 — the RAW window height used to be passed straight through as
   // each card's own height (`pageHeight`), which is taller than what's
   // actually visible: the header floats on top (position: absolute) and a
@@ -129,7 +170,12 @@ export function StudySessionScreen({ mode, assignmentId }: StudySessionScreenPro
   // the "Zorlandım"/"Çözdüm" buttons falling off-screen bug. `cardHeight` is
   // the true visible budget between the header and the safe bottom edge;
   // every card, and every offset computed against it, uses this instead.
-  const headerHeight = insets.top + HEADER_HEIGHT;
+  const headerHeight = resolveSessionHeaderHeight({
+    insetsTop: insets.top,
+    reservedHeight: HEADER_HEIGHT,
+    designedHeight: HEADER_DESIGNED_HEIGHT,
+    measuredHeight: measuredHeaderHeight,
+  });
   const cardHeight = computeSessionCardHeight({ windowHeight, headerHeight, insetsBottom: insets.bottom });
 
   // snapToInterval alone snaps at multiples of ONE fixed interval measured
@@ -152,6 +198,12 @@ export function StudySessionScreen({ mode, assignmentId }: StudySessionScreenPro
   );
 
   const goBack = useBackNavigation(ROUTES.studentStudy);
+  // Phase 130 — "Çalış'a Dön" goes to Çalış, wherever the assignment was
+  // opened from (the class page, Akış, a plan step). dismissTo returns to the
+  // tab screen the student stack already holds; navigate to a different route
+  // in this stack would push a second copy of the tabs on top of the finished
+  // session, leaving it one swipe back.
+  const returnToStudy = useCallback(() => router.dismissTo(ROUTES.studentStudy as never), []);
 
   // Swipe cards (adaptive AND assignment — both render StudySessionAdaptiveCard)
   // are self-contained (each owns its own useStudyQuestionState, see that
@@ -318,33 +370,96 @@ export function StudySessionScreen({ mode, assignmentId }: StudySessionScreenPro
   const isAssignmentGone = isAssignmentMode && assignmentSession.notFound;
   const isAssignmentUnavailable = isAssignmentMode && assignmentSession.unavailable;
 
-  const header = (
-    <View style={[styles.header, { paddingTop: insets.top + spacing.xs }]}>
-      <AppBackButton fallbackHref={ROUTES.studentStudy} onPress={goBack} size="lg" style={styles.backButton} />
-      <Text style={styles.headerTitle}>
-        {mode === "mandatory" ? "Tekrar" : isAssignmentMode ? "Ödev" : "Çalışma"}
+  // Phase 130 — which assignment this is. useAssignmentSession only hands the
+  // document over once it is confirmed delivered, so a closed or deleted one
+  // has no identity and reads no class.
+  const deliveredAssignment = isAssignmentMode ? assignmentSession.assignment : null;
+  // The class's name, for "10. sınıf · Demo Sınıfı": one get of the class
+  // document (Phase 126's useClassRoom), never a listener, and only while the
+  // introduction or "Çalışma bilgileri" can still show it — a finished or an
+  // empty assignment reads nothing. Until it resolves, or when it cannot (a
+  // student since removed from the class), the line simply has no class name.
+  const assignmentClass = useClassRoom(
+    deliveredAssignment && !isAssignmentComplete && !isAssignmentEmpty ? deliveredAssignment.classId : undefined,
+  );
+  const assignmentIdentity = deliveredAssignment
+    ? buildAssignmentSessionIdentity({
+        assignment: deliveredAssignment,
+        className: assignmentClass?.name ?? null,
+        now: Date.now(),
+      })
+    : null;
+  // An assignment with nothing recorded opens on its introduction; "Başla"
+  // only leaves it. Nothing is written by either, so the session's progress,
+  // its order and its resume are exactly what they were.
+  const [isAssignmentIntroDismissed, setIsAssignmentIntroDismissed] = useState(false);
+  const showAssignmentIntro =
+    assignmentIdentity !== null &&
+    assignmentProgress !== null &&
+    !isAssignmentIntroDismissed &&
+    !isAssignmentComplete &&
+    !isAssignmentEmpty &&
+    shouldOpenOnAssignmentIntro(assignmentProgress);
+  // The questions are on screen: the only state whose header carries the
+  // assignment's progress and its "Çalışma bilgileri".
+  const isSolvingAssignment =
+    assignmentIdentity !== null &&
+    !assignmentSession.isLoading &&
+    !assignmentSession.error &&
+    !isAssignmentComplete &&
+    !isAssignmentEmpty &&
+    !showAssignmentIntro;
+  const [isAssignmentInfoOpen, setIsAssignmentInfoOpen] = useState(false);
+
+  const headerProgress =
+    mode === "mandatory" && !isMandatoryComplete ? (
+      <Text style={styles.headerProgress}>{formatFeedPosition(mandatory.index, mandatory.total)}</Text>
+    ) : mode === "adaptive" && !isAdaptiveComplete && !isAdaptiveEmpty ? (
+      // Phase 68 — a real fraction, now that the denominator is fixed for
+      // the life of the session. Before the plan was frozen this could only
+      // ever be a shrinking count of cards left, which is why it was one.
+      <Text style={styles.headerProgress}>
+        {adaptive.completion.confirmedCount} / {adaptive.completion.answerableCount}
       </Text>
-      {mode === "mandatory" && !isMandatoryComplete ? (
-        <Text style={styles.headerProgress}>
-          {formatFeedPosition(mandatory.index, mandatory.total)}
-        </Text>
-      ) : mode === "adaptive" && !isAdaptiveComplete && !isAdaptiveEmpty ? (
-        // Phase 68 — a real fraction, now that the denominator is fixed for
-        // the life of the session. Before the plan was frozen this could only
-        // ever be a shrinking count of cards left, which is why it was one.
-        <Text style={styles.headerProgress}>
-          {adaptive.completion.confirmedCount} / {adaptive.completion.answerableCount}
-        </Text>
-      ) : isAssignmentMode &&
-        assignmentProgress &&
-        !isAssignmentComplete &&
-        !isAssignmentEmpty &&
-        !isAssignmentGone &&
-        !isAssignmentUnavailable ? (
-        <Text style={styles.headerProgress}>
-          {assignmentProgress.completedCount} / {assignmentProgress.targetCount}
-        </Text>
-      ) : null}
+    ) : isSolvingAssignment && assignmentProgress ? (
+      // Phase 130 — read as a sentence, never as "2 bölü 5".
+      <Text
+        style={styles.headerProgress}
+        accessibilityLabel={assignmentProgressAccessibilityLabel(assignmentProgress)}
+      >
+        {assignmentProgress.completedCount} / {assignmentProgress.targetCount}
+      </Text>
+    ) : null;
+  // Phase 130 — the assignment's title, its deadline and the teacher's
+  // instruction stay one tap away for the whole session, not only before the
+  // first question.
+  const headerInfo = isSolvingAssignment ? (
+    <IconButton
+      icon="information-circle-outline"
+      onPress={() => setIsAssignmentInfoOpen(true)}
+      accessibilityLabel={ASSIGNMENT_INFO_LABEL}
+      color={colors.textSecondary}
+    />
+  ) : null;
+  // "Çalışma" is the student's word for an assignment everywhere else in the
+  // app; "Ödev" is retired.
+  const headerTitle = (
+    <Text style={[styles.headerTitle, isHeaderStacked ? styles.headerTitleStacked : null]} accessibilityRole="header">
+      {mode === "mandatory" ? "Tekrar" : "Çalışma"}
+    </Text>
+  );
+
+  // One row of controls in every size; at the accessibility sizes the title
+  // leaves it for its own full-width line underneath.
+  const header = (
+    <View onLayout={handleHeaderLayout} style={[styles.header, { paddingTop: insets.top + spacing.xs }]}>
+      <View style={styles.headerRow}>
+        <AppBackButton fallbackHref={ROUTES.studentStudy} onPress={goBack} size="lg" style={styles.backButton} />
+        {isHeaderStacked ? <View style={styles.headerSpacer} /> : headerTitle}
+        {headerProgress}
+        {headerInfo}
+      </View>
+      {isHeaderStacked ? headerTitle : null}
     </View>
   );
 
@@ -554,34 +669,93 @@ export function StudySessionScreen({ mode, assignmentId }: StudySessionScreenPro
       <View style={styles.flex}>
         {header}
         <View style={styles.centered}>
-          <EmptyState icon="document-text-outline" title="Bu ödevde artık geçerli soru yok" />
-          <PrimaryButton label="Öğrenme Merkezine Dön" onPress={goBack} />
+          <EmptyState icon="document-text-outline" title={ASSIGNMENT_EMPTY_TITLE} />
+          <PrimaryButton label="Geri Dön" onPress={goBack} />
         </View>
       </View>
     );
   }
 
+  // Phase 130 — the WHOLE assignment is done, not this visit: an assignment
+  // can be finished across several days, so everything here comes from the
+  // submission (the canonical count) and the assignment itself. There is no
+  // summary of this visit's outcomes, no score and no percentage — a question
+  // counts as complete whatever the student recorded for it.
   if (isAssignmentComplete) {
     return (
       <View style={styles.flex}>
-        {header}
-        <View style={styles.centered}>
-          <Ionicons name="checkmark-done-circle-outline" size={56} color={colors.success} />
-          <Text style={styles.completionTitle}>Ödev tamamlandı 🎉</Text>
-          <Text style={styles.completionSubtitle}>
-            {assignmentProgress?.completedCount ?? 0} / {assignmentProgress?.targetCount ?? 0} soru çözüldü.
+        <ScrollView
+          style={styles.flex}
+          contentContainerStyle={[
+            styles.completionContent,
+            { paddingTop: headerHeight + spacing.xl, paddingBottom: insets.bottom + spacing.xl },
+          ]}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Decorative: the title says it. */}
+          <Ionicons
+            name="checkmark-done-circle-outline"
+            size={56}
+            color={colors.success}
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+          />
+          <Text style={styles.completionTitle} accessibilityRole="header">
+            {ASSIGNMENT_COMPLETE_TITLE}
           </Text>
+          {assignmentIdentity ? (
+            <View style={styles.completionIdentity}>
+              <Text style={styles.completionAssignmentTitle}>{assignmentIdentity.title}</Text>
+              {assignmentIdentity.subjectLine ? (
+                <Text style={styles.completionSubtitle}>{assignmentIdentity.subjectLine}</Text>
+              ) : null}
+            </View>
+          ) : null}
+          {assignmentProgress ? (
+            <Text style={styles.completionSubtitle}>{assignmentCompletionLine(assignmentProgress)}</Text>
+          ) : null}
           {/* Stated plainly rather than quietly rounded away: the student
               finished everything they could open, and the shortfall against
               the teacher's count is not work they skipped. */}
           {assignmentCompletion && assignmentCompletion.unavailableCount > 0 ? (
             <Text style={styles.completionHint}>
-              {assignmentCompletion.unavailableCount} soru artık görüntülenemiyor, bu yüzden ödevin
+              {assignmentCompletion.unavailableCount} soru artık görüntülenemiyor, bu yüzden çalışmanın
               tamamı bu kadar.
             </Text>
           ) : null}
-          <PrimaryButton label="Öğrenme Merkezine Dön" onPress={goBack} />
+          <PrimaryButton label={RETURN_TO_STUDY_LABEL} onPress={returnToStudy} />
+        </ScrollView>
+        {header}
+      </View>
+    );
+  }
+
+  // Phase 130 — an assignment the student has not started opens on what it
+  // is: its title, what it covers, its deadline, how many questions it has and
+  // the teacher's own note. A separate state of this same screen, not a page
+  // in the list, so the swipe geometry, the question order and the resume
+  // position are untouched; a started assignment never comes back here.
+  if (showAssignmentIntro && assignmentIdentity && assignmentProgress) {
+    return (
+      <View style={styles.flex}>
+        <ScrollView
+          style={styles.flex}
+          contentContainerStyle={[styles.introContent, { paddingTop: headerHeight + spacing.lg }]}
+          showsVerticalScrollIndicator={false}
+        >
+          <AssignmentSessionContext
+            identity={assignmentIdentity}
+            progressLabel={assignmentSessionProgressLabel(assignmentProgress)}
+          />
+        </ScrollView>
+        <View style={[styles.introFooter, { paddingBottom: insets.bottom + spacing.md }]}>
+          <PrimaryButton
+            label={ASSIGNMENT_START_LABEL}
+            onPress={() => setIsAssignmentIntroDismissed(true)}
+            accessibilityHint="İlk soruyu açar"
+          />
         </View>
+        {header}
       </View>
     );
   }
@@ -636,11 +810,31 @@ export function StudySessionScreen({ mode, assignmentId }: StudySessionScreenPro
         ListHeaderComponent={<View style={{ height: headerHeight }} />}
       />
       {header}
+      {isSolvingAssignment && assignmentIdentity && assignmentProgress ? (
+        <BottomActionSheet visible={isAssignmentInfoOpen} onClose={() => setIsAssignmentInfoOpen(false)}>
+          <View style={styles.infoSheet}>
+            {/* Bounded and scrollable: the teacher's note can be 300
+                characters, and at the largest text size that is taller than
+                the screen. */}
+            <ScrollView style={{ maxHeight: Math.round(windowHeight * 0.6) }} showsVerticalScrollIndicator={false}>
+              <AssignmentSessionContext
+                identity={assignmentIdentity}
+                progressLabel={assignmentSessionProgressLabel(assignmentProgress)}
+              />
+            </ScrollView>
+            <PrimaryButton label="Kapat" variant="secondary" onPress={() => setIsAssignmentInfoOpen(false)} />
+          </View>
+        </BottomActionSheet>
+      ) : null}
     </View>
   );
 }
 
 const HEADER_HEIGHT = 48;
+// What the header actually draws below the safe-area inset at the default text
+// size: its 44pt back button inside 8pt of padding above and below. See
+// resolveSessionHeaderHeight.
+const HEADER_DESIGNED_HEIGHT = spacing.xs * 2 + minTouchTarget;
 
 const styles = themedStyles(() => ({
   flex: {
@@ -654,21 +848,32 @@ const styles = themedStyles(() => ({
     gap: spacing.md,
     paddingHorizontal: spacing.xl,
   },
+  // Phase 130 — a column holding the row of controls, so that at the
+  // accessibility sizes the title can take the full width beneath them and
+  // never break mid-word in the space left between a back button and a
+  // progress pill. At the default size the row is its only child, laid out
+  // exactly as the header itself used to be.
   header: {
     position: "absolute",
     left: 0,
     right: 0,
     top: 0,
-    flexDirection: "row",
-    alignItems: "center",
     gap: spacing.xs,
     paddingHorizontal: spacing.md,
     paddingBottom: spacing.xs,
     backgroundColor: colors.background,
   },
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+  },
+  headerSpacer: {
+    flex: 1,
+  },
   backButton: {
-    minWidth: 44,
-    minHeight: 44,
+    minWidth: minTouchTarget,
+    minHeight: minTouchTarget,
     alignItems: "center",
     justifyContent: "center",
     marginLeft: -spacing.sm,
@@ -679,6 +884,11 @@ const styles = themedStyles(() => ({
     color: colors.textPrimary,
     flex: 1,
   },
+  // In the stacked column `flex: 1` would mean a zero flex-basis in an
+  // auto-height parent; the title sizes to its own text instead.
+  headerTitleStacked: {
+    flex: 0,
+  },
   headerProgress: {
     ...typography.caption,
     fontWeight: "700",
@@ -687,6 +897,43 @@ const styles = themedStyles(() => ({
     borderRadius: radius.pill,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xxs,
+  },
+  // Centred when it fits, scrollable when the largest text size makes it
+  // taller than the screen — the CTA can never end up out of reach.
+  completionContent: {
+    flexGrow: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.md,
+    paddingHorizontal: spacing.xl,
+  },
+  completionIdentity: {
+    alignItems: "center",
+    gap: spacing.xxs,
+  },
+  completionAssignmentTitle: {
+    ...typography.cardTitle,
+    color: colors.textPrimary,
+    textAlign: "center",
+  },
+  introContent: {
+    width: "100%",
+    maxWidth: contentWidth.readable,
+    alignSelf: "center",
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.xl,
+  },
+  // Pinned under the scroll, so "Başla" is reachable without scrolling past a
+  // long teacher's note.
+  introFooter: {
+    width: "100%",
+    maxWidth: contentWidth.readable,
+    alignSelf: "center",
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+  },
+  infoSheet: {
+    gap: spacing.lg,
   },
   completionTitle: {
     ...typography.title,
