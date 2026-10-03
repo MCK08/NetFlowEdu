@@ -57,3 +57,40 @@ export function buildTeacherAssignmentProgress(params: {
     rows,
   };
 }
+
+// Phase 128 — how many targeted students sit in each canonical status.
+//
+// A pure count over the rows buildTeacherAssignmentProgress already resolved:
+// every student lands in exactly ONE status (resolveStudentAssignmentStatus
+// picks one, and completion outranks a passed deadline), so the four counts
+// always add up to rows.length — a summary that reconciles with the list
+// beneath it, never a second way of deciding who is done.
+export function countAssignmentStatuses(
+  rows: readonly StudentAssignmentRow[],
+): Record<StudentAssignmentStatus, number> {
+  const counts: Record<StudentAssignmentStatus, number> = {
+    completed: 0,
+    in_progress: 0,
+    not_started: 0,
+    past_due: 0,
+  };
+  for (const row of rows) counts[row.status] += 1;
+  return counts;
+}
+
+// Phase 128 — the WORD for a student's status on one assignment. Moved out of
+// AssignmentDetailScreen, which owned the only copy, so the response summary
+// and the student list beneath it name each state identically. The words are
+// the ones the screen has always used.
+export function studentAssignmentStatusLabel(status: StudentAssignmentStatus): string {
+  switch (status) {
+    case "completed":
+      return "Tamamladı";
+    case "in_progress":
+      return "Devam ediyor";
+    case "past_due":
+      return "Süresi geçti";
+    case "not_started":
+      return "Başlamadı";
+  }
+}

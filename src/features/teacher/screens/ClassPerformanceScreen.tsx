@@ -14,7 +14,12 @@ import { AppBackButton } from "@components/ui/AppBackButton";
 import { StatusLabel } from "@components/ui/StatusLabel";
 import { useAuth } from "@features/authentication";
 import { useClassAssignments } from "@features/assignments/hooks/useClassAssignments";
-import { resolveAssignmentDisplayStatus } from "@features/assignments/services/assignmentStatus";
+// Phase 104 (B6) — the status word an assignment row shows AND speaks; the
+// words now live beside the status they name (Phase 128).
+import {
+  assignmentStatusLabel,
+  resolveAssignmentDisplayStatus,
+} from "@features/assignments/services/assignmentStatus";
 import { selectRecentTopicAssignments } from "@features/assignments/services/assignmentHistorySignals";
 import { useClassSemanticDefinitions } from "@features/questions/hooks/useClassSemanticDefinitions";
 import type { SemanticDefinitionInput } from "@features/questions/services/semanticDefinition";
@@ -93,22 +98,6 @@ const FILTERS: { value: FilterValue; label: string }[] = [
     label: attentionCategoryLabel(category),
   })),
 ];
-
-// Phase 104 (B6) — the status word an assignment row shows AND speaks. The
-// accessibility label used to read the raw enum ("past_due", "draft") to a
-// screen reader while the eye saw "Süresi geçti".
-function assignmentStatusLabel(status: ReturnType<typeof resolveAssignmentDisplayStatus>): string {
-  switch (status) {
-    case "draft":
-      return "Taslak";
-    case "archived":
-      return "Arşivlendi";
-    case "past_due":
-      return "Süresi geçti";
-    default:
-      return "Aktif";
-  }
-}
 
 function keyExtractor(card: StudentPerformanceCardData) {
   return card.studentUid;

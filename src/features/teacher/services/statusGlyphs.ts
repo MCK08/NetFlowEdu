@@ -2,6 +2,7 @@ import type { Ionicons } from "@expo/vector-icons";
 
 import type { StatusTone } from "@components/ui/StatusLabel";
 import type { AssignmentEffectiveness } from "@features/assignments/services/assignmentOutcomeInsights";
+import type { StudentAssignmentStatus } from "@features/assignments/services/assignmentProgress";
 import type { LearningTrend } from "@features/study/services/learningTrend";
 
 import type { InterventionEffectiveness } from "./interventionEffectiveness";
@@ -125,5 +126,22 @@ export function assignmentEffectivenessGlyph(effectiveness: AssignmentEffectiven
       return { icon: "alert-circle-outline", tone: "danger" };
     case "insufficient_data":
       return null;
+  }
+}
+
+/** One student's status on one assignment (Phase 128). The colours are the
+ *  ones the detail screen already drew these words in — success for done,
+ *  danger for a missed deadline, primary for work under way, muted for not
+ *  yet begun — now with a mark beside them, like every other state word. */
+export function studentAssignmentStatusGlyph(status: StudentAssignmentStatus): StatusGlyph {
+  switch (status) {
+    case "completed":
+      return { icon: "checkmark-circle-outline", tone: "success" };
+    case "in_progress":
+      return { icon: "time-outline", tone: "primary" };
+    case "past_due":
+      return { icon: "alert-circle-outline", tone: "danger" };
+    case "not_started":
+      return { icon: "ellipse-outline", tone: "muted" };
   }
 }

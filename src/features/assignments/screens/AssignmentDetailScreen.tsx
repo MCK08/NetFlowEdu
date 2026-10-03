@@ -1,50 +1,51 @@
-
+import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { FlatList, Pressable, Text, View } from "react-native";
+import { useRef, useState } from "react";
+import { ScrollView, Text, useWindowDimensions, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { Card } from "@components/ui/Card";
+import { AppBackButton } from "@components/ui/AppBackButton";
+import { Badge, BadgeVariant } from "@components/ui/Badge";
 import { EmptyState } from "@components/ui/EmptyState";
 import { LoadingSkeleton } from "@components/ui/LoadingSkeleton";
 import { PrimaryButton } from "@components/ui/PrimaryButton";
-import { AppBackButton } from "@components/ui/AppBackButton";
+import { SectionHeader } from "@components/ui/SectionHeader";
 import { StatusLabel } from "@components/ui/StatusLabel";
+import { useClassRoom } from "@features/classes/hooks/useClassRoom";
+import { teacherStudentRoute } from "@features/teacher/services/actionCenterNavigation";
 import { assignmentEffectivenessGlyph } from "@features/teacher/services/statusGlyphs";
 import { colors } from "@theme/colors";
+import { contentWidth } from "@theme/layout";
 import { radius } from "@theme/radius";
+import { iconSize, stackAtFontScale } from "@theme/sizes";
 import { spacing } from "@theme/spacing";
 import { typography } from "@theme/typography";
 import { themedStyles } from "@theme/themeRuntime";
 
+import { AssignmentDetailTab, AssignmentDetailTabs } from "../components/AssignmentDetailTabs";
+import { AssignmentQuestionList } from "../components/AssignmentQuestionList";
+import { AssignmentResponseSummary } from "../components/AssignmentResponseSummary";
+import { AssignmentStudentRow } from "../components/AssignmentStudentRow";
 import { useAssignmentDetail } from "../hooks/useAssignmentDetail";
-import { StudentAssignmentRow } from "../services/teacherAssignmentProgress";
-import { StudentAssignmentStatus } from "../services/assignmentProgress";
-import { AssignmentEffectiveness } from "../services/assignmentOutcomeInsights";
+import { useAssignmentQuestions } from "../hooks/useAssignmentQuestions";
 import { AssignmentFollowUpEntry, FollowUpReason } from "../services/assignmentFollowUp";
+import { AssignmentEffectiveness } from "../services/assignmentOutcomeInsights";
+import {
+  AssignmentDisplayStatus,
+  assignmentStatusLabel,
+  resolveAssignmentDisplayStatus,
+} from "../services/assignmentStatus";
+import { countAssignmentStatuses, StudentAssignmentRow } from "../services/teacherAssignmentProgress";
 
 interface AssignmentDetailScreenProps {
   assignmentId: string;
 }
 
-function statusLabel(status: StudentAssignmentStatus): string {
-  switch (status) {
-    case "completed":
-      return "Tamamladı";
-    case "in_progress":
-      return "Devam ediyor";
-    case "past_due":
-      return "Süresi geçti";
-    case "not_started":
-      return "Başlamadı";
-  }
-}
-
-function statusColor(status: StudentAssignmentStatus): string {
-  if (status === "completed") return colors.success;
-  if (status === "past_due") return colors.danger;
-  if (status === "in_progress") return colors.primary;
-  return colors.textTertiary;
-}
+/** The screen's own name. Phase 128 — the header used to print the
+ *  assignment's title here, capped at one line, with "Ödev" as the fallback;
+ *  the title now lives in the identity card, in full. */
+export const ASSIGNMENT_DETAIL_TITLE = "Çalışma Detayı";
+export const REVIEW_RESPONSES_LABEL = "Yanıtları İncele";
 
 // Phase 104 — the words only; the mark comes from assignmentEffectivenessGlyph,
 // the same vocabulary the teacher's other verdict lines use.
@@ -67,13 +68,73 @@ const FOLLOW_UP_REASON_LABEL: Record<FollowUpReason, string> = {
   repeated_struggle: "Tekrar tekrar zorlandı",
 };
 
+// The status word carries the meaning; the pill's tone only repeats it.
+const STATUS_BADGE: Record<AssignmentDisplayStatus, BadgeVariant> = {
+  active: "primary",
+  draft: "neutral",
+  past_due: "danger",
+  archived: "neutral",
+};
+
+/** The deadline as a calendar date. `dueAt` is always the END of the local
+ *  day the teacher picked (assignmentDueDate.ts), so the time of day is an
+ *  implementation detail, not a choice anyone made — it is not printed. */
+function formatDueDate(dueAt: number | null): string | null {
+  if (dueAt === null || !Number.isFinite(dueAt)) return null;
+  return new Date(dueAt).toLocaleDateString("tr-TR", { day: "numeric", month: "long", year: "numeric" });
+}
+
+/** "Sınıf · Ders · Konu · N. sınıf", from fields that exist; a class name not
+ *  yet loaded, or a field empty on an older document, is left out rather
+ *  than printed as a stray separator. */
+function contextLine(parts: readonly (string | null | undefined)[]): string {
+  return parts
+    .map((part) => part?.trim() ?? "")
+    .filter((part) => part.length > 0)
+    .join(" · ");
+}
+
 // Read-only, same invariant as ClassPerformanceScreen/StudentPerformanceScreen
 // — a teacher can see every student's real progress here, but nothing on
 // this screen can change a student's own study state.
+//
+// Phase 128 — ONE assignment, in three views. The identity stays on top; the
+// overview answers what this is and how far the class has got; Öğrenciler is
+// this assignment's actual responses, one canonical status per targeted
+// student, each opening that student's canonical performance screen; Sorular
+// is what was asked, in the order it was assigned.
+//
+// "Yanıtları İncele" leads to Öğrenciler, because that IS where this
+// assignment's responses live. The product has no assignment-scoped review
+// route: "Yanıt İncelemeleri" is the class's answer-publication queue
+// (moderationSubmissions, Phase 97) and knows nothing about assignments, so
+// pointing this button there would send a teacher to an unrelated list.
 export function AssignmentDetailScreen({ assignmentId }: AssignmentDetailScreenProps) {
-  const { assignment, progress, outcomeInsights, followUp, isLoading, error, refresh } =
+  const { assignment, progress, outcomeInsights, followUp, isLoading, error, notFound, refresh } =
     useAssignmentDetail(assignmentId);
+  // ONE classes/{classId} get, for the class's name and whether it is archived.
+  const classRoom = useClassRoom(assignment?.classId);
+  const [tab, setTab] = useState<AssignmentDetailTab>("overview");
+  // Nothing is read for the questions until the teacher opens them.
+  const questions = useAssignmentQuestions(assignment?.questionIds ?? null, tab === "questions");
+  const scrollRef = useRef<ScrollView>(null);
+  const { fontScale } = useWindowDimensions();
+  const stacked = fontScale >= stackAtFontScale;
   const outcomeGlyph = outcomeInsights ? assignmentEffectivenessGlyph(outcomeInsights.effectiveness) : null;
+
+  function selectTab(next: AssignmentDetailTab) {
+    setTab(next);
+    // A view switched while scrolled deep into the previous one would open
+    // halfway down the new one.
+    scrollRef.current?.scrollTo({ y: 0, animated: true });
+  }
+
+  function openStudent(row: StudentAssignmentRow) {
+    if (!assignment) return;
+    // The ONE student destination (Phase 123/124), with the name this row
+    // already resolved from the class roster.
+    router.push(teacherStudentRoute(assignment.classId, row.studentUid, row.displayName));
+  }
 
   // System only ever SUGGESTS a follow-up (§12 "DO NOT AUTO-PUBLISH") — this
   // navigates to the exact same CreateAssignmentScreen a teacher would open
@@ -98,117 +159,238 @@ export function AssignmentDetailScreen({ assignmentId }: AssignmentDetailScreenP
     });
   }
 
-  return (
-    <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
-      <View style={styles.header}>
-        <AppBackButton
-          fallbackHref={
-            assignment
-              ? { pathname: "/(teacher)/class/[classId]", params: { classId: assignment.classId } }
-              : "/(teacher)/(tabs)/classes"
-          }
-          style={styles.backButton}
-        />
-        <Text style={styles.title} numberOfLines={1}>
-          {assignment?.title ?? "Ödev"}
-        </Text>
-      </View>
+  const header = (
+    <View style={[styles.header, stacked ? styles.headerStacked : null]}>
+      <AppBackButton
+        fallbackHref={
+          assignment
+            ? { pathname: "/(teacher)/class/[classId]", params: { classId: assignment.classId } }
+            : "/(teacher)/(tabs)/classes"
+        }
+        style={styles.backButton}
+      />
+      <Text style={styles.title} accessibilityRole="header">
+        {ASSIGNMENT_DETAIL_TITLE}
+      </Text>
+    </View>
+  );
 
-      {isLoading ? (
-        <View style={styles.skeletonList}>
-          <LoadingSkeleton height={72} borderRadius={16} />
-          <LoadingSkeleton height={56} borderRadius={16} />
-          <LoadingSkeleton height={56} borderRadius={16} />
+  if (isLoading) {
+    return (
+      <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
+        {header}
+        <View style={styles.skeletonList} accessible accessibilityLabel="Çalışma yükleniyor">
+          <LoadingSkeleton height={120} borderRadius={radius.xl} />
+          <LoadingSkeleton height={48} borderRadius={radius.lg} />
+          <LoadingSkeleton height={140} borderRadius={radius.xl} />
         </View>
-      ) : error || !assignment || !progress ? (
+      </SafeAreaView>
+    );
+  }
+
+  if (notFound) {
+    // Permanent: retrying cannot bring a deleted document back, so no retry
+    // is offered — the back button is the way out.
+    return (
+      <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
+        {header}
         <View style={styles.centered}>
-          <EmptyState icon="cloud-offline-outline" title={error ?? "Ödev bulunamadı"} />
+          <EmptyState
+            icon="document-outline"
+            title="Bu çalışma artık mevcut değil"
+            description="Silinmiş ya da artık görüntülenemiyor olabilir."
+          />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (error || !assignment || !progress) {
+    return (
+      <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
+        {header}
+        <View style={styles.centered}>
+          <EmptyState icon="cloud-offline-outline" title={error ?? "Çalışma bilgileri yüklenemedi."} />
           <PrimaryButton label="Tekrar Dene" onPress={refresh} />
         </View>
-      ) : (
-        <FlatList
-          data={progress.rows}
-          keyExtractor={(row: StudentAssignmentRow) => row.studentUid}
-          contentContainerStyle={styles.list}
-          renderItem={({ item }) => (
-            <Card style={styles.row}>
-              <Text style={styles.rowName} numberOfLines={1}>
-                {item.displayName}
-              </Text>
-              <View style={styles.rowMeta}>
-                <Text style={styles.rowCount}>
-                  {item.completedCount} / {assignment.targetCount}
-                </Text>
-                <Text style={[styles.rowStatus, { color: statusColor(item.status) }]}>
-                  {statusLabel(item.status)}
-                </Text>
-              </View>
-            </Card>
-          )}
-          ListHeaderComponent={
-            <View style={styles.headerSections}>
-              <View style={styles.summaryCard}>
-                <Text style={styles.summarySubject}>
-                  {assignment.subject} · {assignment.topic}
-                </Text>
-                {assignment.description ? (
-                  <Text style={styles.summaryDescription}>{assignment.description}</Text>
-                ) : null}
-                <View style={styles.summaryRow}>
-                  <SummaryStat value={String(progress.totalStudents)} label="öğrenci" />
-                  <SummaryStat value={String(progress.startedCount)} label="başladı" />
-                  <SummaryStat value={String(progress.completedCount)} label="tamamladı" />
-                </View>
-              </View>
+      </SafeAreaView>
+    );
+  }
 
-              {outcomeInsights && outcomeInsights.effectiveness !== "insufficient_data" ? (
-                <View style={styles.summaryCard}>
-                  <Text style={styles.sectionTitle}>Bu Ödevde Ne Oldu?</Text>
+  const displayStatus = resolveAssignmentDisplayStatus(assignment.status, assignment.dueAt, Date.now());
+  const statusWord = assignmentStatusLabel(displayStatus);
+  const dueDate = formatDueDate(assignment.dueAt);
+  const context = contextLine([
+    classRoom?.name,
+    assignment.subject,
+    assignment.topic,
+    assignment.gradeLevel ? `${assignment.gradeLevel}. sınıf` : null,
+  ]);
+  const counts = countAssignmentStatuses(progress.rows);
+  const hasStudents = progress.totalStudents > 0;
+  // No client write is permitted in an archived class, so the one action that
+  // would end in one is not offered there.
+  const canCreateFollowUp = followUp.length > 0 && classRoom?.status !== "archived";
+
+  return (
+    <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
+      {header}
+      <ScrollView
+        ref={scrollRef}
+        style={styles.scroller}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* WHICH assignment — the title in full, its real status in words,
+            and the context it was made for. */}
+        <View
+          style={styles.identity}
+          accessible
+          accessibilityLabel={`${assignment.title}. ${statusWord}.${context ? ` ${context}.` : ""}`}
+        >
+          <Text style={styles.assignmentTitle}>{assignment.title}</Text>
+          <Badge label={statusWord} variant={STATUS_BADGE[displayStatus]} />
+          {context ? <Text style={styles.context}>{context}</Text> : null}
+        </View>
+
+        <AssignmentDetailTabs selected={tab} onSelect={selectTab} />
+
+        {tab === "overview" ? (
+          <>
+            {/* Only facts the document holds. */}
+            <View style={styles.facts}>
+              <Fact icon="calendar-outline" label="Son tarih" value={dueDate ?? "Son tarih yok"} />
+              <Fact icon="document-text-outline" label="Soru sayısı" value={`${assignment.targetCount} soru`} />
+              <Fact icon="people-outline" label="Hedef" value={`${progress.totalStudents} öğrenci`} />
+              {assignment.description ? (
+                <Text style={styles.description}>{assignment.description}</Text>
+              ) : null}
+            </View>
+
+            <View style={styles.section}>
+              <SectionHeader title="Yanıt Durumu" />
+              {hasStudents ? (
+                <>
+                  <AssignmentResponseSummary
+                    totalStudents={progress.totalStudents}
+                    counts={counts}
+                    hasDeadline={assignment.dueAt !== null}
+                  />
+                  <PrimaryButton
+                    label={REVIEW_RESPONSES_LABEL}
+                    onPress={() => selectTab("students")}
+                    accessibilityHint="Bu çalışmadaki öğrenci yanıtlarını gösterir"
+                  />
+                </>
+              ) : (
+                <Text style={styles.muted}>Bu çalışma henüz bir öğrenciye atanmadı.</Text>
+              )}
+            </View>
+
+            {outcomeInsights && outcomeInsights.effectiveness !== "insufficient_data" ? (
+              <View style={styles.section}>
+                <SectionHeader title="Bu Çalışmada Ne Oldu?" />
+                <View style={styles.card}>
                   {outcomeGlyph ? (
-                    <StatusLabel icon={outcomeGlyph.icon} tone={outcomeGlyph.tone} textStyle={styles.previewLine}>
+                    <StatusLabel icon={outcomeGlyph.icon} tone={outcomeGlyph.tone} textStyle={styles.cardLine}>
                       {effectivenessLabel(outcomeInsights.effectiveness)}
                     </StatusLabel>
                   ) : (
-                    <Text style={styles.previewLine}>{effectivenessLabel(outcomeInsights.effectiveness)}</Text>
+                    <Text style={styles.cardLine}>{effectivenessLabel(outcomeInsights.effectiveness)}</Text>
                   )}
                   {outcomeInsights.topicOutcome.struggleRate !== null ? (
-                    <Text style={styles.previewLine}>
-                      {Math.round(outcomeInsights.topicOutcome.struggleRate * 100)}% zorlanma oranı
+                    <Text style={styles.cardMuted}>
+                      {`%${Math.round(outcomeInsights.topicOutcome.struggleRate * 100)} zorlanma oranı`}
                     </Text>
                   ) : null}
                 </View>
-              ) : null}
+              </View>
+            ) : null}
 
-              {followUp.length > 0 ? (
-                <View style={styles.summaryCard}>
-                  <Text style={styles.sectionTitle}>Takip Gerekenler</Text>
+            {followUp.length > 0 ? (
+              <View style={styles.section}>
+                <SectionHeader title="Takip Gerekenler" />
+                <View style={styles.card}>
                   {followUp.map((entry: AssignmentFollowUpEntry) => (
-                    <Text key={entry.studentUid} style={styles.previewLine}>
+                    <Text key={entry.studentUid} style={styles.cardLine}>
                       {entry.displayName} · {entry.reasons.map((reason) => FOLLOW_UP_REASON_LABEL[reason]).join(", ")}
                     </Text>
                   ))}
-                  <Pressable
-                    onPress={handleCreateFollowUp}
-                    style={styles.followUpButton}
-                    accessibilityRole="button"
-                  >
-                    <Text style={styles.followUpButtonText}>Takip Ödevi Oluştur</Text>
-                  </Pressable>
+                  {/* Secondary on purpose: "Yanıtları İncele" is this screen's
+                      one dominant action. */}
+                  {canCreateFollowUp ? (
+                    <PrimaryButton
+                      label="Takip Ödevi Oluştur"
+                      variant="secondary"
+                      onPress={handleCreateFollowUp}
+                      accessibilityHint="Bu öğrenciler için yeni bir çalışma hazırlar"
+                    />
+                  ) : null}
                 </View>
-              ) : null}
-            </View>
-          }
-        />
-      )}
+              </View>
+            ) : null}
+          </>
+        ) : null}
+
+        {tab === "students" ? (
+          <View style={styles.section}>
+            <SectionHeader title={`Öğrenci Yanıtları (${progress.totalStudents})`} />
+            {hasStudents ? (
+              <View style={styles.list}>
+                {/* The assignment's own target order, unchanged — never
+                    re-sorted by progress. */}
+                {progress.rows.map((row) => (
+                  <AssignmentStudentRow
+                    key={row.studentUid}
+                    row={row}
+                    targetCount={assignment.targetCount}
+                    onOpen={openStudent}
+                  />
+                ))}
+              </View>
+            ) : (
+              <Text style={styles.muted}>Bu çalışma henüz bir öğrenciye atanmadı.</Text>
+            )}
+          </View>
+        ) : null}
+
+        {tab === "questions" ? (
+          <View style={styles.section}>
+            <SectionHeader title={`Sorular (${assignment.questionIds.length})`} />
+            {assignment.questionIds.length === 0 ? (
+              <Text style={styles.muted}>Bu çalışmada soru yok.</Text>
+            ) : questions.entries ? (
+              <AssignmentQuestionList entries={questions.entries} />
+            ) : (
+              <View style={styles.list} accessible accessibilityLabel="Sorular yükleniyor">
+                <LoadingSkeleton height={88} borderRadius={radius.lg} />
+                <LoadingSkeleton height={88} borderRadius={radius.lg} />
+              </View>
+            )}
+          </View>
+        ) : null}
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
-function SummaryStat({ value, label }: { value: string; label: string }) {
+function Fact({
+  icon,
+  label,
+  value,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  value: string;
+}) {
   return (
-    <View style={styles.summaryStat}>
-      <Text style={styles.summaryStatValue}>{value}</Text>
-      <Text style={styles.summaryStatLabel}>{label}</Text>
+    <View style={styles.fact} accessible accessibilityLabel={`${label}: ${value}`}>
+      {/* Decorative: the label beside it names the fact. */}
+      <Ionicons name={icon} size={iconSize.sm} color={colors.textTertiary} accessibilityElementsHidden />
+      <View style={styles.factText}>
+        <Text style={styles.factLabel}>{label}</Text>
+        <Text style={styles.factValue}>{value}</Text>
+      </View>
     </View>
   );
 }
@@ -231,6 +413,13 @@ const styles = themedStyles(() => ({
     paddingHorizontal: spacing.md,
     paddingBottom: spacing.sm,
     gap: spacing.xs,
+    width: "100%",
+    maxWidth: contentWidth.readable,
+    alignSelf: "center",
+  },
+  // Stacked, the 44pt chevron tops-aligns with a title that wraps.
+  headerStacked: {
+    alignItems: "flex-start",
   },
   backButton: {
     minWidth: 44,
@@ -243,94 +432,92 @@ const styles = themedStyles(() => ({
     ...typography.title,
     color: colors.textPrimary,
     flex: 1,
+    minWidth: 0,
   },
   skeletonList: {
     padding: spacing.lg,
     gap: spacing.md,
+    width: "100%",
+    maxWidth: contentWidth.readable,
+    alignSelf: "center",
   },
-  list: {
+  scroller: {
+    flex: 1,
+    width: "100%",
+    maxWidth: contentWidth.readable,
+    alignSelf: "center",
+  },
+  content: {
     padding: spacing.lg,
     paddingTop: 0,
-    gap: spacing.sm,
+    gap: spacing.lg,
   },
-  headerSections: {
-    gap: spacing.md,
-    marginBottom: spacing.md,
-  },
-  summaryCard: {
+  identity: {
     backgroundColor: colors.surface,
     borderRadius: radius.xl,
-    padding: spacing.lg,
+    padding: spacing.md,
     gap: spacing.xs,
   },
-  sectionTitle: {
-    ...typography.bodyStrong,
+  assignmentTitle: {
+    ...typography.screenTitleSm,
     color: colors.textPrimary,
-    marginBottom: 2,
   },
-  previewLine: {
+  context: {
     ...typography.caption,
     color: colors.textSecondary,
   },
-  followUpButton: {
-    minHeight: 44,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: spacing.xs,
-    backgroundColor: colors.primary,
-    borderRadius: radius.md,
+  facts: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.xl,
+    padding: spacing.md,
+    gap: spacing.sm,
   },
-  followUpButtonText: {
-    ...typography.body,
-    fontWeight: "700",
-    color: colors.textInverse,
-  },
-  summarySubject: {
-    ...typography.bodyStrong,
-    color: colors.textPrimary,
-  },
-  summaryDescription: {
-    ...typography.caption,
-    color: colors.textSecondary,
-  },
-  summaryRow: {
+  // One fact per line, never a row of fixed-width tiles: the label and value
+  // wrap in their own column at every text size.
+  fact: {
     flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: spacing.sm,
-  },
-  summaryStat: {
     alignItems: "flex-start",
+    gap: spacing.sm,
+  },
+  factText: {
+    flex: 1,
+    minWidth: 0,
     gap: 2,
   },
-  summaryStatValue: {
-    ...typography.title,
-    color: colors.textPrimary,
-  },
-  summaryStatLabel: {
+  factLabel: {
     ...typography.caption,
     color: colors.textTertiary,
   },
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: spacing.sm,
-  },
-  rowName: {
+  factValue: {
     ...typography.bodyStrong,
     color: colors.textPrimary,
-    flex: 1,
   },
-  rowMeta: {
-    alignItems: "flex-end",
-    gap: 2,
+  description: {
+    ...typography.body,
+    color: colors.textSecondary,
   },
-  rowCount: {
+  section: {
+    gap: spacing.sm,
+  },
+  list: {
+    gap: spacing.sm,
+  },
+  card: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.xl,
+    padding: spacing.md,
+    gap: spacing.xs,
+  },
+  cardLine: {
+    ...typography.body,
+    color: colors.textPrimary,
+  },
+  cardMuted: {
     ...typography.caption,
     color: colors.textSecondary,
   },
-  rowStatus: {
-    ...typography.caption,
-    fontWeight: "700",
+  muted: {
+    ...typography.body,
+    color: colors.textTertiary,
   },
 }));

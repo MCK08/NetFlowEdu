@@ -22,6 +22,11 @@ export function useAssignmentDetail(assignmentId: string | undefined) {
   const [followUp, setFollowUp] = useState<AssignmentFollowUpEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Phase 128 — a deleted assignment and a failed load are different answers:
+  // the first is permanent (retrying cannot bring the document back), the
+  // second is ours and worth retrying. The screen used to offer "Tekrar Dene"
+  // for both.
+  const [notFound, setNotFound] = useState(false);
   const requestIdRef = useRef(0);
 
   const load = useCallback(async () => {
@@ -34,12 +39,14 @@ export function useAssignmentDetail(assignmentId: string | undefined) {
     const requestId = ++requestIdRef.current;
     setIsLoading(true);
     setError(null);
+    setNotFound(false);
     try {
       const loadedAssignment = await getAssignmentById(assignmentId);
       if (!shouldApplyStaleResponse(requestId, requestIdRef.current)) return;
       if (!loadedAssignment) {
         setAssignment(null);
-        setError("Bu ödev artık mevcut değil.");
+        setNotFound(true);
+        setError("Bu çalışma artık mevcut değil.");
         return;
       }
 
@@ -84,7 +91,7 @@ export function useAssignmentDetail(assignmentId: string | undefined) {
       );
     } catch {
       if (!shouldApplyStaleResponse(requestId, requestIdRef.current)) return;
-      setError("Ödev bilgileri yüklenemedi.");
+      setError("Çalışma bilgileri yüklenemedi.");
     } finally {
       if (shouldApplyStaleResponse(requestId, requestIdRef.current)) setIsLoading(false);
     }
@@ -94,5 +101,5 @@ export function useAssignmentDetail(assignmentId: string | undefined) {
     load();
   }, [load]);
 
-  return { assignment, progress, outcomeInsights, followUp, isLoading, error, refresh: load };
+  return { assignment, progress, outcomeInsights, followUp, isLoading, error, notFound, refresh: load };
 }
